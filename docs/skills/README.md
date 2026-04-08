@@ -26,8 +26,8 @@ Skills are living documents. When a new pattern is established or an existing on
 | Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply |
 | SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply |
 | Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply |
+| C# coding standards | `csharp-coding-standards.md` | ✅ Complete | Extracted from CritterSupply |
 | Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
-| C# coding standards | `csharp-coding-standards.md` | 🔴 Not yet written | Extract from CritterSupply |
 | Adding a BC module | `adding-bc-module.md` | 🔴 Not yet written | New — modular monolith specific |
 | React frontend | `react-frontend.md` | 🔴 Not yet written | New |
 | Domain event conventions | `domain-event-conventions.md` | 🔴 Not yet written | New |
@@ -98,10 +98,6 @@ When writing a 🔴 skill for the first time:
 
 ### Skills Still Needed
 
-**Extract from CritterSupply (domain-agnostic content exists):**
-
-- `csharp-coding-standards.md` — records, immutability, `IReadOnlyList<T>`, `with` expressions, value object patterns, sealed types. Source: `docs/skills/modern-csharp-coding-standards.md`.
-
 **Write fresh for CritterBids (no direct CritterSupply equivalent):**
 
 - `adding-bc-module.md` — modular monolith module registration, `AddXyzModule()` extension method pattern, Contracts project conventions, `Program.cs` wiring. CritterBids-specific.
@@ -116,7 +112,7 @@ When writing a 🔴 skill for the first time:
 
 ## Relationship to CritterSupply Skills
 
-The skills marked "Extract from CritterSupply" have direct equivalents in CritterSupply's `docs/skills/` directory. The extraction process:
+The skills marked "Extracted from CritterSupply" have direct equivalents in CritterSupply's `docs/skills/` directory. The extraction process:
 
 1. Keep all domain-agnostic content verbatim or near-verbatim
 2. Replace CritterSupply BC names and examples with CritterBids equivalents
