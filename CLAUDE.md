@@ -1,0 +1,162 @@
+# CritterBids — AI Development Guidelines
+
+CritterBids is an open-source auction platform built on the Critter Stack (Wolverine + Marten + Polecat). It is structured as a **.NET modular monolith** — a single deployable unit with well-enforced bounded context (BC) boundaries. It is modeled after eBay's platform conventions and is designed as both a reference architecture and a live conference demo vehicle.
+
+> **Companion project:** CritterSupply (e-commerce) demonstrates the same Critter Stack in a different domain. Patterns established there carry over here unless explicitly overridden.
+
+---
+
+## Quick Start (First 5 Minutes)
+
+1. **Understand what you're looking at:**
+   - Single deployable API host (`src/CritterBids.Api`) wiring 8 BC modules together
+   - Each BC is a separate .NET class library — no BC references another BC's internals
+   - BCs communicate exclusively through types in `src/CritterBids.Contracts`
+   - PostgreSQL (Marten) for auction-core BCs; SQL Server (Polecat) for Operations, Settlement, Participants
+
+2. **Run the system locally:**
+   ```bash
+   docker-compose up -d
+   dotnet run --project src/CritterBids.Api
+   ```
+
+3. **Key files to orient yourself:**
+   - **[CLAUDE.md](./CLAUDE.md)** — this file, AI development entry point
+   - **[docs/vision/bounded-contexts.md](./docs/vision/bounded-contexts.md)** — BC map, ownership, integration topology
+   - **[docs/vision/domain-events.md](./docs/vision/domain-events.md)** — canonical event vocabulary
+   - **[docs/skills/README.md](./docs/skills/README.md)** — skill index, load before implementing
+
+4. **Before implementing anything:**
+   - Check `docs/vision/bounded-contexts.md` for BC boundaries
+   - Load the relevant skill file(s) from `docs/skills/`
+   - Code is the source of truth once it exists — docs describe intent, code shows reality
+
+---
+
+## Documentation Hierarchy
+
+```
+Code (src/, tests/)                      ← Source of truth once written
+    ↑
+docs/vision/bounded-contexts.md          ← BC ownership, integration topology
+    ↑
+CLAUDE.md (this file)                    ← Entry point, conventions, routing
+    ↑
+docs/skills/*.md                         ← Implementation patterns (load on demand)
+    ↑
+docs/personas/*.md                       ← Agent personas for workshops
+    ↑
+docs/decisions/*.md (ADRs)               ← Architectural decisions with rationale
+    ↑
+docs/milestones/*.md                     ← Scope per milestone
+```
+
+---
+
+## Modular Monolith Rules — Non-Negotiable
+
+These are the structural rules that define CritterBids as a modular monolith. Violations break the architecture.
+
+- **No BC project references another BC project.** The only shared dependency is `CritterBids.Contracts`.
+- **Integration events cross BC boundaries via `CritterBids.Contracts`.** Types defined there are the public API between modules.
+- **Each BC registers itself via `AddXyzModule()`.** `CritterBids.Api/Program.cs` calls these — nothing else.
+- **BCs never call each other's handlers directly.** All cross-BC communication is via Wolverine messages.
+
+---
+
+## Preferred Tools & Stack
+
+| Concern | Tool |
+|---|---|
+| Language | C# 14+ / .NET 10+ |
+| Message handling | Wolverine 5+ |
+| Event sourcing (PostgreSQL) | Marten 8+ |
+| Event sourcing (SQL Server) | Polecat 2+ |
+| Async messaging | RabbitMQ (AMQP) |
+| Real-time push | SignalR |
+| Testing | xUnit + Shouldly + Testcontainers + Alba |
+| Frontend | React + TypeScript |
+| Containers | Docker Compose |
+
+---
+
+## Core Conventions
+
+- `sealed record` for all commands, events, queries, and read models — no exceptions
+- `IReadOnlyList<T>` not `List<T>` for collections
+- Handlers return events/messages — never call `session.Store()` directly
+- All saga terminal paths must call `MarkCompleted()`
+- `opts.Policies.AutoApplyTransactions()` required in every BC's Marten configuration
+- `[Authorize]` on all non-auth endpoints from first commit
+- Integration events published via `OutgoingMessages` — never `IMessageBus` directly
+- `bus.ScheduleAsync()` is the only justified use of `IMessageBus` in handlers
+- UUID v5 stream IDs with BC-specific namespace prefixes
+- No "Event" suffix on domain event type names — ever
+- No direct references to "paddle" — participants are identified by `BidderId`
+
+---
+
+## BC Module Quick Reference
+
+| BC | Project | Storage | Key Patterns |
+|---|---|---|---|
+| Participants | `CritterBids.Participants` | SQL Server / Polecat | Event-sourced aggregate |
+| Selling | `CritterBids.Selling` | PostgreSQL / Marten | Event-sourced aggregate, state machine |
+| Auctions | `CritterBids.Auctions` | PostgreSQL / Marten | DCB, Auction Closing saga, Proxy Bid saga |
+| Listings | `CritterBids.Listings` | PostgreSQL / Marten | Multi-stream projections, full-text search |
+| Settlement | `CritterBids.Settlement` | SQL Server / Polecat | Saga, financial event stream |
+| Obligations | `CritterBids.Obligations` | PostgreSQL / Marten | Saga, cancellable scheduled messages |
+| Relay | `CritterBids.Relay` | PostgreSQL / Marten | Wolverine handlers, SignalR hub |
+| Operations | `CritterBids.Operations` | SQL Server / Polecat | Cross-BC projections, SignalR hub |
+
+---
+
+## Skill Invocation Guide
+
+Load the relevant skill before implementing. Skills encode hard-won patterns.
+
+| Task | Skill to load |
+|---|---|
+| Adding a Wolverine handler | `docs/skills/wolverine-message-handlers.md` |
+| Creating a saga | `docs/skills/wolverine-sagas.md` |
+| Event-sourced aggregate (Marten) | `docs/skills/marten-event-sourcing.md` |
+| Event-sourced aggregate (Polecat) | `docs/skills/polecat-event-sourcing.md` |
+| Marten projection | `docs/skills/marten-projections.md` |
+| DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary.md` |
+| Integration messaging | `docs/skills/integration-messaging.md` |
+| SignalR real-time | `docs/skills/wolverine-signalr.md` |
+| Adding a new BC module | `docs/skills/adding-bc-module.md` |
+| Writing tests | `docs/skills/testing-patterns.md` |
+| React frontend | `docs/skills/react-frontend.md` |
+| Running an Event Modeling workshop | `docs/skills/event-modeling/SKILL.md` |
+
+> **Note:** Some skill files are stubs pending extraction from CritterSupply or first-use authoring. Check `docs/skills/README.md` for current status.
+
+---
+
+## Event Modeling & Personas
+
+For workshop sessions, load persona documents from `docs/personas/` alongside relevant skill files.
+
+See `docs/personas/README.md` for the full roster and guidance on which personas to activate per session type.
+
+---
+
+## Context7
+
+For Wolverine/Marten/Polecat capabilities beyond established skill file patterns:
+
+- Library ID: Wolverine → `/jasperfx/wolverine`
+- Library ID: Marten → `/jasperfx/marten`
+
+---
+
+## Do Not
+
+- Commit directly to `main` — branch and PR
+- Add a BC project reference to another BC project
+- Use `IMessageBus` in a handler except for `ScheduleAsync()`
+- Name a domain event type with an "Event" suffix
+- Use `List<T>` on records or aggregates
+- Reference "paddle" anywhere in domain or application code
+- Commit without running `dotnet build` and `dotnet test`
