@@ -17,24 +17,24 @@ Skills are living documents. When a new pattern is established or an existing on
 
 | Skill | File | Status | Source |
 |---|---|---|---|
-| Wolverine message handlers | `wolverine-message-handlers.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Wolverine sagas | `wolverine-sagas.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Marten event sourcing | `marten-event-sourcing.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Marten projections | `marten-projections.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Polecat event sourcing | `polecat-event-sourcing.md` | 🔴 Not yet written | New |
-| Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Integration messaging | `integration-messaging.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| SignalR real-time | `wolverine-signalr.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| Adding a BC module | `adding-bc-module.md` | 🔴 Not yet written | New — modular monolith specific |
-| Testing patterns | `testing-patterns.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
-| React frontend | `react-frontend.md` | 🔴 Not yet written | New |
-| C# coding standards | `csharp-coding-standards.md` | 🟡 Stub — extract from CritterSupply | CritterSupply |
+| Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply |
+| Wolverine sagas | `wolverine-sagas.md` | ✅ Complete | Extracted from CritterSupply |
+| Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply |
+| Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids |
+| Polecat event sourcing | `polecat-event-sourcing.md` | 🟡 Placeholder — fill in during first Polecat BC | New |
+| Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply |
+| Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply |
+| SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply |
+| Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply |
 | Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
+| C# coding standards | `csharp-coding-standards.md` | 🔴 Not yet written | Extract from CritterSupply |
+| Adding a BC module | `adding-bc-module.md` | 🔴 Not yet written | New — modular monolith specific |
+| React frontend | `react-frontend.md` | 🔴 Not yet written | New |
 | Domain event conventions | `domain-event-conventions.md` | 🔴 Not yet written | New |
 
 **Status key:**
 - ✅ Complete and ready to use
-- 🟡 Stub — placeholder exists, content needs extraction or authoring
+- 🟡 Placeholder — useful stub exists, fill in during first real use
 - 🔴 Not yet written — create when first needed
 
 ---
@@ -50,8 +50,9 @@ Skills are living documents. When a new pattern is established or an existing on
 | Saga (multi-step workflow) | `wolverine-sagas.md` | `integration-messaging.md` |
 | Scheduled messages / timeouts | `wolverine-sagas.md` | — |
 | Event-sourced aggregate (Marten) | `marten-event-sourcing.md` | `csharp-coding-standards.md` |
-| Event-sourced aggregate (Polecat) | `polecat-event-sourcing.md` | `csharp-coding-standards.md` |
-| Marten projection | `marten-projections.md` | — |
+| Event-sourced aggregate (Polecat) | `polecat-event-sourcing.md` | `marten-event-sourcing.md` |
+| Marten native projection | `marten-event-sourcing.md` | — |
+| EF Core projection (Marten or Polecat) | `marten-projections.md` | `polecat-event-sourcing.md` |
 | DCB boundary model | `dynamic-consistency-boundary.md` | `marten-event-sourcing.md` |
 | Integration event (cross-BC) | `integration-messaging.md` | `domain-event-conventions.md` |
 | SignalR hub + real-time push | `wolverine-signalr.md` | — |
@@ -59,19 +60,21 @@ Skills are living documents. When a new pattern is established or an existing on
 
 ### Testing
 
-| Task | Skill |
-|---|---|
-| Integration test (Alba + Testcontainers) | `testing-patterns.md` |
-| Unit test (pure handler logic) | `testing-patterns.md` |
-| Saga test | `wolverine-sagas.md` + `testing-patterns.md` |
+| Task | Primary Skill | Secondary Skill |
+|---|---|---|
+| Integration test (Alba + Testcontainers) | `critter-stack-testing-patterns.md` | — |
+| Unit test (pure handler logic) | `critter-stack-testing-patterns.md` | — |
+| Saga test | `wolverine-sagas.md` | `critter-stack-testing-patterns.md` |
+| EF Core projection test | `marten-projections.md` | `critter-stack-testing-patterns.md` |
+| SignalR integration test | `wolverine-signalr.md` | `critter-stack-testing-patterns.md` |
 
 ### Frontend
 
-| Task | Skill |
-|---|---|
-| React component | `react-frontend.md` |
-| SignalR client connection | `react-frontend.md` |
-| Real-time bid feed | `react-frontend.md` + `wolverine-signalr.md` |
+| Task | Primary Skill | Secondary Skill |
+|---|---|---|
+| React component | `react-frontend.md` | — |
+| SignalR client connection | `react-frontend.md` | `wolverine-signalr.md` |
+| Real-time bid feed | `react-frontend.md` | `wolverine-signalr.md` |
 
 ### Design & Architecture
 
@@ -83,8 +86,41 @@ Skills are living documents. When a new pattern is established or an existing on
 
 ---
 
+## Writing New Skills
+
+When writing a 🔴 skill for the first time:
+
+1. Implement the feature first — let the code reveal the real patterns
+2. Document what you learned, including what didn't work
+3. Follow the density principle: every line earns its place
+4. Reference related skills at the bottom
+5. Update this README status from 🔴 to ✅
+
+### Skills Still Needed
+
+**Extract from CritterSupply (domain-agnostic content exists):**
+
+- `csharp-coding-standards.md` — records, immutability, `IReadOnlyList<T>`, `with` expressions, value object patterns, sealed types. Source: `docs/skills/modern-csharp-coding-standards.md`.
+
+**Write fresh for CritterBids (no direct CritterSupply equivalent):**
+
+- `adding-bc-module.md` — modular monolith module registration, `AddXyzModule()` extension method pattern, Contracts project conventions, `Program.cs` wiring. CritterBids-specific.
+- `react-frontend.md` — React + TypeScript conventions, SignalR hook patterns, bid feed state management, ops dashboard patterns. CritterBids-specific.
+- `domain-event-conventions.md` — past-tense naming, no "Event" suffix, aggregate ID as first property, `DateTimeOffset` timestamps, `IReadOnlyList<T>` for collections, CritterBids vocabulary reference. CritterBids-specific.
+
+**Fill in from first implementation:**
+
+- `polecat-event-sourcing.md` — placeholder exists with known patterns and an implementation checklist. Complete during the first Polecat BC (likely Participants).
+
+---
+
 ## Relationship to CritterSupply Skills
 
-Many skill files in CritterBids are extracted and adapted from CritterSupply's `docs/skills/` directory. Domain-agnostic Critter Stack patterns transfer directly. CritterSupply-specific examples are replaced with CritterBids equivalents during extraction.
+The skills marked "Extract from CritterSupply" have direct equivalents in CritterSupply's `docs/skills/` directory. The extraction process:
 
-If a skill file is a stub, check CritterSupply's equivalent first — the pattern is almost certainly documented there.
+1. Keep all domain-agnostic content verbatim or near-verbatim
+2. Replace CritterSupply BC names and examples with CritterBids equivalents
+3. Strip milestone markers, retrospective references, and `src/` file paths
+4. Keep every anti-pattern and lesson learned — these transfer wholesale
+
+If a skill is a placeholder or not yet written, the CritterSupply equivalent is the authoritative reference until the CritterBids version exists.
