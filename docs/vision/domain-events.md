@@ -38,8 +38,8 @@ A flat vocabulary reference for all events in CritterBids. This is a glossary, n
 
 | Event | Type | Meaning |
 |---|---|---|
-| `SessionCreated` | 🟠 Internal | An Operations staff member created a Flash Session container. |
-| `SessionStarted` | 🟠 Internal | An Operations staff member started a Flash Session; all attached listings open simultaneously. |
+| `SessionCreated` | 🔵 Integration | An Operations staff member created a Flash Session container. Consumed by Operations (session management board) and Relay (announce upcoming session). |
+| `SessionStarted` | 🔵 Integration | An Operations staff member started a Flash Session; all attached listings open simultaneously. Consumed by Operations (dashboard goes live), Relay (announce session is live to participants), and Listings (attached listings become active in catalog). |
 | `BiddingOpened` | 🔵 Integration | A listing is now accepting bids. The scheduled close time is established. |
 | `BidPlaced` | 🔵 Integration | A bid was accepted as the new high bid. Contains the amount, bidder ID, and whether it was a proxy auto-bid. |
 | `BidRejected` | 🔵 Integration | A bid attempt was rejected — below current high bid, credit ceiling exceeded, or listing not open. |
