@@ -13,9 +13,9 @@
 
 ## What Is CritterBids?
 
-CritterBids is a working, demonstrable auction platform modeled after eBay's conventions and terminology. It is built on **Wolverine** (messaging and command handling), **Marten** (event sourcing over PostgreSQL), and **Polecat** (event sourcing over SQL Server) — JasperFx's suite of .NET libraries collectively known as the Critter Stack.
+CritterBids is a working, demonstrable auction platform modeled after eBay's conventions and terminology. It is built on **Wolverine** (messaging and command handling), **Marten** (event sourcing over PostgreSQL), and **Polecat** (event sourcing over SQL Server) — JasperFx's suite of .NET libraries collectively known as the [Critter Stack](https://wolverine.netlify.app/).
 
-It is a companion project to [CritterSupply](https://github.com/jasperfx/critter-supply), a Critter Stack e-commerce reference. Where CritterSupply demonstrates the stack through an order fulfillment domain, CritterBids demonstrates it through competitive real-time bidding — a domain with meaningfully different mechanics, contention patterns, and real-time requirements.
+CritterBids is one of several open-source reference architectures showcasing the Critter Stack across different domains. The auction domain was chosen because competitive real-time bidding surfaces patterns — contention, time pressure, multi-audience projections — that simpler domains don't.
 
 CritterBids is not a toy. It is a realistic platform designed to be run, demonstrated, and learned from.
 
@@ -190,25 +190,6 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 - Real payment processor integration (same saga shape, real Stripe wiring)
 - Demo reset command cascade
 - Feedback and reputation system
-
----
-
-## Relationship to CritterSupply
-
-CritterBids and [CritterSupply](https://github.com/jasperfx/critter-supply) are sibling projects sharing the same stack and philosophy — real code, real patterns, no hand-waving.
-
-| Concern | CritterSupply | CritterBids |
-|---|---|---|
-| Domain | E-commerce | Auction platform |
-| Architecture | Vertical slice, service-oriented | Modular monolith |
-| Primary saga | Order fulfillment | Auction closing + proxy bid manager |
-| DCB usage | Promotions BC | Auctions BC — core mechanic |
-| Identity | JWT, real users | Anonymous sessions |
-| Real-time | Minimal | SignalR load-bearing |
-| Databases | PostgreSQL only | PostgreSQL + SQL Server |
-| Demo format | Browse and buy | Live audience participation bidding |
-
-A developer who has worked through CritterSupply will find familiar patterns here — the same Wolverine handler conventions, the same Marten projection patterns, the same BC boundary discipline — along with patterns the e-commerce domain didn't surface: timer-driven saga initiation, proxy bid process managers, real-time contention at scale, and the Polecat SQL Server story.
 
 ---
 
