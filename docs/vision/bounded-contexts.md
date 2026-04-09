@@ -83,7 +83,7 @@ Draft → Submitted → Approved → Published
 
 **Integration in:** `ListingPublished` (Selling), `ParticipantSessionStarted` (Participants)
 
-**Integration out:** `SessionCreated`, `SessionStarted`, `BiddingOpened`, `BidPlaced`, `BidRejected`, `BuyItNowPurchased`, `BuyItNowOptionRemoved`, `ReserveMet`, `ExtendedBiddingTriggered`, `ListingSold`, `ListingPassed`, `ListingWithdrawn`
+**Integration out:** `SessionCreated`, `ListingAttachedToSession`, `SessionStarted`, `BiddingOpened`, `BidPlaced`, `BidRejected`, `BuyItNowPurchased`, `BuyItNowOptionRemoved`, `ReserveMet`, `ExtendedBiddingTriggered`, `ListingSold`, `ListingPassed`, `ListingWithdrawn`
 
 ---
 
@@ -105,7 +105,7 @@ Draft → Submitted → Approved → Published
 
 **Storage:** PostgreSQL via Marten
 
-**Integration in:** `ListingPublished`, `ListingRevised`, `ListingEndedEarly`, `ListingRelisted` (Selling); `SessionStarted`, `BiddingOpened`, `ListingSold`, `ListingPassed`, `ListingWithdrawn` (Auctions)
+**Integration in:** `ListingPublished`, `ListingRevised`, `ListingEndedEarly`, `ListingRelisted` (Selling); `ListingAttachedToSession`, `SessionStarted`, `BiddingOpened`, `ListingSold`, `ListingPassed`, `ListingWithdrawn` (Auctions)
 
 **Integration out:** `LotWatchAdded`, `LotWatchRemoved`
 
@@ -227,6 +227,8 @@ Selling ─── ListingPublished ───────────────
 
 Auctions ─── SessionCreated ────────────────────────────► Relay
          ─── SessionCreated ────────────────────────────► Operations
+         ─── ListingAttachedToSession ──────────────────► Listings
+         ─── ListingAttachedToSession ──────────────────► Operations
          ─── SessionStarted ────────────────────────────► Listings
          ─── SessionStarted ────────────────────────────► Relay
          ─── SessionStarted ────────────────────────────► Operations
