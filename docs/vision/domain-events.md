@@ -45,7 +45,7 @@ A flat vocabulary reference for all events in CritterBids. This is a glossary, n
 | `BidPlaced` | 🔵 Integration | A bid was accepted as the new high bid. Contains the amount, bidder ID, and whether it was a proxy auto-bid. |
 | `BidRejected` | 🔵 Integration | A bid attempt was rejected — below current high bid, credit ceiling exceeded, or listing not open. |
 | `ProxyBidRegistered` | 🟠 Internal | A participant registered a proxy bid with a maximum amount. The Proxy Bid Manager saga begins. |
-| `ProxyBidExhausted` | 🟠 Internal | A proxy bid's maximum was exceeded by another bidder. The proxy saga terminates. |
+| `ProxyBidExhausted` | 🔵 Integration | A proxy bid's maximum was exceeded by another bidder. The proxy saga terminates. Consumed by Relay to push a specific "your proxy bid has been exceeded" notification to the bidder, distinct from the generic outbid notification. |
 | `BuyItNowOptionRemoved` | 🔵 Integration | The Buy It Now option was removed from the listing because a bid was placed. |
 | `BuyItNowPurchased` | 🔵 Integration | A participant purchased a listing at the Buy It Now price, bypassing the auction. |
 | `ReserveMet` | 🔵 Integration | The current high bid has reached or exceeded the reserve price. Reserve is never revealed — only this signal is published. |
