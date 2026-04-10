@@ -623,12 +623,35 @@ Then:   PendingSettlement row updated:
 ### 8.3 ListingRevised updates mutable fields
 
 ```
-Given:  PendingSettlement { ListingId: listing-A, ReservePrice: 50.00, BuyItNowPrice: 100.00 }
+Given:  PendingSettlement {
+          ListingId: listing-A,
+          SellerId: participant-001,
+          ReservePrice: 50.00,
+          BuyItNowPrice: 100.00,
+          FeePercentage: 10.0,
+          PublishedAt: T-days,
+          Status: Pending
+        }
 
-When:   ListingRevised { ListingId: listing-A, Changes: { ReservePrice: 75.00 } }
+When:   ListingRevised {
+          ListingId: listing-A,
+          Changes: {
+            ReservePrice: 75.00,
+            BuyItNowPrice: 120.00
+          }
+        }
+        arrives at the projection handler
 
-Then:   PendingSettlement { ReservePrice: 75.00, BuyItNowPrice: 100.00, ... }
+Then:   PendingSettlement row updated:
+          ReservePrice: 75.00
+          BuyItNowPrice: 120.00
+          FeePercentage: 10.0           ← UNCHANGED (see 8.2)
+          SellerId: participant-001
+          PublishedAt: T-days
+          Status: Pending
 ```
+
+> Counterpart to 8.2. `ReservePrice` and `BuyItNowPrice` track the listing over its lifetime; `FeePercentage` is frozen at publish.
 
 ---
 
