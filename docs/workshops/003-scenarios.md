@@ -13,9 +13,9 @@ Implementation-ready scenarios for all Settlement BC components: the decider (pu
 - **Decider tests (Sections 1–6):** Pure function tests. No framework, no harness, no I/O. Written as `Decide(state, command) → events`. Each is a one-line assertion in production code.
 - **Evolver tests (Section 7):** Pure function tests of state folding. `Evolve(state, event) → new state`.
 - **Projection tests (Section 8):** Integration tests against the `PendingSettlement` read model. Verify the row state after each event.
-- **Workflow integration tests (Section 9):** End-to-end scenarios exercising the full settlement flow via the hosting framework (Wolverine Saga or `ProcessManager<TState>`).
+- **Workflow integration tests (Section 9):** End-to-end scenarios exercising the full settlement flow via the hosting framework (`ProcessManager<TState>` or Wolverine Saga). Scenarios are written to be agnostic to the workflow abstraction — references to Wolverine in Section 9 are about the message bus (retry, inbox dedup), which applies to both hosts.
 
-The first three sections are the reason the decider pattern earns its keep: **42 scenarios, all of them trivially testable without any framework at all.**
+**41 scenarios across nine sections.** The first six are the reason the decider pattern earns its keep: 18 pure-function decider tests and 10 pure-function evolver tests — 28 in total, trivially testable without any framework at all.
 
 ---
 
@@ -570,6 +570,8 @@ Then:   throws InvalidSettlementEvolutionException
 
 ## 8. PendingSettlement Projection
 
+> **Convention for this section:** Create/update scenarios (8.1–8.3, 8.8) use the long form with a multi-line event payload followed by `arrives at the projection handler` on its own line — the payload fields are load-bearing. Terminal status transitions (8.4–8.7) use the terse form — all four are structurally identical (`Pending → Status: X`), and the terseness is the point.
+
 ### 8.1 Create on ListingPublished
 
 ```
@@ -711,7 +713,14 @@ Then:   PendingSettlement { Status: Failed, ...other fields unchanged... }
 Given:  PendingSettlement { ListingId: listing-A, Status: Pending, FeePercentage: 10.0 }
         Platform config: FeePercentage = 10.0 (same as before)
 
-When:   ListingPublished { ListingId: listing-A, ... } arrives again
+When:   ListingPublished {
+          ListingId: listing-A,
+          SellerId: participant-001,
+          ReservePrice: 50.00,
+          BuyItNowPrice: 100.00,
+          PublishedAt: T-days
+        }
+        arrives at the projection handler a second time
 
 Then:   Either: (a) no-op (row already exists, handler detects and skips)
         Or: (b) upsert — same row, same data
@@ -723,7 +732,7 @@ Then:   Either: (a) no-op (row already exists, handler detects and skips)
 
 ## 9. Workflow Integration — End to End
 
-These scenarios exercise the full workflow via the hosting framework. They test the combined behavior of: the `PendingSettlement` projection, the triggering event handler, the decider/evolver, and the event stream persistence. Same scenarios should pass regardless of whether the workflow is hosted as a Wolverine Saga or a `ProcessManager<TState>`.
+These scenarios exercise the full workflow via the hosting framework. They test the combined behavior of: the `PendingSettlement` projection, the triggering event handler, the decider/evolver, and the event stream persistence. Same scenarios should pass regardless of whether the workflow is hosted as a `ProcessManager<TState>` or a Wolverine Saga — the expected event streams, integration events, and projection updates are identical. Wolverine references below (retry policy, inbox dedup) are about the message bus layer and apply to both hosts.
 
 ### 9.1 Full bidding happy path
 
@@ -762,7 +771,7 @@ Then:   Event stream for settlement-001 contains (in order):
         PendingSettlement for listing-A updated:
           Status: Consumed
 
-        Workflow terminated (Saga: MarkCompleted / ProcessManager: Completed state is terminal)
+        Workflow terminated (Completed is a terminal state)
 ```
 
 ---
