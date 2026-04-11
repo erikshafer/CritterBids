@@ -14,13 +14,12 @@ CritterBids uses **milestones** as the unit of work governance. Each milestone i
 
 ### Goal
 
-Stand up the CritterBids solution skeleton with the Participants BC as the first real implementation. End state: a contributor can clone the repo, run `dotnet run --project src/CritterBids.AppHost` (or the Docker Compose fallback), hit `POST /api/participants/session` to start a session, and `POST /api/participants/{id}/register-seller` to become a seller. All 5 scenarios from `001-scenarios.md` slices 0.2 and 0.3 pass as integration tests.
+Stand up the CritterBids solution skeleton with the Participants BC as the first real implementation. End state: a contributor can clone the repo, run `dotnet run --project src/CritterBids.AppHost`, hit `POST /api/participants/session` to start a session, and `POST /api/participants/{id}/register-seller` to become a seller. All 5 scenarios from `001-scenarios.md` slices 0.2 and 0.3 pass as integration tests.
 
 ### Exit criteria
 
 - [ ] Solution builds clean with `dotnet build`
 - [ ] `dotnet run --project src/CritterBids.AppHost` boots the API + Postgres + SQL Server + RabbitMQ via .NET Aspire, end-to-end verified
-- [ ] `docker compose up -d && dotnet run --project src/CritterBids.Api` fallback path verified working
 - [ ] Participants BC implemented: `StartParticipantSession` and `RegisterAsSeller` commands, events, HTTP endpoints, Polecat storage
 - [ ] `SellerRegistrationCompleted` published via `OutgoingMessages` (no M1 consumer — Selling BC enters in M2 per W004-P1-2)
 - [ ] All 5 integration tests from §7 pass against real Polecat + SQL Server via Testcontainers
@@ -66,7 +65,6 @@ Hard line — if you catch yourself building any of these in M1, stop and flag i
 CritterBids/
 ├── CritterBids.sln
 ├── Directory.Packages.props              # central package management
-├── docker-compose.yml                    # fallback for non-Aspire contributors
 ├── src/
 │   ├── CritterBids.AppHost/              # .NET Aspire orchestration (primary)
 │   ├── CritterBids.Api/                  # API host, Program.cs, AddXyzModule() calls
@@ -86,22 +84,20 @@ CritterBids/
 
 ## 5. Infrastructure Baseline
 
-### Aspire AppHost resources (primary path)
+> **Decision:** CritterBids uses .NET Aspire AppHost as the single local-dev orchestration path. See [ADR 006](../decisions/006-infrastructure-orchestration.md).
+
+### Aspire AppHost resources
 
 `CritterBids.AppHost/Program.cs` provisions:
 
 - **PostgreSQL** — for future Marten BCs (not used in M1, but wired so M2 doesn't need infra changes)
 - **SQL Server** — for Polecat (Participants BC storage in M1)
 - **RabbitMQ** — for Wolverine transport (no active subscribers in M1, but `SellerRegistrationCompleted` is published into it)
-- **CritterBids.Api** — the API host, referencing all provisioned resources
-
-### Docker Compose fallback
-
-`docker-compose.yml` in repo root provides Postgres + SQL Server + RabbitMQ with ports/credentials matching the Aspire-provisioned defaults. Contributors who don't want Aspire run `docker compose up -d && dotnet run --project src/CritterBids.Api`. Both paths must work at M1 exit.
+- **CritterBids.Api** — the API host, referencing all provisioned resources via Aspire connection string injection
 
 ### Polecat configuration (Participants BC)
 
-- SQL Server connection string resolved from Aspire (primary) or `appsettings.json` (fallback)
+- SQL Server connection string resolved from Aspire resource references
 - `opts.Policies.AutoApplyTransactions()` — see §6 pinning note
 - Event stream registered for `Participant` aggregate
 - No projections in M1 (Participants has no views)
@@ -122,7 +118,7 @@ CritterBids/
 
 Conventions inherit from `CLAUDE.md` unless overridden below.
 
-- **Stream IDs:** UUID v5 with BC-specific namespace constant. `ParticipantsNamespace = new Guid("TODO-GENERATE-AT-IMPLEMENTATION");` — resolved when session 2 lands. v5 stays the convention for stream IDs because determinism from business key is load-bearing for idempotent stream creation.
+- **Stream IDs:** UUID v5 with BC-specific namespace constant. `ParticipantsNamespace = new Guid("TODO-GENERATE-AT-IMPLEMENTATION");` — resolved when session 4 lands (Participants BC scaffold). v5 stays the convention for stream IDs because determinism from business key is load-bearing for idempotent stream creation.
 - **Event row IDs:** Not pinned in M1. See §8 and `docs/decisions/0001-uuid-strategy.md` (Proposed).
 - **Integration events:** Published via `OutgoingMessages` collection returned from handlers. Never `IMessageBus` directly. `bus.ScheduleAsync()` is the only justified `IMessageBus` use in handlers — not needed in M1.
 - **AutoApplyTransactions:** Required in the Participants BC's Polecat configuration. `CLAUDE.md` currently phrases this rule in Marten-specific terms; the Polecat equivalent is pinned here for M1 and CLAUDE.md will be cleaned up later as conventions stabilize.
@@ -165,7 +161,7 @@ Each test asserts against both (a) the HTTP response shape and (b) the Polecat e
 |---|---|---|
 | M1-D1 | Real authentication scheme | **Deferred.** M1 uses `[AllowAnonymous]`. Revisit when frontend milestone (M6) plans the auth story. |
 | M1-D3 | UUID v7 for event row IDs and high-write projection IDs | **Leaning adopt; ADR Proposed.** Authored in session 5 as `docs/decisions/0001-uuid-strategy.md`. Stream IDs stay v5 (determinism is load-bearing). v7 is a legitimate consideration for high-write tables — primarily Auctions bid events and Listings projections — because its Unix-ms prefix gives insert locality and composes well with Postgres range partitioning. Acceptance gates before moving from Proposed to Accepted: (a) verify Marten 8 / Polecat 2 expose event row ID generation at all; (b) verify v7 support or path to it; (c) JasperFx team input. Not blocking M1 — Participants is low-write and M1 doesn't touch Auctions. Re-surfaces naturally at M3 (Auctions BC). |
-| M1-D4 | Polecat namespace GUID for Participants stream IDs | **TODO at session 2.** Generate once, pin as constant in code. |
+| M1-D4 | Polecat namespace GUID for Participants stream IDs | **TODO at session 4** (Participants BC scaffold). Generate once, pin as constant in code. |
 | M1-D5 | CLAUDE.md cleanup: Marten-specific wording of `AutoApplyTransactions` rule | **Deferred cleanup.** Track, address when conventions stabilize. |
 
 ---
@@ -177,11 +173,12 @@ One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session
 | # | Prompt file | Scope summary |
 |---|---|---|
 | 1 | `docs/prompts/M1-S1-solution-baseline.md` | Solution file, `CritterBids.Api` + `CritterBids.Contracts` projects, Layout 2 test projects, `Directory.Packages.props` with minimal xUnit + Shouldly pins. **No Aspire, no Compose, no BCs.** |
-| 2 | *TBD* | Infrastructure baseline — Aspire-vs-Compose decision, Postgres + SQL Server + RabbitMQ wiring, Wolverine + Polecat host configuration. |
-| 3 | *TBD* | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
-| 4 | *TBD* | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
-| 5 | *TBD* | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
-| 6 | *TBD* | Retrospective skills + ADR — `aspire.md`, `polecat-event-sourcing.md` 🟡 → ✅, Aspire MCP discovery note, `docs/decisions/0001-uuid-strategy.md` as Proposed. |
+| 2 | `docs/prompts/M1-S2-infrastructure-orchestration-adr.md` | Infrastructure orchestration ADR — Aspire-vs-Compose decision resolved as ADR 006. Documentation only; no code, no projects created. |
+| 3 | *TBD* | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
+| 4 | *TBD* | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
+| 5 | *TBD* | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
+| 6 | *TBD* | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
+| 7 | *TBD* | Retrospective skills + ADR — `aspire.md`, `polecat-event-sourcing.md` 🟡 → ✅, Aspire MCP discovery note, `docs/decisions/0001-uuid-strategy.md` as Proposed. |
 
 Sessions are intentionally small. Merging is discouraged — the ten rules treat "one prompt equals one PR" as the primary constraint. If a session's scope collapses during implementation, split work off rather than absorbing the next session's scope.
 
