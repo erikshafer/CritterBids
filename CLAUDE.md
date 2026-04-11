@@ -53,6 +53,17 @@ docs/milestones/*.md                     ← Scope per milestone
 
 ---
 
+## Session Workflow
+
+CritterBids implementation work runs through a **prompt → execute → retro** loop. Every session is bounded by a written prompt and closes with a written retrospective; both live in version control alongside the code they govern.
+
+- **[docs/prompts/README.md](./docs/prompts/README.md)** — Session prompt template, naming convention, and the ten rules every Copilot session prompt obeys. Read before authoring a new prompt.
+- **[docs/retrospectives/README.md](./docs/retrospectives/README.md)** — Retrospective template, section order, and the ten rules every session retro obeys. Read before writing a retro at session close.
+
+A session prompt and its retro share a slug (e.g. `M1-S2-participants-bc-scaffold.md` ↔ `M1-S2-participants-bc-scaffold-retrospective.md`) so they sort together. The retro is part of the session's deliverable PR — not a follow-up.
+
+---
+
 ## Modular Monolith Rules — Non-Negotiable
 
 These are the structural rules that define CritterBids as a modular monolith. Violations break the architecture.
@@ -159,3 +170,4 @@ For Wolverine/Marten/Polecat capabilities beyond established skill file patterns
 - Use `List<T>` on records or aggregates
 - Reference "paddle" anywhere in domain or application code
 - Commit without running `dotnet build` and `dotnet test`
+- Include a `Co-Authored-By` trailer in commit messages
