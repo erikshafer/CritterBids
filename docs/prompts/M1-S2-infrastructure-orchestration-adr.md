@@ -16,14 +16,15 @@ Resolve the Aspire-vs-Compose decision that M1-S2 inherited from planning. The M
 - `docs/prompts/README.md` — the ten rules this prompt obeys
 - `docs/prompts/M1-S1-solution-baseline.md` — prior session's prompt, for format and conflict-review language carried forward
 - `docs/retrospectives/M1-S1-solution-baseline-retrospective.md` — prior session's retro, for any M1-S1 findings relevant to this session
-- Existing ADRs under `docs/decisions/` if any — for format reference. Note that `0001-uuid-strategy.md` is reserved per `M1-skeleton.md` §8 M1-D3 even if not yet authored; this ADR is therefore `0002-infrastructure-orchestration.md`.
+- Existing ADRs under `docs/decisions/` — for format reference and for decisions this ADR must be consistent with. Specifically: `001-modular-monolith.md`, `002-rabbitmq-first.md` (RabbitMQ is the settled transport — the orchestration path must provision it), `003-polecat-bcs.md` (Polecat + SQL Server is a settled BC storage choice — the orchestration path must provision SQL Server), `004-react-frontend.md`, `005-contract-versioning.md`. The next free ADR number is **006**, so this ADR is `006-infrastructure-orchestration.md`.
+- Note: `M1-skeleton.md` §8 M1-D3 refers to a `0001-uuid-strategy.md` path that predates the actual ADR numbering convention (three-digit, not four-digit) and is therefore subtly stale. Do not fix that staleness in this session — it is out of scope and will be corrected when the UUID ADR is actually authored.
 
 ## In scope
 
-- Author `docs/decisions/0002-infrastructure-orchestration.md` as a new ADR.
+- Author `docs/decisions/006-infrastructure-orchestration.md` as a new ADR.
 - ADR status: **Accepted** at the end of this session, not Proposed. The point of this session is to decide, not to kick the decision further down the road.
 - ADR must cover, at minimum:
-  - **Context** — why the decision is needed, what the two options are, what constraints CritterBids places on the choice (single-contributor project, modular monolith, conference-demo vehicle, Polecat + SQL Server as first-class dependency, Wolverine transport needed eventually, Marten arriving in a later BC).
+  - **Context** — why the decision is needed, what the two options are, what constraints CritterBids places on the choice (single-contributor project, modular monolith, conference-demo vehicle, Polecat + SQL Server as first-class dependency per ADR 003, RabbitMQ as settled transport per ADR 002, Marten arriving in a later BC).
   - **Options considered** — .NET Aspire AppHost and Docker Compose, each evaluated against the CritterBids constraints above. Do not treat this as a generic Aspire-vs-Compose comparison from the internet; the evaluation must be grounded in this project's specifics.
   - **Decision** — one path, named explicitly, with a one-sentence rationale.
   - **Consequences** — what changes in the repo as a result, what future sessions need to know, what is explicitly *not* decided by this ADR (e.g. container image choices, version pinning strategy, production deployment — none of those are M1 concerns).
@@ -36,22 +37,22 @@ Resolve the Aspire-vs-Compose decision that M1-S2 inherited from planning. The M
 - **No code.** No `.csproj` files created or modified. No `Program.cs` edits. No package additions to `Directory.Packages.props`.
 - **No new projects.** No `CritterBids.AppHost`, no service defaults project, no `docker-compose.yml` file, no `.env` template — regardless of which path the ADR chooses. Creating those artifacts is M1-S3's job; this session only produces the decision that makes M1-S3 draftable.
 - **No CLAUDE.md rewrite.** `CLAUDE.md`'s current description of the local-dev story may become stale as a result of this decision. Flagging the staleness is fine; fixing it is not this session's job. Add a note to the ADR's Consequences section if relevant.
-- **No other ADRs.** The UUID strategy ADR (`0001-uuid-strategy.md` per §8 M1-D3) is not this session's concern.
+- **No other ADRs.** The UUID strategy ADR (referenced in `M1-skeleton.md` §8 M1-D3, not yet authored) is not this session's concern, and neither is fixing the stale four-digit path in that section of the milestone doc.
 - **No bounded context projects, no Wolverine wiring, no Polecat wiring, no Marten wiring, no auth wiring.** None of M1-S3 onward.
 - **No CI workflow changes.**
 
 ## Conventions to pin or follow
 
-- ADR format follows whatever convention already exists in `docs/decisions/`. If no ADRs exist yet, use a minimal Michael Nygard-style template: Title, Status, Context, Decision, Consequences. Do not introduce a more elaborate format on a first-ADR basis.
-- ADR numbering is zero-padded three-digit, prefixed with the number and a kebab-case slug: `0002-infrastructure-orchestration.md`.
+- ADR format follows the convention already established in `docs/decisions/001-modular-monolith.md` through `005-contract-versioning.md`. Read at least one of those before drafting to match their tone, section headings, and length. Do not introduce a more elaborate format on a sixth-ADR basis.
+- ADR numbering is three-digit, prefixed with the number and a kebab-case slug: `006-infrastructure-orchestration.md`. Do not use a four-digit scheme even if the milestone doc's §8 M1-D3 suggests it — the repo's actual convention is three-digit.
 - The ADR's Decision section is one path, named in one sentence. No equivocation, no "we'll try Aspire and fall back to Compose if it doesn't work out." If the session cannot commit to one path for any reason, that is a rule 7 escalation — flag and stop.
 
 ## Acceptance criteria
 
-- [ ] `docs/decisions/0002-infrastructure-orchestration.md` exists.
+- [ ] `docs/decisions/006-infrastructure-orchestration.md` exists.
 - [ ] ADR status is **Accepted**.
 - [ ] ADR Decision section names exactly one orchestration path (Aspire or Compose) in one sentence.
-- [ ] ADR Context section references CritterBids-specific constraints (single contributor, modular monolith, conference demo, Polecat + SQL Server), not generic tradeoffs.
+- [ ] ADR Context section references CritterBids-specific constraints (single contributor, modular monolith, conference demo, Polecat + SQL Server per ADR 003, RabbitMQ per ADR 002), not generic tradeoffs.
 - [ ] ADR Consequences section names at least one follow-up item for M1-S3 and at least one item that is explicitly *out of scope* for the ADR.
 - [ ] `docs/milestones/M1-skeleton.md` §5 is rewritten to commit to the chosen path and links to the new ADR.
 - [ ] `docs/milestones/M1-skeleton.md` §5 no longer contains the phrase "both paths must work" or any fallback description for the non-chosen option.
@@ -64,5 +65,6 @@ Resolve the Aspire-vs-Compose decision that M1-S2 inherited from planning. The M
 
 - Target framework choice and language version are assumed from `docs/skills/csharp-coding-standards.md`. If anything in this session requires a framework-version-specific claim (e.g. "Aspire 9 requires .NET 9"), flag and stop — do not pick a TFM unilaterally.
 - If `Directory.Build.props`, `Directory.Packages.props`, or any other root configuration file has content that conflicts with this prompt's scope, flag the conflict and stop before editing. (Carried forward from M1-S1 per retrospective finding #2.)
-- If `docs/decisions/` already contains an ADR numbered `0002-*`, flag and stop — do not renumber. The prompt assumes `0002` is free.
+- If `docs/decisions/` already contains an ADR numbered `006-*`, flag and stop — do not renumber. The prompt assumes `006` is the next free number based on the `001`–`005` sequence at prompt-authoring time.
 - If `CLAUDE.md`'s description of the local-dev story conflicts irreconcilably with the ADR's chosen path (beyond a note-in-Consequences level of staleness), flag and stop so the user can decide whether to fix CLAUDE.md in this PR or split it off.
+- **Note for retro, not for action in this session:** ADR discovery in this repo is currently weaker than it should be — there is no `docs/decisions/README.md` index, CLAUDE.md does not route to the decisions directory, and the prompts README has no rule requiring architecture-adjacent prompts to list `docs/decisions/README.md` in their context-load. M1-S2 discovered this gap while drafting (the numbering scheme and existing ADR content had to be sent in as a screenshot). Do *not* fix any of this in this session — it is out of scope. Flag it in the retrospective so it can be bundled into M1-S6 (retrospective skills + ADR session) alongside the UUID strategy ADR work, where a `docs/decisions/README.md` index, a CLAUDE.md routing pointer, and a new prompts-README rule about context-load for architectural prompts can all land together as a coherent "make ADRs work properly for CritterBids" change.
