@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/CritterBids.AppHost/CritterBids.AppHost.csproj" />
     <Project Path="src/CritterBids.Api/CritterBids.Api.csproj" />
     <Project Path="src/CritterBids.Contracts/CritterBids.Contracts.csproj" />
   </Folder>

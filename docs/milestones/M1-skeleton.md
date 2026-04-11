@@ -174,7 +174,7 @@ One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session
 |---|---|---|
 | 1 | `docs/prompts/M1-S1-solution-baseline.md` | Solution file, `CritterBids.Api` + `CritterBids.Contracts` projects, Layout 2 test projects, `Directory.Packages.props` with minimal xUnit + Shouldly pins. **No Aspire, no Compose, no BCs.** |
 | 2 | `docs/prompts/M1-S2-infrastructure-orchestration-adr.md` | Infrastructure orchestration ADR — Aspire-vs-Compose decision resolved as ADR 006. Documentation only; no code, no projects created. |
-| 3 | *TBD* | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
+| 3 | `docs/prompts/M1-S3-infrastructure-baseline.md` | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
 | 4 | *TBD* | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
 | 5 | *TBD* | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
 | 6 | *TBD* | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |

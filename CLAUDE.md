@@ -16,9 +16,9 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
 
 2. **Run the system locally:**
    ```bash
-   dotnet run --project src/CritterBids.AppHost
+   dotnet run --project src/CritterBids.AppHost --launch-profile http
    ```
-   .NET Aspire (`CritterBids.AppHost`) is the primary local-orchestration story — it provisions Postgres, SQL Server, RabbitMQ, and any other infrastructure dependencies, and launches the API host. A `docker-compose.yml` is maintained as a fallback for contributors who don't want to run Aspire; if present, `docker compose up -d && dotnet run --project src/CritterBids.Api` is the equivalent path.
+   .NET Aspire (`CritterBids.AppHost`) is the single local-orchestration path — it provisions Postgres, SQL Server, RabbitMQ, and any other infrastructure dependencies, and launches the API host. Dashboard at `http://localhost:15237`. To use the `https` profile instead, first run `dotnet dev-certs https --trust` once. All three infrastructure containers are labelled `com.docker.compose.project=critterbids` and appear grouped under **critterbids** in Docker Desktop.
 
 3. **Key files to orient yourself:**
    - **[CLAUDE.md](./CLAUDE.md)** — this file, AI development entry point
@@ -87,7 +87,6 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
 | Frontend | React + TypeScript |
-| Containers | Docker Compose (fallback) |
 | Local orchestration | .NET Aspire 13.2+ (primary) |
 
 ---
