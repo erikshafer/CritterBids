@@ -16,9 +16,9 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
 
 2. **Run the system locally:**
    ```bash
-   docker-compose up -d
-   dotnet run --project src/CritterBids.Api
+   dotnet run --project src/CritterBids.AppHost
    ```
+   .NET Aspire (`CritterBids.AppHost`) is the primary local-orchestration story — it provisions Postgres, SQL Server, RabbitMQ, and any other infrastructure dependencies, and launches the API host. A `docker-compose.yml` is maintained as a fallback for contributors who don't want to run Aspire; if present, `docker compose up -d && dotnet run --project src/CritterBids.Api` is the equivalent path.
 
 3. **Key files to orient yourself:**
    - **[CLAUDE.md](./CLAUDE.md)** — this file, AI development entry point
@@ -76,7 +76,8 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
 | Frontend | React + TypeScript |
-| Containers | Docker Compose |
+| Containers | Docker Compose (fallback) |
+| Local orchestration | .NET Aspire 13.2+ (primary) |
 
 ---
 
@@ -125,12 +126,10 @@ Load the relevant skill before implementing. Skills encode hard-won patterns.
 | DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary.md` |
 | Integration messaging | `docs/skills/integration-messaging.md` |
 | SignalR real-time | `docs/skills/wolverine-signalr.md` |
-| Adding a new BC module | `docs/skills/adding-bc-module.md` |
-| Writing tests | `docs/skills/testing-patterns.md` |
-| React frontend | `docs/skills/react-frontend.md` |
+| Writing tests | `docs/skills/critter-stack-testing-patterns.md` |
 | Running an Event Modeling workshop | `docs/skills/event-modeling/SKILL.md` |
 
-> **Note:** Some skill files are stubs pending extraction from CritterSupply or first-use authoring. Check `docs/skills/README.md` for current status.
+> **Note:** Some skills are tracked but not yet written (`adding-bc-module.md`, `domain-event-conventions.md`, `react-frontend.md`, an Aspire skill). See `docs/skills/README.md` for the current status ledger.
 
 ---
 
