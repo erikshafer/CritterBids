@@ -73,13 +73,12 @@ CritterBids/
 │   ├── CritterBids.Contracts/            # integration event types (cross-BC)
 │   └── CritterBids.Participants/         # BC class library — first real BC
 └── tests/
-    ├── CritterBids.UnitTests/            # xUnit + Shouldly, no heavy deps
-    │   └── Participants/
-    └── CritterBids.IntegrationTests/     # Alba + Testcontainers + Polecat
-        └── Participants/
+    ├── CritterBids.Api.Tests/            # sibling of CritterBids.Api
+    ├── CritterBids.Contracts.Tests/      # sibling of CritterBids.Contracts
+    └── CritterBids.Participants.Tests/   # sibling of CritterBids.Participants
 ```
 
-**Test layout rationale (Layout 2 — tier-first, BC-as-folders):** Fast tests stay fast. Heavyweight dependencies (Testcontainers, Alba, Polecat) isolated by tier, not per-BC. Avoids project proliferation in a modular monolith. BC folders inside each test project provide the per-BC organization.
+**Test layout rationale (Layout 2 — one test project per production project):** Each production project gets a `{ProductionProject}.Tests` sibling under `tests/`. Test type (unit vs. integration) is organized by folder *inside* each test project, not by separate projects. This pins on M1-S1 and applies to every future production project — adding a new project to `src/` requires adding its `.Tests` sibling in the same PR. See `docs/prompts/M1-S1-solution-baseline.md` for the authoritative pinning.
 
 `Participants` is the only BC project in M1. `CritterBids.Contracts` is created but holds only `SellerRegistrationCompleted` (needed for M2 consumer).
 
