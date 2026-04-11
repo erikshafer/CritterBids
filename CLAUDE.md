@@ -159,3 +159,4 @@ For Wolverine/Marten/Polecat capabilities beyond established skill file patterns
 - Use `List<T>` on records or aggregates
 - Reference "paddle" anywhere in domain or application code
 - Commit without running `dotnet build` and `dotnet test`
+- Include a `Co-Authored-By` trailer in commit messages
