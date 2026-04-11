@@ -3,6 +3,7 @@
     <PropertyGroup>
         <LangVersion>14</LangVersion>
         <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <WolverineVersion>5.4.0</WolverineVersion>
         <MartenVersion>8.16.1</MartenVersion>
@@ -20,9 +21,7 @@
         <AnalysisMode>Recommended</AnalysisMode>
     </PropertyGroup>
     <ItemGroup>
-        <InternalsVisibleTo Include="$(AssemblyName).IntegrationTests" />
-        <InternalsVisibleTo Include="$(AssemblyName).Api.IntegrationTests" />
-        <InternalsVisibleTo Include="$(AssemblyName).UnitTests" />
+        <InternalsVisibleTo Include="$(AssemblyName).Tests" />
     </ItemGroup>
     <PropertyGroup>
         <NoWarn>$(NoWarn);NU1507</NoWarn>

@@ -3,30 +3,9 @@
         <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     </PropertyGroup>
     <ItemGroup>
-        <!-- Core -->
-        <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.5" />
-        <PackageVersion Include="Swashbuckle.AspNetCore" Version="10.1.7" />
-        <PackageVersion Include="Marten" Version="8.28.2" />
-        <PackageVersion Include="WolverineFx.Http.FluentValidation" Version="5.27.0" />
-        <PackageVersion Include="WolverineFx.Http.Marten" Version="5.27.0" />
-        <PackageVersion Include="WolverineFx.EntityFrameworkCore" Version="5.27.0" />
-        <PackageVersion Include="WolverineFx.Http" Version="5.27.0" />
-        <!-- Test -->
         <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
         <PackageVersion Include="xunit" Version="2.9.3" />
         <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
-        <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
-        <PackageVersion Include="Testcontainers.RabbitMq" Version="4.11.0" />
-        <PackageVersion Include="Alba" Version="8.5.2" />
-        <PackageVersion Include="coverlet.collector" Version="8.0.1" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
         <PackageVersion Include="Shouldly" Version="4.3.0" />
-        <PackageVersion Include="NSubstitute" Version="5.3.0" />
-        <!-- OpenTelemetry -->
-        <PackageVersion Include="OpenTelemetry" Version="1.15.1" />
-        <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.15.1" />
-        <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.15.1" />
-        <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.15.1" />
-        <!--Others-->
-
     </ItemGroup>
 </Project>
