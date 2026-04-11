@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(dotnet workload:*)",
+      "Bash(dotnet --version)",
+      "Bash(dotnet --list-sdks)",
+      "Bash(dotnet nuget:*)",
+      "Bash(dotnet package:*)",
+      "Bash(grep -v \"^$\")",
+      "Bash(dotnet build:*)",
+      "Bash(powershell:*)",
+      "Bash(dotnet test:*)",
+      "Bash(dotnet run:*)",
+      "Bash(kill %1)",
+      "Bash(wait)"
+    ]
+  }
+}

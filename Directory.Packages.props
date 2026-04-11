@@ -2,6 +2,24 @@
     <PropertyGroup>
         <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     </PropertyGroup>
+    <!-- Aspire hosting packages — 13.2.2 is the current stable release as of M1-S3 -->
+    <ItemGroup>
+        <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.2.2" />
+        <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.2.2" />
+        <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.2.2" />
+        <PackageVersion Include="Aspire.Hosting.SqlServer" Version="13.2.2" />
+    </ItemGroup>
+    <!-- Wolverine — 5.30.0 is current; Directory.Build.props WolverineVersion property is stale at 5.4.0 (flagged in retro) -->
+    <ItemGroup>
+        <PackageVersion Include="WolverineFx" Version="5.30.0" />
+        <PackageVersion Include="WolverineFx.Polecat" Version="5.30.0" />
+        <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.30.0" />
+    </ItemGroup>
+    <!-- Polecat — 2.0.1 is current -->
+    <ItemGroup>
+        <PackageVersion Include="Polecat" Version="2.0.1" />
+    </ItemGroup>
+    <!-- Test packages -->
     <ItemGroup>
         <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
         <PackageVersion Include="xunit" Version="2.9.3" />

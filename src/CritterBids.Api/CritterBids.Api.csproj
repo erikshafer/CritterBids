@@ -1,3 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
+  <ItemGroup>
+    <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.RabbitMQ" />
+    <PackageReference Include="WolverineFx.Polecat" />
+    <PackageReference Include="Polecat" />
+  </ItemGroup>
+
 </Project>

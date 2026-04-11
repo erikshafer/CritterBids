@@ -47,7 +47,7 @@ CritterBids is a **modular monolith** — a single deployable unit organized int
 - The `CritterBids.Api` host wires all modules together at startup via `AddXyzModule()` extension methods
 - All cross-BC messaging is via Wolverine — no direct handler-to-handler calls
 
-This gives the boundary enforcement of microservices without the distributed systems overhead. The full stack runs with `docker compose up` on a single VPS.
+This gives the boundary enforcement of microservices without the distributed systems overhead. The full stack runs on a single VPS.
 
 ### Bounded Contexts
 
@@ -78,7 +78,7 @@ The SQL Server BCs reflect a real organizational pattern: finance and ops data b
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
 | Frontend | React + TypeScript |
-| Containers | Docker Compose |
+| Local orchestration | .NET Aspire 13.2+ |
 | Deployment | Hetzner VPS |
 
 ---
@@ -123,13 +123,29 @@ This scenario directly shapes architectural decisions. Anonymous frictionless on
 
 ### Run Locally
 
-```bash
-# Start infrastructure (PostgreSQL, SQL Server, RabbitMQ)
-docker compose up -d
+CritterBids uses [.NET Aspire](https://learn.microsoft.com/en-us/dotnet/aspire/get-started/aspire-overview) for local orchestration. A single command starts PostgreSQL, SQL Server, RabbitMQ, and the API host — no separate `docker compose up` needed.
 
-# Run the API host
-dotnet run --project src/CritterBids.Api
+```bash
+dotnet run --project src/CritterBids.AppHost --launch-profile http
 ```
+
+The Aspire dashboard opens at `http://localhost:15237`. It shows live service health, structured logs, and distributed traces for all running resources. In Docker Desktop, the three infrastructure containers (PostgreSQL, SQL Server, RabbitMQ) appear grouped under **critterbids** in the Containers view.
+
+#### HTTPS dashboard (optional)
+
+To use the HTTPS profile instead, first trust the .NET development certificate if you haven't already:
+
+```bash
+dotnet dev-certs https --trust
+```
+
+Then run with the https profile:
+
+```bash
+dotnet run --project src/CritterBids.AppHost --launch-profile https
+```
+
+The dashboard will be at `https://localhost:17019`.
 
 The participant frontend (`critterbids-web`) and ops dashboard (`critterbids-ops`) are separate React apps in `src/frontend/`.
 
@@ -140,6 +156,7 @@ The participant frontend (`critterbids-web`) and ops dashboard (`critterbids-ops
 ```
 CritterBids/
 ├── src/
+│   ├── CritterBids.AppHost/      # .NET Aspire orchestration — local dev entry point
 │   ├── CritterBids.Api/          # Host — wires all BC modules together
 │   ├── CritterBids.Contracts/    # Shared integration event types (the BC public API)
 │   ├── CritterBids.Auctions/     # Auctions BC
