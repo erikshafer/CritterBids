@@ -2,6 +2,10 @@
 
 Patterns and conventions for building message handlers and HTTP endpoints with Wolverine in the Critter Stack.
 
+> **Marten vs Polecat BCs:** Most patterns in this file apply equally to both. The key namespace difference:
+> `using Wolverine.Marten` for PostgreSQL BCs, `using Wolverine.Polecat` for SQL Server BCs.
+> Wherever `MartenOps` appears below, substitute `PolecatOps` for Polecat BCs. See `docs/skills/polecat-event-sourcing.md`.
+
 ---
 
 ## Table of Contents
@@ -27,7 +31,7 @@ Wolverine's aggregate handler workflow implements the **Decider pattern** — a 
 
 1. **Load** — Fetch current aggregate state (Wolverine handles this)
 2. **Decide** — Pure function: `(Command, State) → Events` (your `Handle()` method)
-3. **Evolve** — Apply events to update state (Marten handles this via `Apply()` methods)
+3. **Evolve** — Apply events to update state (Marten/Polecat handles this via `Apply()` methods)
 
 Aggregates are immutable write models — "always valid" in structure. Validation happens in handlers, not aggregates. `Handle()` methods are pure functions focused solely on business logic.
 
@@ -240,10 +244,19 @@ public static class OpenBiddingHandler
 
 ## Entity and Document Loading
 
-Load Marten documents (non-event-sourced) using `[Entity]`:
+Load documents (non-event-sourced) using `[Entity]` (Marten BCs) or `[Document]` (Polecat BCs):
 
 ```csharp
+// Marten BC — [Entity] from Wolverine.Http.Marten
 public static ProblemDetails Before(UpdateSomething cmd, [Entity] SomeDocument? doc)
+{
+    if (doc is null)
+        return new ProblemDetails { Detail = "Not found", Status = 404 };
+    return WolverineContinue.NoProblems;
+}
+
+// Polecat BC — [Document] from Wolverine.Http.Polecat (functionally identical)
+public static ProblemDetails Before(UpdateSomething cmd, [Document] SomeDocument? doc)
 {
     if (doc is null)
         return new ProblemDetails { Detail = "Not found", Status = 404 };
@@ -251,7 +264,7 @@ public static ProblemDetails Before(UpdateSomething cmd, [Entity] SomeDocument? 
 }
 ```
 
-ID resolution: property named `{EntityName}Id`, `[Identity]` attribute, or HTTP route parameter.
+ID resolution for both: property named `{EntityName}Id`, `[Identity]` attribute, or HTTP route parameter.
 
 ---
 
@@ -270,17 +283,27 @@ ID resolution: property named `{EntityName}Id`, `[Identity]` attribute, or HTTP 
 
 ### Start New Stream
 
-**⚠️ CRITICAL:** Handlers creating new event streams MUST return `IStartStream` from `MartenOps.StartStream()`. Direct `session.Events.StartStream()` silently discards events. See Anti-Pattern #9.
+**⚠️ CRITICAL:** Handlers creating new event streams MUST return `IStartStream` from `MartenOps.StartStream()` (Marten BCs) or `PolecatOps.StartStream()` (Polecat BCs). Direct `session.Events.StartStream()` silently discards events. See Anti-Pattern #9.
 
 ```csharp
-// Message handler
+// Marten BC — using Wolverine.Marten
 public static IStartStream Handle(PublishListing cmd)
 {
     var listingId = Guid.CreateVersion7();
     return MartenOps.StartStream<Listing>(listingId, new ListingPublished(listingId, cmd.SellerId, ...));
 }
 
-// HTTP endpoint
+// Polecat BC — using Wolverine.Polecat (identical pattern)
+public static IStartStream Handle(RegisterParticipant cmd)
+{
+    var participantId = Guid.CreateVersion7();
+    return PolecatOps.StartStream<Participant>(participantId, new ParticipantRegistered(participantId, ...));
+}
+```
+
+HTTP endpoint (same tuple pattern for both):
+
+```csharp
 [WolverinePost("/api/listings")]
 public static (CreationResponse<Guid>, IStartStream) Handle(PublishListing cmd)
 {
@@ -294,7 +317,7 @@ public static (CreationResponse<Guid>, IStartStream) Handle(PublishListing cmd)
 
 ### Full Triple-Tuple (HTTP + Events + Messages)
 
-Wolverine commits all three atomically — event append and outbox enrollment in a single Marten transaction:
+Wolverine commits all three atomically — event append and outbox enrollment in a single transaction:
 
 ```csharp
 [WolverinePost("/api/listings/{listingId}/close")]
@@ -575,13 +598,22 @@ public static CreationResponse Handle(CreateListing cmd, IDocumentSession sessio
     return new CreationResponse($"/api/listings/{id}");
 }
 
-// ✅ CORRECT — return IStartStream
+// ✅ CORRECT — Marten BC (using Wolverine.Marten)
 [WolverinePost("/api/listings")]
 public static (CreationResponse, IStartStream) Handle(CreateListing cmd)
 {
     var id = Guid.CreateVersion7();
     var stream = MartenOps.StartStream<Listing>(id, new ListingPublished(...));
     return (new CreationResponse($"/api/listings/{id}"), stream);
+}
+
+// ✅ CORRECT — Polecat BC (using Wolverine.Polecat — identical pattern)
+[WolverinePost("/api/participants")]
+public static (CreationResponse, IStartStream) Handle(RegisterParticipant cmd)
+{
+    var id = Guid.CreateVersion7();
+    var stream = PolecatOps.StartStream<Participant>(id, new ParticipantRegistered(...));
+    return (new CreationResponse($"/api/participants/{id}"), stream);
 }
 ```
 
@@ -602,10 +634,10 @@ await bus.PublishAsync(new SomeIntegrationEvent(...)); // Fires even if DB rolls
 // ✅ CORRECT — enrolled in transactional outbox
 var outgoing = new OutgoingMessages();
 outgoing.Add(new SomeIntegrationEvent(...));
-return (Results.Ok(), outgoing); // Committed with the Marten session
+return (Results.Ok(), outgoing); // Committed with the Marten/Polecat session
 ```
 
-`OutgoingMessages` is processed within the same Wolverine middleware that commits the Marten session. `bus.PublishAsync()` sends immediately outside this boundary — messages can be published even when the DB transaction fails.
+`OutgoingMessages` is processed within the same Wolverine middleware that commits the session. `bus.PublishAsync()` sends immediately outside this boundary — messages can be published even when the DB transaction fails.
 
 **Exception:** `bus.ScheduleAsync()` remains valid — delayed delivery cannot be expressed via `OutgoingMessages`.
 
@@ -634,7 +666,7 @@ public static async Task Handle(SomeCmd cmd, IDocumentSession session, IMessageB
 }
 ```
 
-Wolverine cascades from messages **returned** from `Handle()`. Events written via `session.Events.Append()` go directly to Marten's unit-of-work — invisible to the cascade pipeline. No error, no warning — the downstream handler simply never fires.
+Wolverine cascades from messages **returned** from `Handle()`. Events written via `session.Events.Append()` go directly to the unit-of-work — invisible to the cascade pipeline. No error, no warning — the downstream handler simply never fires.
 
 **Rules for inline cascade:**
 - Use `bus.InvokeAsync()` (not `bus.PublishAsync()`) — synchronous within the handler
@@ -667,6 +699,7 @@ Features/
 ## References
 
 - [Wolverine Message Handlers Guide](https://wolverinefx.net/guide/handlers/)
-- [Wolverine Aggregate Handler Workflow](https://wolverinefx.net/guide/durability/marten/event-sourcing.html)
+- [Wolverine + Marten Aggregate Handler Workflow](https://wolverinefx.net/guide/durability/marten/event-sourcing.html)
+- [Wolverine + Polecat Aggregate Handler Workflow](https://wolverinefx.net/guide/durability/polecat/event-sourcing)
 - [Railway Programming with Wolverine](https://wolverinefx.net/tutorials/railway-programming.html)
 - [Functional Event Sourcing Decider](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)

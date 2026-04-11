@@ -34,7 +34,7 @@ Do **not** reach for DCB when a single aggregate stream is sufficient. It adds m
 
 ### `EventTagQuery`
 
-A fluent API specifying which tagged events to load from Marten before your handler runs. Defined in a `Load()` method on your handler class.
+A fluent API specifying which tagged events to load from Marten/Polecat before your handler runs. Defined in a `Load()` method on your handler class.
 
 ```csharp
 public static EventTagQuery Load(PlaceBid command)
@@ -45,7 +45,7 @@ public static EventTagQuery Load(PlaceBid command)
         .AndEventsOfType<ParticipantSessionStarted>();
 ```
 
-Marten loads all events matching **any** tag criteria and projects them into your aggregate state via the standard `Apply()` methods.
+The event store loads all events matching **any** tag criteria and projects them into your aggregate state via the standard `Apply()` methods.
 
 ### `[BoundaryModel]` Attribute
 
@@ -99,18 +99,21 @@ The DCB workflow supports the same return patterns as the standard aggregate han
 
 ### Concurrency
 
-Wolverine/Marten enforces optimistic concurrency using the same tag query that loaded events. If any matching event was appended between your load and your save, Marten throws `DcbConcurrencyException`. No saga coordination, no compensating events.
+Wolverine/Marten (or Wolverine/Polecat) enforces optimistic concurrency using the same tag query that loaded events. If any matching event was appended between your load and your save, an exception is thrown. No saga coordination, no compensating events.
+
+- **Marten:** throws `DcbConcurrencyException` (from `Marten.Exceptions`)
+- **Polecat:** throws `DcbConcurrencyException` (from `Polecat.Events.Dcb`) — same type name, different namespace
 
 ---
 
 ## The Boundary State Aggregate
 
-A plain class with `Apply()` methods, projecting events from **multiple logical streams** because Marten loads by tag, not by stream ID.
+A plain class with `Apply()` methods, projecting events from **multiple logical streams** because the event store loads by tag, not by stream ID.
 
 ```csharp
 public class BidConsistencyState
 {
-    // Required by Marten — boundary models are registered as documents
+    // Required by Marten/Polecat — boundary models are registered as documents
     public Guid Id { get; set; }
 
     // From Listing stream
@@ -171,9 +174,10 @@ public sealed record ListingStreamId(Guid Value);
 public sealed record BidderStreamId(Guid Value);
 ```
 
-**2. Register tag types in the BC's `AddXyzModule()` Marten configuration:**
+**2. Register tag types in the BC's Marten/Polecat configuration:**
 
 ```csharp
+// Marten or Polecat — same API
 opts.Events.RegisterTagType<ListingStreamId>("listing").ForAggregate<Listing>();
 opts.Events.RegisterTagType<BidderStreamId>("bidder").ForAggregate<ParticipantSession>();
 ```
@@ -189,13 +193,21 @@ opts.OnException<DcbConcurrencyException>()
 
 **4. Tag events explicitly in every handler writing to DCB-managed streams.** `[WriteAggregate]`, `IStartStream`, and raw `session.Events.Append(streamId, rawObject)` do NOT populate tag tables.
 
+The tagging API differs between Marten and Polecat:
+
 ```csharp
+// Marten — AddTag()
 var wrapped = session.Events.BuildEvent(evt);
 wrapped.AddTag(new ListingStreamId(listingId));
 session.Events.Append(listingId, wrapped);
+
+// Polecat — WithTag() (variadic, can tag multiple in one call)
+var wrapped = session.Events.BuildEvent(evt);
+wrapped.WithTag(new ListingStreamId(listingId), new BidderStreamId(bidderId));
+session.Events.Append(listingId, wrapped);
 ```
 
-**5. Define the boundary state class** with `Apply()` methods for all event types from both streams. Include `public Guid Id { get; set; }` — without it, `DeleteAllDocumentsAsync()` throws during test cleanup.
+**5. Define the boundary state class** with `Apply()` methods for all event types from both streams. Include `public Guid Id { get; set; }` — without it, test cleanup operations throw during teardown causing cascading failures.
 
 **6. Write the DCB handler with three methods:**
 - `Load()` returning `EventTagQuery` — spans both streams
@@ -206,17 +218,26 @@ session.Events.Append(listingId, wrapped);
 
 ## Gotchas and Non-Obvious Behavior
 
-**`StartStream` drops tags.** When passing a pre-tagged `IEvent` to `StartStream`, Marten re-wraps the object and drops the tags. Use `Append` instead — it correctly preserves pre-wrapped `IEvent` objects. Streams are created implicitly on first append.
+**`StartStream` drops tags.** When passing a pre-tagged `IEvent` to `StartStream`, the store re-wraps the object and drops the tags. Use `Append` instead — it correctly preserves pre-wrapped `IEvent` objects. Streams are created implicitly on first append.
 
 **`AndEventsOfType` is required, not optional.** Calling `.For(tagValue)` or `.Or(tagValue)` alone creates no query condition. Each tag arm must be followed by `.AndEventsOfType<T1, T2, ...>()`. Without it, `FetchForWritingByTags` throws `ArgumentException` at runtime.
 
 **`[BoundaryModel]` on `Handle()` only.** Adding it to `Before()` as well causes Wolverine codegen error CS0128 (duplicate local variable in generated code). `Before()` receives the projected state as a plain parameter automatically.
 
-**`DcbConcurrencyException` vs `ConcurrencyException` are separate types.** `DcbConcurrencyException` inherits from `Marten.Exceptions.MartenException`. `ConcurrencyException` is `JasperFx.ConcurrencyException`. Catching one does not catch the other.
+**`DcbConcurrencyException` vs `ConcurrencyException` are separate types, and Marten vs Polecat namespaces differ.**
 
-**Tag tables are strictly opt-in at write time.** Every handler appending to a DCB-managed stream must use `BuildEvent()` + `AddTag()` + `Append()` (or `boundary.AppendOne()` in the DCB handler itself).
+| | Marten | Polecat |
+|---|---|---|
+| `DcbConcurrencyException` | `Marten.Exceptions.MartenException` subclass | `Polecat.Events.Dcb.DcbConcurrencyException` |
+| `ConcurrencyException` | `JasperFx.ConcurrencyException` | `JasperFx.ConcurrencyException` (same) |
 
-**Boundary models need a `Guid Id` property.** Without it, `DeleteAllDocumentsAsync()` throws `InvalidDocumentException` during test cleanup, causing cascading test failures.
+Catching one does not catch the other. Both need explicit retry policies regardless of store.
+
+**Tagging API differs between Marten and Polecat.** Use `wrapped.AddTag(tagValue)` for Marten, `wrapped.WithTag(tagValues...)` for Polecat. See step 4 in the implementation checklist above.
+
+**Tag tables are strictly opt-in at write time.** Every handler appending to a DCB-managed stream must use `BuildEvent()` + `AddTag()`/`WithTag()` + `Append()` (or `boundary.AppendOne()` in the DCB handler itself).
+
+**Boundary models need a `Guid Id` property.** Without it, test cleanup operations throw `InvalidDocumentException` during teardown, causing cascading test failures.
 
 ---
 
@@ -247,5 +268,6 @@ The `BidConsistencyState` boundary model (shown above) projects the relevant fac
 ## References
 
 - [dcb.events](https://dcb.events/) — pattern specification
-- [Wolverine Docs: DCB section](https://wolverinefx.io/guide/durability/marten/event-sourcing.html#dynamic-consistency-boundary-dcb)
+- [Wolverine Docs: DCB with Marten](https://wolverinefx.io/guide/durability/marten/event-sourcing.html#dynamic-consistency-boundary-dcb)
+- [Wolverine Docs: DCB with Polecat](https://wolverinefx.net/guide/durability/polecat/event-sourcing)
 - [Sara Pellegrini — "Killing the Aggregate"](https://sara.event-thinking.io/2023/04/kill-aggregate-chapter-1-I-will-tell-you-a-story.html)
