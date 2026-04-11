@@ -165,7 +165,6 @@ Each test asserts against both (a) the HTTP response shape and (b) the Polecat e
 | ID | Question | Disposition |
 |---|---|---|
 | M1-D1 | Real authentication scheme | **Deferred.** M1 uses `[AllowAnonymous]`. Revisit when frontend milestone (M6) plans the auth story. |
-| M1-D2 | Display name uniqueness strategy (collision-check vs retry-on-collision generation) | **M1-internal, non-blocking.** Resolve at start of session 1 (infra session). Both approaches satisfy scenario 0.2; the choice is implementation, not scope. |
 | M1-D3 | UUID v7 for event row IDs and high-write projection IDs | **Leaning adopt; ADR Proposed.** Authored in session 5 as `docs/decisions/0001-uuid-strategy.md`. Stream IDs stay v5 (determinism is load-bearing). v7 is a legitimate consideration for high-write tables — primarily Auctions bid events and Listings projections — because its Unix-ms prefix gives insert locality and composes well with Postgres range partitioning. Acceptance gates before moving from Proposed to Accepted: (a) verify Marten 8 / Polecat 2 expose event row ID generation at all; (b) verify v7 support or path to it; (c) JasperFx team input. Not blocking M1 — Participants is low-write and M1 doesn't touch Auctions. Re-surfaces naturally at M3 (Auctions BC). |
 | M1-D4 | Polecat namespace GUID for Participants stream IDs | **TODO at session 2.** Generate once, pin as constant in code. |
 | M1-D5 | CLAUDE.md cleanup: Marten-specific wording of `AutoApplyTransactions` rule | **Deferred cleanup.** Track, address when conventions stabilize. |
@@ -174,16 +173,17 @@ Each test asserts against both (a) the HTTP response shape and (b) the Polecat e
 
 ## 9. Session Breakdown
 
-One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Five sessions planned.
+One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session corresponds to a prompt file under `docs/prompts/`, named `M1-S{n}-{summary}.md`. The prompt file is authoritative for that session's scope; the table below exists only to show sequence and shape. The ten rules in `docs/prompts/README.md` govern how prompts are authored.
 
-| # | Session | Deliverable |
+| # | Prompt file | Scope summary |
 |---|---|---|
-| 1 | **AppHost + solution baseline** | Aspire wiring for Postgres + SQL Server + RabbitMQ; solution, project layout, and `Directory.Packages.props`; `CritterBids.Api` and `CritterBids.Participants` scaffolded but empty; test projects created per Layout 2; `docker-compose.yml` fallback authored; M1-D2 resolved at session start |
-| 2 | **Participants BC scaffold** | Polecat configuration for Participants; first empty `Participant` aggregate; `AddParticipantsModule()` extension established; UUID v5 namespace constant pinned (resolves M1-D4); `AutoApplyTransactions` pinned for Polecat |
-| 3 | **Slice 0.2 — StartParticipantSession** | Command, event, handler, HTTP endpoint; unit tests; Alba integration tests mapping to the 2 scenarios in `001-scenarios.md` §0.2 |
-| 4 | **Slice 0.3 — RegisterAsSeller** | Command, event, handler, HTTP endpoint; unit + integration tests mapping to the 3 scenarios in `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages` (no M1 consumer) |
-| 5 | **Skills + ADR + MCP discovery note** | `docs/skills/aspire.md` authored retrospectively from sessions 1–4; `docs/skills/polecat-event-sourcing.md` filled in from 🟡 → ✅; Aspire MCP discovery note (candidate servers tracked, no integration committed); `docs/decisions/0001-uuid-strategy.md` authored as Proposed |
+| 1 | `docs/prompts/M1-S1-solution-baseline.md` | Solution file, `CritterBids.Api` + `CritterBids.Contracts` projects, Layout 2 test projects, `Directory.Packages.props` with minimal xUnit + Shouldly pins. **No Aspire, no Compose, no BCs.** |
+| 2 | *TBD* | Infrastructure baseline — Aspire-vs-Compose decision, Postgres + SQL Server + RabbitMQ wiring, Wolverine + Polecat host configuration. |
+| 3 | *TBD* | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
+| 4 | *TBD* | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
+| 5 | *TBD* | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
+| 6 | *TBD* | Retrospective skills + ADR — `aspire.md`, `polecat-event-sourcing.md` 🟡 → ✅, Aspire MCP discovery note, `docs/decisions/0001-uuid-strategy.md` as Proposed. |
 
-**Session 1/2 merge note:** If session 1 scope allows (Aspire wiring goes smoothly, baseline lands quickly), session 2 may merge into session 1 as a single PR. Do not force the merge — if session 1 hits any Aspire friction worth capturing for the skill doc, keep them separate. The retrospective should note which path was taken and why.
+Sessions are intentionally small. Merging is discouraged — the ten rules treat "one prompt equals one PR" as the primary constraint. If a session's scope collapses during implementation, split work off rather than absorbing the next session's scope.
 
-**Session 5 positioning:** Session 5 is deliberately retrospective. Skills and the ADR are authored from what was learned in sessions 1–4, not speculated up front. This is a convention for all future milestones where new skill docs are a deliverable.
+**Retrospective-session positioning:** The final session in each milestone is deliberately retrospective. Skills and ADRs are authored from what was learned during implementation, not speculated up front. This is a convention for all future milestones where new skill docs are a deliverable. M1 retrospectives also feed back into `docs/prompts/README.md` — the prompt template and the ten rules are expected to move as M1 sessions reveal what works and what doesn't.
