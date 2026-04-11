@@ -14,11 +14,11 @@ anything here as frozen until M1 is closed out.
 ## Naming convention
 
 ```
-M{milestone}-S{slice}[{letter}]-{kebab-case-summary}-retrospective.md
+M{milestone}-S{slice}[{letter}]-{kebab-case-summary}.md
 ```
 
-Examples: `M1-S1-solution-baseline-retrospective.md`,
-`M1-S2-participants-bc-scaffold-retrospective.md`. The `letter` suffix is
+Examples: `M1-S1-solution-baseline.md`,
+`M1-S2-participants-bc-scaffold.md`. The `letter` suffix is
 reserved for follow-up sessions that revise or replace the prior session's
 output (e.g. `S1B` replacing `S1` after a workaround is swapped for the real
 implementation). The slug mirrors the matching prompt filename so prompt and

@@ -15,7 +15,7 @@ Resolve the Aspire-vs-Compose decision that M1-S2 inherited from planning. The M
 - `CLAUDE.md` — current routing-layer description of the local-dev story (`docker compose up` + `dotnet run`)
 - `docs/prompts/README.md` — the ten rules this prompt obeys
 - `docs/prompts/M1-S1-solution-baseline.md` — prior session's prompt, for format and conflict-review language carried forward
-- `docs/retrospectives/M1-S1-solution-baseline-retrospective.md` — prior session's retro, for any M1-S1 findings relevant to this session
+- `docs/retrospectives/M1-S1-solution-baseline.md` — prior session's retro, for any M1-S1 findings relevant to this session
 - Existing ADRs under `docs/decisions/` — for format reference and for decisions this ADR must be consistent with. Specifically: `001-modular-monolith.md`, `002-rabbitmq-first.md` (RabbitMQ is the settled transport — the orchestration path must provision it), `003-polecat-bcs.md` (Polecat + SQL Server is a settled BC storage choice — the orchestration path must provision SQL Server), `004-react-frontend.md`, `005-contract-versioning.md`. The next free ADR number is **006**, so this ADR is `006-infrastructure-orchestration.md`.
 - Note: `M1-skeleton.md` §8 M1-D3 refers to a `0001-uuid-strategy.md` path that predates the actual ADR numbering convention (three-digit, not four-digit) and is therefore subtly stale. Do not fix that staleness in this session — it is out of scope and will be corrected when the UUID ADR is actually authored.
 
