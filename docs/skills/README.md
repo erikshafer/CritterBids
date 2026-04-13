@@ -15,22 +15,23 @@ Skills are living documents. When a new pattern is established or an existing on
 
 ## Skill Status
 
-| Skill | File | Status | Source |
-|---|---|---|---|
-| Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply |
-| Wolverine sagas | `wolverine-sagas.md` | ✅ Complete | Extracted from CritterSupply |
-| Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply |
-| Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids |
-| Polecat event sourcing | `polecat-event-sourcing.md` | 🟡 Placeholder — fill in during first Polecat BC | New |
-| Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply |
-| Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply |
-| SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply |
-| Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply |
-| C# coding standards | `csharp-coding-standards.md` | ✅ Complete | Extracted from CritterSupply |
-| Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
-| Adding a BC module | `adding-bc-module.md` | 🔴 Not yet written | New — modular monolith specific |
-| React frontend | `react-frontend.md` | 🔴 Not yet written | New |
-| Domain event conventions | `domain-event-conventions.md` | 🔴 Not yet written | New |
+| Skill | File | Status | Source                                           |
+|---|---|---|--------------------------------------------------|
+| Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Wolverine sagas | `wolverine-sagas.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids                   |
+| Marten querying | `marten-querying.md` | ✅ Complete | Authored from Marten docs + Jeremy Miller's blog |
+| Polecat event sourcing | `polecat-event-sourcing.md` | 🟡 Placeholder — fill in during first Polecat BC | New                                              |
+| Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply                     |
+| SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply                     |
+| C# coding standards | `csharp-coding-standards.md` | ✅ Complete | Extracted from CritterSupply                     |
+| Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared                                           |
+| Adding a BC module | `adding-bc-module.md` | 🔴 Not yet written | New — modular monolith specific                  |
+| React frontend | `react-frontend.md` | 🔴 Not yet written | New                                              |
+| Domain event conventions | `domain-event-conventions.md` | 🔴 Not yet written | New                                              |
 
 **Status key:**
 - ✅ Complete and ready to use
@@ -53,6 +54,9 @@ Skills are living documents. When a new pattern is established or an existing on
 | Event-sourced aggregate (Polecat) | `polecat-event-sourcing.md` | `marten-event-sourcing.md` |
 | Marten native projection | `marten-event-sourcing.md` | — |
 | EF Core projection (Marten or Polecat) | `marten-projections.md` | `polecat-event-sourcing.md` |
+| Read model query (LINQ / compiled / batched) | `marten-querying.md` | `csharp-coding-standards.md` |
+| JSON streaming to HTTP response | `marten-querying.md` | `wolverine-message-handlers.md` |
+| Raw SQL / advanced SQL query | `marten-querying.md` | — |
 | DCB boundary model | `dynamic-consistency-boundary.md` | `marten-event-sourcing.md` |
 | Integration event (cross-BC) | `integration-messaging.md` | `domain-event-conventions.md` |
 | SignalR hub + real-time push | `wolverine-signalr.md` | — |
@@ -66,6 +70,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Unit test (pure handler logic) | `critter-stack-testing-patterns.md` | — |
 | Saga test | `wolverine-sagas.md` | `critter-stack-testing-patterns.md` |
 | EF Core projection test | `marten-projections.md` | `critter-stack-testing-patterns.md` |
+| Compiled query correctness | `marten-querying.md` | `critter-stack-testing-patterns.md` |
 | SignalR integration test | `wolverine-signalr.md` | `critter-stack-testing-patterns.md` |
 
 ### Frontend
