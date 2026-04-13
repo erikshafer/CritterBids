@@ -18,7 +18,10 @@
       "WebFetch(domain:wolverinefx.net)",
       "WebFetch(domain:github.com)",
       "WebFetch(domain:jeremydmiller.com)",
-      "Bash(dotnet script:*)"
+      "Bash(dotnet script:*)",
+      "Bash(python3 -c \"import json,sys; data=json.load\\(sys.stdin\\); [print\\(k\\) for k in data.get\\('libraries',{}\\).keys\\(\\) if 'marten' in k.lower\\(\\) or 'polecat' in k.lower\\(\\) or 'jasper' in k.lower\\(\\)]\")",
+      "Bash(dotnet tool:*)",
+      "Bash(pwd -W)"
     ]
   }
 }
