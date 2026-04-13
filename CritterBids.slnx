@@ -3,9 +3,11 @@
     <Project Path="src/CritterBids.AppHost/CritterBids.AppHost.csproj" />
     <Project Path="src/CritterBids.Api/CritterBids.Api.csproj" />
     <Project Path="src/CritterBids.Contracts/CritterBids.Contracts.csproj" />
+    <Project Path="src/CritterBids.Participants/CritterBids.Participants.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj" />
     <Project Path="tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj" />
+    <Project Path="tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj" />
   </Folder>
 </Solution>
