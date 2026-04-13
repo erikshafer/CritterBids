@@ -176,7 +176,7 @@ One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session
 | 2 | `docs/prompts/M1-S2-infrastructure-orchestration-adr.md` | Infrastructure orchestration ADR — Aspire-vs-Compose decision resolved as ADR 006. Documentation only; no code, no projects created. |
 | 3 | `docs/prompts/M1-S3-infrastructure-baseline.md` | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
 | 4 | `docs/prompts/M1-S4-participants-bc-scaffold.md` | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
-| 5 | *TBD* | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
+| 5 | `docs/prompts/M1-S5-slice-0-2-start-participant-session.md` | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
 | 6 | *TBD* | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
 | 7 | *TBD* | Retrospective skills + ADR — `aspire.md`, `polecat-event-sourcing.md` 🟡 → ✅, Aspire MCP discovery note, `docs/decisions/0001-uuid-strategy.md` as Proposed. |
 
