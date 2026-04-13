@@ -1,3 +1,4 @@
+using CritterBids.Participants;
 using Polecat;
 using Wolverine;
 using Wolverine.Polecat;
@@ -18,16 +19,19 @@ builder.UseWolverine(opts =>
     opts.Policies.AutoApplyTransactions();
 });
 
+var sqlServerConnectionString = builder.Configuration.GetConnectionString("sqlserver")
+    ?? throw new InvalidOperationException("SQL Server connection string not found. Run via CritterBids.AppHost.");
+
 builder.Services.AddPolecat(opts =>
 {
     // SQL Server — connection string injected by Aspire via WithReference(sqlServer).
-    opts.ConnectionString = builder.Configuration.GetConnectionString("sqlserver")
-        ?? throw new InvalidOperationException("SQL Server connection string not found. Run via CritterBids.AppHost.");
-
-    // No stream registration here — that is M1-S4's job (Participants BC scaffold).
-    // No database schema name set here — each BC sets its own schema in AddXyzModule().
+    // No schema name set here — each BC sets its own schema via ConfigurePolecat() in AddXyzModule().
+    opts.ConnectionString = sqlServerConnectionString;
 })
 .IntegrateWithWolverine();
+
+// Participants BC — configures Polecat schema "participants" and stream identity via ConfigurePolecat().
+builder.Services.AddParticipantsModule(sqlServerConnectionString);
 
 var app = builder.Build();
 app.Run();

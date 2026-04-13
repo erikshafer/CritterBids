@@ -7,4 +7,8 @@
     <PackageReference Include="Polecat" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\CritterBids.Participants\CritterBids.Participants.csproj" />
+  </ItemGroup>
+
 </Project>

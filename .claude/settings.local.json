@@ -12,7 +12,13 @@
       "Bash(dotnet test:*)",
       "Bash(dotnet run:*)",
       "Bash(kill %1)",
-      "Bash(wait)"
+      "Bash(wait)",
+      "WebSearch",
+      "WebFetch(domain:polecat.netlify.app)",
+      "WebFetch(domain:wolverinefx.net)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:jeremydmiller.com)",
+      "Bash(dotnet script:*)"
     ]
   }
 }
