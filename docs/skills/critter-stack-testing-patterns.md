@@ -21,6 +21,7 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 13. [Test Organization](#test-organization)
 14. [Key Principles](#key-principles)
 15. [Polecat BC TestFixture Pattern](#polecat-bc-testfixture-pattern)
+16. [Cross-BC Handler Isolation in Test Fixtures](#cross-bc-handler-isolation-in-test-fixtures)
 
 ---
 
@@ -768,12 +769,130 @@ var store = host.Services.DocumentStore();           // Extension on IServicePro
 
 ---
 
+## Cross-BC Handler Isolation in Test Fixtures
+
+When a test fixture boots `AlbaHost.For<Program>()`, Wolverine's handler discovery scans all
+assemblies referenced by the solution — including BC assemblies that are not provisioned in
+that fixture. This causes two distinct failure modes that require explicit suppression.
+
+### Problem 1: Foreign-BC handlers discovered but infrastructure absent
+
+When BC-A's test fixture starts, it loads BC-B's assembly (included via `Program.cs`
+`opts.Discovery.IncludeAssembly(...)`) but does not provision BC-B's infrastructure
+(no Testcontainers for BC-B's database). BC-B's handlers are discovered by Wolverine,
+and when a message matching a BC-B handler type is dispatched, Wolverine attempts to
+inject BC-B's `IBcDocumentStore` — which is absent from DI because BC-B's module returned
+early (no connection string). This causes a code-gen or runtime injection error.
+
+**Fix: register an `IWolverineExtension` singleton that excludes foreign-BC handlers.**
+
+```csharp
+// In ParticipantsTestFixture.cs, inside builder.ConfigureServices:
+services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
+
+// Defined as an internal sealed class in the fixture file:
+internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Selling BC inactive — exclude handlers (no postgres in Participants fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+    }
+}
+```
+
+The `WithCondition` overload that accepts a label string is preferred — it appears in
+Wolverine diagnostic output and makes the exclusion reason visible in test run logs.
+
+### Problem 2: Cross-BC integration messages dropped before `tracked.Sent` records them
+
+When a handler publishes an integration event via `OutgoingMessages` and the event's routing
+rule points at a foreign-BC transport that is disabled in the fixture
+(`DisableAllExternalWolverineTransports()`), Wolverine calls `NoRoutesFor(envelope)` before
+any `ISendingAgent` is invoked. `tracked.Sent.MessagesOf<T>()` returns 0, even though the
+message was correctly added to `OutgoingMessages`.
+
+This is distinct from Anti-Pattern #14 in `docs/skills/wolverine-message-handlers.md`, which
+covers a message type with **no** routing rule in production `Program.cs`. This pattern applies
+to message types that **have** a production rule pointing at a transport not available in tests.
+
+**Fix: add a stub local queue routing rule in the same `IWolverineExtension`.**
+
+```csharp
+internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        // Exclude the handler (no ISellingDocumentStore in DI)
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Selling BC inactive — exclude handlers (no postgres in Participants fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+
+        // Route SellerRegistrationCompleted to a stub local queue so tracked.Sent captures it.
+        // Without a routing rule, Wolverine calls NoRoutesFor() before any ISendingAgent fires.
+        // The handler is excluded above, so the message is delivered and silently dropped —
+        // matching pre-registration placeholder behavior.
+        options.PublishMessage<SellerRegistrationCompleted>()
+            .ToLocalQueue("selling-participants-stub");
+    }
+}
+```
+
+The stub queue needs no handler. Wolverine's `NoHandlerContinuation` records `NoHandlers` then
+`MessageSucceeded` — no exception thrown, `DoNotAssertOnExceptionsDetected` is not needed.
+
+### Naming convention
+
+Name the `IWolverineExtension` after the BC being excluded, not the fixture registering it:
+`SellingBcDiscoveryExclusion`, not `ParticipantsTestExclusion`. This makes the intent clear
+when multiple fixtures use the same exclusion class.
+
+### `ConfigureAppConfiguration` timing caveat
+
+`ConfigureAppConfiguration` in test fixtures runs during `WebApplication.CreateBuilder()` —
+before any module registration that reads `IConfiguration`. This is the correct hook for
+injecting connection strings that gate module registration via null-connection-string guards:
+
+```csharp
+builder.ConfigureAppConfiguration((_, config) =>
+{
+    config.AddInMemoryCollection(new Dictionary<string, string?>
+    {
+        ["ConnectionStrings:critterbids-postgres"] = postgresConnectionString
+    });
+});
+```
+
+However, `ConfigureAppConfiguration` does **not** help when the fixture's goal is to suppress
+a BC's registration. If BC-B's module uses `if (string.IsNullOrEmpty(connectionString)) return;`
+and the fixture provides the production connection string via `ConfigureAppConfiguration`, BC-B
+will register fully — including its handlers. To suppress discovery, omit `ConfigureAppConfiguration`
+for BC-B's connection string and rely on the `IWolverineExtension` exclusion above.
+
+The canonical example of both patterns together is
+`tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` (provides postgres via
+`ConfigureAppConfiguration` to enable the Selling BC) and
+`tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` (omits postgres to
+suppress the Selling BC, then adds `SellingBcDiscoveryExclusion`).
+
+---
+
 ## References
 
 - `docs/skills/marten-event-sourcing.md` — event sourcing race conditions, projection behavior
+- `docs/skills/marten-named-stores.md` — named-store constraints, handler patterns, fixture override rules
 - `docs/skills/adding-bc-module.md` — BC module registration, named store patterns
 - `docs/skills/wolverine-sagas.md` — saga testing patterns
-- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior
+- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior (see Anti-Patterns #14, #15)
 - `docs/decisions/0002-marten-bc-isolation.md` — named store ADR, test fixture override pattern
+- `tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` — canonical Marten fixture with cross-BC isolation
+- `tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` — canonical Polecat fixture with `IWolverineExtension` exclusion
 - [Alba HTTP Testing](https://jasperfx.github.io/alba/)
 - [Testcontainers .NET](https://dotnet.testcontainers.org/)

@@ -27,8 +27,9 @@ builder.UseWolverine(opts =>
     opts.Durability.MessageStorageSchemaName = "wolverine";
 
     // BC handler/endpoint discovery — add each BC assembly so Wolverine HTTP finds
-    // [WolverinePost]/[WolverineGet] endpoints defined in BC class libraries.
+    // [WolverinePost]/[WolverineGet] endpoints and message handlers defined in BC class libraries.
     opts.Discovery.IncludeAssembly(typeof(Participant).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
 
     // RabbitMQ transport — connection string injected by Aspire via WithReference(rabbitMq).
     // Format: amqp://username:password@host:port
@@ -38,16 +39,19 @@ builder.UseWolverine(opts =>
     if (!string.IsNullOrEmpty(rabbitMqUri))
     {
         opts.UseRabbitMq(new Uri(rabbitMqUri));
+
+        // Selling BC ← Participants BC: SellerRegistrationCompleted
+        // Queue name: <consumer>-<publisher>-<category> per integration-messaging.md
+        // Participants BC publishes; Selling BC subscribes and upserts RegisteredSeller docs.
+        opts.PublishMessage<SellerRegistrationCompleted>()
+            .ToRabbitQueue("selling-participants-events");
+        opts.ListenToRabbitQueue("selling-participants-events")
+            .ProcessInline();
     }
 
     // Wrap all Wolverine message handlers in Polecat transactions automatically.
     // Established here at host level; applies to all BCs registered via AddXyzModule().
     opts.Policies.AutoApplyTransactions();
-
-    // Integration event routing — local queues for M1 (no RabbitMQ topology yet).
-    // Replace with exchange publish rules when each consuming BC is implemented.
-    opts.Publish(x => x.Message<SellerRegistrationCompleted>()
-        .ToLocalQueue("participants-integration-events"));
 });
 
 // SQL Server — connection string injected by Aspire via WithReference(sqlServer) in production.

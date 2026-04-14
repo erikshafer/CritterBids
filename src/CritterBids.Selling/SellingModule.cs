@@ -41,8 +41,10 @@ public static class SellingModule
             // in Program.cs UseWolverine() applies to all BC handlers including Marten-backed ones.
             // IntegrateWithWolverine() below hooks this store's sessions into that pipeline.
 
-            // No event stream or projection registrations in S2 — those arrive in S4
-            // when DraftListingCreated is introduced.
+            // RegisteredSeller is a projection document (not event-sourced) populated by
+            // SellerRegistrationCompletedHandler. Registering it here ensures Marten creates
+            // the underlying table during ApplyAllDatabaseChangesOnStartup() at startup.
+            opts.Schema.For<RegisteredSeller>();
 
             // ⚠️ All Wolverine handlers in this BC must carry:
             //     [MartenStore(typeof(ISellingDocumentStore))]
@@ -57,8 +59,16 @@ public static class SellingModule
         // Transactional outbox + Wolverine transaction middleware for this named store.
         .IntegrateWithWolverine();
 
-        // No RabbitMQ ListenToRabbitQueue/PublishMessage wiring here — arrives in S3 and S5.
-        // No ISellerRegistrationService registration — arrives in S3.
+        // ISellerRegistrationService exposes seller registration state to the API layer.
+        // Transient lifetime — the service holds no shared state; ISellingDocumentStore
+        // is singleton-safe and a new IQuerySession is opened per call.
+        services.AddTransient<ISellerRegistrationService, SellerRegistrationService>();
+
+        // RabbitMQ routing rules live in Program.cs UseWolverine() — AddSellingModule()
+        // receives only IServiceCollection and has no access to WolverineOptions.
+        // Publish: selling-participants-events (added in S3 Program.cs)
+        // Subscribe: selling-participants-events (added in S3 Program.cs)
+        // Publish: listings-selling-events for ListingPublished (S5)
 
         return services;
     }

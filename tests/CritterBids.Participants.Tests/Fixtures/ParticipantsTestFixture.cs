@@ -1,4 +1,5 @@
 using Alba;
+using CritterBids.Contracts;
 using JasperFx.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Polecat;
@@ -41,6 +42,15 @@ public class ParticipantsTestFixture : IAsyncLifetime
                 {
                     opts.ConnectionString = connectionString;
                 });
+
+                // When the Selling BC is not provisioned (no postgres in this fixture),
+                // AddSellingModule() returns early and ISellingDocumentStore is absent from DI.
+                // SellerRegistrationCompletedHandler is still discovered (its assembly is included
+                // via Program.cs opts.Discovery.IncludeAssembly) and fails Wolverine code-gen when
+                // SellerRegistrationCompleted is dispatched (OutboxedSessionFactory<ISellingDocumentStore>
+                // not in DI). Excluding Selling BC handlers here restores pre-S3 behavior:
+                // messages with no handler are silently discarded.
+                services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
 
                 // Disable RabbitMQ and any other external Wolverine transports.
                 // Wolverine inbox/outbox (backed by SQL Server) remains active.
@@ -124,5 +134,35 @@ public class ParticipantsTestFixture : IAsyncLifetime
             result = await Host.Scenario(configuration);
         });
         return (tracked, result);
+    }
+}
+
+/// <summary>
+/// Excludes Selling BC handler types from Wolverine discovery when the Selling BC is
+/// not provisioned in this fixture (no PostgreSQL container). Without this exclusion,
+/// <c>SellerRegistrationCompletedHandler</c> is discovered (the Selling assembly is
+/// always included via <c>Program.cs opts.Discovery.IncludeAssembly</c>) and fails
+/// Wolverine code-gen when <c>SellerRegistrationCompleted</c> is dispatched —
+/// <c>OutboxedSessionFactory&lt;ISellingDocumentStore&gt;</c> is absent from DI because
+/// <c>AddSellingModule()</c> returned early (no postgres connection string).
+/// </summary>
+internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Selling BC inactive — exclude handlers (no postgres in Participants fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+
+        // Route SellerRegistrationCompleted to a stub local queue so Wolverine tracking
+        // captures it in tracked.Sent. Without a routing rule, Wolverine discards the
+        // message before the tracker records it, causing tracked.Sent to return 0 items.
+        // The handler is excluded above (no ISellingDocumentStore in DI), so the message
+        // is delivered to the queue and silently dropped — matching pre-S3 placeholder behavior.
+        options.PublishMessage<SellerRegistrationCompleted>()
+            .ToLocalQueue("selling-participants-stub");
     }
 }

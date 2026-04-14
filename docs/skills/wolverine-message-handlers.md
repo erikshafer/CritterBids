@@ -717,6 +717,61 @@ With this rule, the flow completes: `PublishAsync` → `PersistOrSendAsync` → 
 include `Program.cs` in the allowed-file set, or require the routing rule to be pre-configured in a
 scaffolding session. See `docs/skills/critter-stack-testing-patterns.md` for the corresponding test prerequisite note.
 
+### 15. ❌ Injecting `IDocumentSession` in a Named-Store-Only Handler ⚠️ CRITICAL
+
+CritterBids uses named Marten stores only (ADR 0002) — there is no default `IDocumentStore`.
+Wolverine's `IDocumentSession` handler parameter injection is provided by `SessionVariableSource`,
+which is only registered when `AddMarten().IntegrateWithWolverine()` is called on the **main** store.
+That call never happens in CritterBids. Declaring `IDocumentSession` as a handler parameter
+causes a Wolverine code-gen error at startup.
+
+```csharp
+// ❌ WRONG — IDocumentSession cannot be injected; throws code-gen error at startup.
+// Wolverine looks for a variable source for IDocumentSession and finds none —
+// SessionVariableSource is only registered by the main-store IntegrateWithWolverine() path.
+[MartenStore(typeof(ISellingDocumentStore))]
+public static class SellerRegistrationCompletedHandler
+{
+    public static async Task Handle(
+        SellerRegistrationCompleted message,
+        IDocumentSession session)   // ← no variable source → code-gen failure
+    {
+        session.Store(new RegisteredSeller { Id = message.ParticipantId });
+        await session.SaveChangesAsync();
+    }
+}
+
+// ✅ CORRECT — inject the named store interface, open a lightweight session explicitly.
+// SaveChangesAsync() must be called explicitly; AutoApplyTransactions() does not fire
+// because it hooks into IDocumentSession middleware, which is never generated here.
+[MartenStore(typeof(ISellingDocumentStore))]
+public static class SellerRegistrationCompletedHandler
+{
+    public static async Task Handle(
+        SellerRegistrationCompleted message,
+        ISellingDocumentStore store)
+    {
+        await using var session = store.LightweightSession();
+        session.Store(new RegisteredSeller { Id = message.ParticipantId });
+        await session.SaveChangesAsync();
+    }
+}
+```
+
+**Why `[MartenStore]` must be kept even though it no longer drives session injection:**
+`[MartenStore(typeof(ISellingDocumentStore))]` sets `chain.AncillaryStoreType` on the Wolverine
+handler chain. This ensures that durable inbox/outbox records are routed to this BC's named
+PostgreSQL schema. Without it, Wolverine silently uses the wrong schema for inbox tracking —
+no error at startup, wrong transactional atomicity at runtime.
+
+**Rule for all named-store BC handlers:**
+1. Annotate every handler class with `[MartenStore(typeof(IBcDocumentStore))]`
+2. Inject `IBcDocumentStore`, not `IDocumentSession`
+3. Open `LightweightSession()` manually and call `SaveChangesAsync()` explicitly
+
+See `docs/skills/marten-named-stores.md` for the full constraint reference and
+`src/CritterBids.Selling/SellerRegistrationCompletedHandler.cs` for the canonical example.
+
 ---
 
 ## File Organization and Naming
@@ -747,3 +802,4 @@ Features/
 - [Wolverine + Polecat Aggregate Handler Workflow](https://wolverinefx.net/guide/durability/polecat/event-sourcing)
 - [Railway Programming with Wolverine](https://wolverinefx.net/tutorials/railway-programming.html)
 - [Functional Event Sourcing Decider](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
+- `docs/skills/marten-named-stores.md` — named-store constraints (Anti-Pattern #15)
