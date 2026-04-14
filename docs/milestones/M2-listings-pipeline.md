@@ -367,7 +367,7 @@ Mapping from `001-scenarios.md` slices 1.3 and 1.4. Integration tests verifying 
 
 | ID | Question | Disposition |
 |---|---|---|
-| M2-D1 | Named Marten stores: `AddMartenStore<T>()` vs schema-per-BC within separate `AddMarten()` calls | **Resolved in S1 (ADR 0002).** Working assumption: separate `AddMarten()` per BC with `DatabaseSchemaName` set. S1 may identify that named stores are needed for multi-BC-same-process scenarios. ADR is the authoritative resolution. |
+| M2-D1 | Named Marten stores: `AddMartenStore<T>()` vs schema-per-BC within separate `AddMarten()` calls | **Resolved in S1 (ADR 0002). Named stores required; working assumption corrected.** Separate `AddMarten()` calls per BC conflict in DI — the second call registers a competing `IDocumentStore` singleton and silently discards the first BC's configuration. Each Marten BC uses `AddMartenStore<IBcDocumentStore>()` with a BC-scoped marker interface and its own lowercase schema name. See `docs/decisions/0002-marten-bc-isolation.md`. |
 | M2-D2 | `ListingPublished` contract payload completeness | **Resolved in S5.** Walk `integration-messaging.md` L2 consumer table before finalizing. All three downstream consumers (Listings, Settlement, Auctions) must be represented in the payload even though only Listings subscribes in M2 (see §6 Integration Event Placement). |
 | M2-D3 | Is `RegisteredSellers` the only Selling BC projection? | **Confirm during M2 coding** (W004-P2-9). Expected: yes, for M2 scope. |
 | M1-deferred: S4-F2 | Named Polecat stores | **Still deferred.** Only one Polecat BC (Participants) exists in M2. Address when Settlement or Operations arrives. |
