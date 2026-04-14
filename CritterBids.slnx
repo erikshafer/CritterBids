@@ -4,10 +4,12 @@
     <Project Path="src/CritterBids.Api/CritterBids.Api.csproj" />
     <Project Path="src/CritterBids.Contracts/CritterBids.Contracts.csproj" />
     <Project Path="src/CritterBids.Participants/CritterBids.Participants.csproj" />
+    <Project Path="src/CritterBids.Selling/CritterBids.Selling.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj" />
     <Project Path="tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj" />
     <Project Path="tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj" />
+    <Project Path="tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj" />
   </Folder>
 </Solution>

@@ -14,6 +14,7 @@
         <PackageVersion Include="WolverineFx" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Http" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Http.Polecat" Version="5.30.0" />
+        <PackageVersion Include="WolverineFx.Marten" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Polecat" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.30.0" />
     </ItemGroup>
@@ -26,6 +27,7 @@
         <PackageVersion Include="Alba" Version="8.5.2" />
         <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.3.0" />
         <PackageVersion Include="Testcontainers.MsSql" Version="4.11.0" />
+        <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
         <PackageVersion Include="xunit" Version="2.9.3" />
         <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
         <PackageVersion Include="Shouldly" Version="4.3.0" />

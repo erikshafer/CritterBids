@@ -1,5 +1,7 @@
 using CritterBids.Contracts;
 using CritterBids.Participants;
+using CritterBids.Selling;
+using JasperFx;
 using Wolverine;
 using Wolverine.Http;
 using Wolverine.RabbitMQ;
@@ -8,6 +10,22 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.UseWolverine(opts =>
 {
+    // ── Modular monolith isolation settings ───────────────────────────────────
+    // Each BC handler for the same message type gets its own dedicated queue with
+    // its own transaction and retry policy. Without Separated, multiple BC handlers
+    // for the same integration event (e.g. ListingPublished) are merged into one queue,
+    // breaking BC isolation.
+    opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
+
+    // Prevents the durable inbox from deduplicating messages fanned out to multiple
+    // BC queues that share the same message ID. Without this, only one BC handler
+    // fires when the same message ID arrives on multiple queues (fanout dedup bug).
+    opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
+
+    // Routes all named Marten stores' envelope rows to a shared schema.
+    // Without this, each named store creates its own duplicate envelope tables.
+    opts.Durability.MessageStorageSchemaName = "wolverine";
+
     // BC handler/endpoint discovery — add each BC assembly so Wolverine HTTP finds
     // [WolverinePost]/[WolverineGet] endpoints defined in BC class libraries.
     opts.Discovery.IncludeAssembly(typeof(Participant).Assembly);
@@ -41,6 +59,10 @@ var sqlServerConnectionString = builder.Configuration.GetConnectionString("sqlse
 // Each BC module is self-contained; Program.cs only invokes AddXyzModule().
 builder.Services.AddParticipantsModule(sqlServerConnectionString);
 
+// Selling BC — first Marten-backed BC. Registers ISellingDocumentStore (named Marten store)
+// with schema isolation ("selling" schema), AutoApplyTransactions, and Wolverine outbox.
+builder.Services.AddSellingModule(builder.Configuration);
+
 // Wolverine HTTP — registers the endpoint discovery and route generation services
 // required by app.MapWolverineEndpoints() below.
 builder.Services.AddWolverineHttp();
@@ -60,7 +82,9 @@ app.UseAuthorization();
 
 app.MapWolverineEndpoints();
 
-app.Run();
+// RunJasperFxCommands enables the JasperFx CLI verbs: db-apply, db-assert, db-dump, codegen.
+// Falls back to normal app.Run() behavior when no CLI verb is passed.
+return await app.RunJasperFxCommands(args);
 
 // Required for WebApplicationFactory<Program> (used by AlbaHost.For<Program> in tests)
 // to access the Program type from external test assemblies.

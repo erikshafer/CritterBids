@@ -10,6 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CritterBids.Participants\CritterBids.Participants.csproj" />
+    <ProjectReference Include="..\CritterBids.Selling\CritterBids.Selling.csproj" />
   </ItemGroup>
 
 </Project>
