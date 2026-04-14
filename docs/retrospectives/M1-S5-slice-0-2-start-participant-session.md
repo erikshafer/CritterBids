@@ -292,6 +292,31 @@ and 0 warnings, including from the Polecat source generator. No generator-relate
 
 ---
 
+## API research tooling — retrospective note
+
+This session added MCP servers to the Claude Code configuration after M1-S5 completed. Mapping them
+against the actual debugging detours reveals which would have had the most impact:
+
+| MCP | Detour it would have prevented |
+|---|---|
+| `critter-stack-docs` | `ApplyAllDatabaseChangesOnStartup()` API discovery (4 wrong attempts before finding it in NuGet XML); `CreationResponse<T>` response body shape |
+| `github` (JasperFx repos) | Same as above; also `MsSqlBuilder` obsolete constructor API change |
+| `files` (CritterSupply) | Cross-project pattern lookup — CLAUDE.md states CritterSupply carries the same Critter Stack patterns; should be consulted before trial-and-error |
+| `playwright` | Could close S4-F4 (schema verification) via Aspire dashboard inspection after local boot |
+| `fetch` | Superseded by `critter-stack-docs` for Critter Stack API surface questions |
+| `next-devtools` | Not applicable — no Next.js in M1 |
+
+**For future sessions:** Before trial-and-error on an unfamiliar Polecat or Wolverine API surface,
+query `critter-stack-docs` first. The pattern "try a plausible method name, get CS1061, try the next
+one" is avoidable. Also consult CritterSupply via `files` — if the pattern exists there, it's solved.
+
+**One open correction:** The retro's S5g section states the `CreationResponse<Guid>` body is
+`{"value":"...", ...}`. This was inferred from the `StartObject` JSON error — the body was never
+directly inspected. The Location header fix is correct regardless of body shape, but the body claim
+is unverified. Use `critter-stack-docs` or `github` to confirm in a future session.
+
+---
+
 ## Key learnings
 
 1. **`ApplyAllDatabaseChangesOnStartup()` is on `PolecatConfigurationExpression`, not `StoreOptions`.**
@@ -320,6 +345,13 @@ and 0 warnings, including from the Polecat source generator. No generator-relate
 6. **Namespace/type name collision with `StartParticipantSession`.** When the namespace and the
    command type share a name, `using` the namespace causes `CS0118`. Resolution: type aliases
    (`using X = Full.Namespace.X`) or omit the `using` and use fully qualified names selectively.
+
+7. **Query `critter-stack-docs` before probing API surface by trial-and-error.** The two longest
+   debugging paths in this session (finding `ApplyAllDatabaseChangesOnStartup()` and understanding
+   `CreationResponse<T>`) both stemmed from not knowing where a method lived. `critter-stack-docs`
+   indexes `wolverinefx.net/llms-full.txt` and `polecat.netlify.app/llms-full.txt` — querying it
+   directly is faster than trying plausible method names until CS1061 stops. Also consult CritterSupply
+   via the `files` MCP: if a pattern is already solved there, it doesn't need to be re-discovered here.
 
 ---
 
@@ -356,7 +388,8 @@ and 0 warnings, including from the Polecat source generator. No generator-relate
   published via `OutgoingMessages` with no M1 consumer.
 - **S4-F4 full verification** — direct SQL query against Aspire-provisioned SQL Server confirming
   Wolverine inbox/outbox tables in `wolverine` schema, Polecat tables in `participants` schema.
-  Run `dotnet run --project src/CritterBids.AppHost` and inspect via SSMS or `sqlcmd`.
+  Run `dotnet run --project src/CritterBids.AppHost` and inspect via SSMS, `sqlcmd`, or the
+  `playwright` MCP against the Aspire dashboard.
 - **S4-F2 multi-BC named stores** — still deferred to M2 planning. When the next Polecat BC
   (Settlement or Operations) is scaffolded, migrate both BCs to `AddPolecatStore<T>()`.
 - **`polecat-event-sourcing.md` skill doc** — `UseSystemTextJsonForSerialization` correction (S4-F1)
