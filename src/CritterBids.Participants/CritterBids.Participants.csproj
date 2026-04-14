@@ -5,4 +5,8 @@
     <PackageReference Include="WolverineFx.Http.Polecat" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\CritterBids.Contracts\CritterBids.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>
