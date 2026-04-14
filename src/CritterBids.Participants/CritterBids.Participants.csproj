@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Polecat" />
+    <PackageReference Include="WolverineFx.Http.Polecat" />
   </ItemGroup>
 
 </Project>
