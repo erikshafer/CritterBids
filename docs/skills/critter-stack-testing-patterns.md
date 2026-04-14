@@ -407,6 +407,13 @@ public async Task PlaceBid_UpdatesListingHighBid()
 
 ### Testing Integration Message Publishing
 
+> ⚠️ **Outbox Assertion Prerequisite:** `tracked.Sent.MessagesOf<T>()` requires a Wolverine routing rule
+> to be configured for the message type in the host's Wolverine options (`Program.cs`). Without it,
+> `PublishAsync` calls `NoRoutesFor()` and returns immediately — the message never reaches any
+> `ISendingAgent` and `tracked.Sent` always returns 0 regardless of what was added to `OutgoingMessages`.
+> See **Anti-Pattern #14** in `docs/skills/wolverine-message-handlers.md` for the full root cause and
+> the `opts.Publish(...)` resolution. This is a host configuration requirement, not a fixture concern.
+
 ```csharp
 [Fact]
 public async Task CloseBidding_WithWinner_PublishesListingSold()
@@ -741,12 +748,13 @@ tests/
 Polecat BCs (Participants, Operations, Settlement) use SQL Server rather than PostgreSQL. The fixture shape is identical to Marten BCs — the only differences are the container, connection string, and cleanup helpers.
 
 ```csharp
-namespace CritterBids.Participants.IntegrationTests;
+// Verified from actual CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs (M1-S7)
+namespace CritterBids.Participants.Tests.Fixtures;
 
 public class ParticipantsTestFixture : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlServer = new MsSqlBuilder()
-        .WithImage("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")
+    // Pass image tag directly to constructor — .WithImage() is obsolete in Testcontainers 4.x.
+    private readonly MsSqlContainer _sqlServer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")
         .WithPassword("CritterBids#Test2025!")
         .WithName($"participants-sqlserver-test-{Guid.NewGuid():N}")
         .WithCleanUp(true)
@@ -765,69 +773,84 @@ public class ParticipantsTestFixture : IAsyncLifetime
         {
             builder.ConfigureServices(services =>
             {
-                // Override the Polecat connection string — same pattern as ConfigureMarten for Marten BCs
-                services.AddPolecat(opts => opts.Connection(connectionString));
+                // Use ConfigurePolecat (IOptions override), NOT AddPolecat (competing store registration).
+                // ConfigurePolecat adds to the IOptions<PolecatOptions> chain and correctly overrides
+                // the connection string that AddParticipantsModule registered, while preserving
+                // DatabaseSchemaName, AutoCreateSchemaObjects, and all other module settings.
+                services.ConfigurePolecat(opts =>
+                {
+                    opts.ConnectionString = connectionString;
+                });
+
+                // Disable RabbitMQ and any external Wolverine transports.
+                // Wolverine inbox/outbox (backed by SQL Server) remains active.
                 services.DisableAllExternalWolverineTransports();
 
-                services.AddSingleton<ITestAuthContext, TestAuthContext>();
-                services.AddAuthentication("Test")
-                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
-
-                services.AddAuthorization(opts =>
-                {
-                    opts.AddPolicy("StaffOnly", p => p.RequireAssertion(_ => true));
-                });
+                // Auth setup — add when BC has [Authorize] endpoints (M2+).
+                // M1 Participants uses [AllowAnonymous] on all endpoints, so no auth wiring needed here.
             });
         });
 
-        Host.AddDefaultAuthHeader();
+        // Call Host.AddDefaultAuthHeader() here if BC has [Authorize] endpoints.
     }
 
     public async Task DisposeAsync()
     {
         if (Host != null)
         {
-            try { await Host.StopAsync(); await Host.DisposeAsync(); }
+            try
+            {
+                await Host.StopAsync();
+                await Host.DisposeAsync();
+            }
             catch (ObjectDisposedException) { }
             catch (TaskCanceledException) { }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(e =>
+                e is OperationCanceledException or ObjectDisposedException)) { }
         }
+
         await _sqlServer.DisposeAsync();
     }
 
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
+    // Note: DocumentStore(), CleanAllPolecatDataAsync(), TrackActivity(), and ExecuteAndWaitAsync()
+    // are extension methods on IServiceProvider, not on IHost. Always use Host.Services.
     public IDocumentSession GetDocumentSession() =>
-        Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
+        Host.Services.DocumentStore().LightweightSession();
 
     public IDocumentStore GetDocumentStore() =>
-        Host.Services.GetRequiredService<IDocumentStore>();
+        Host.Services.DocumentStore();
 
     /// <summary>
     /// Cleans all Polecat documents AND event data in one call.
-    /// Prefer this over calling CleanAllDocumentsAsync/CleanAllEventDataAsync separately.
+    /// Call in InitializeAsync() of each test class to ensure test isolation.
     /// </summary>
-    public Task CleanAllPolecatDataAsync() => Host.CleanAllPolecatDataAsync();
+    public Task CleanAllPolecatDataAsync() =>
+        Host.Services.CleanAllPolecatDataAsync();
 
     /// <summary>
     /// Pauses async daemon, cleans all data, then resumes the daemon.
     /// Use this when async projections are registered in the BC.
     /// </summary>
-    public Task ResetAllPolecatDataAsync() => Host.ResetAllPolecatDataAsync();
+    public Task ResetAllPolecatDataAsync() =>
+        Host.Services.ResetAllPolecatDataAsync();
 
     public async Task<ITrackedSession> ExecuteAndWaitAsync<T>(T message, int timeoutSeconds = 15)
         where T : class
     {
-        return await Host.TrackActivity(TimeSpan.FromSeconds(timeoutSeconds))
+        return await Host.Services
+            .TrackActivity(TimeSpan.FromSeconds(timeoutSeconds))
             .DoNotAssertOnExceptionsDetected()
-            .AlsoTrack(Host)
-            .ExecuteAndWaitAsync(async ctx => await ctx.InvokeAsync(message));
+            .AlsoTrack(Host.Services)
+            .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async ctx => await ctx.InvokeAsync(message)));
     }
 
-    protected async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
+    public async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
         Action<Scenario> configuration)
     {
         IScenarioResult result = null!;
-        var tracked = await Host.ExecuteAndWaitAsync(async () =>
+        var tracked = await Host.Services.ExecuteAndWaitAsync(async () =>
         {
             result = await Host.Scenario(configuration);
         });
@@ -842,30 +865,35 @@ public class ParticipantsTestFixture : IAsyncLifetime
 |---|---|---|
 | Container | `PostgreSqlBuilder` (Testcontainers) | `MsSqlBuilder` (Testcontainers) |
 | Image | `postgres:18-alpine` | `mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04` |
-| Connection override | `services.ConfigureMarten(opts => opts.Connection(...))` | `services.AddPolecat(opts => opts.Connection(...))` |
-| Data cleanup | `store.Advanced.Clean.DeleteAllDocumentsAsync()` | `host.CleanAllPolecatDataAsync()` (one-liner for docs + events) |
-| Daemon catchup | `store.WaitForNonStaleProjectionDataAsync(timeout)` | `host.ForceAllPolecatDaemonActivityToCatchUpAsync(ct)` |
+| MsSqlBuilder ctor | — | Pass image tag in constructor: `new MsSqlBuilder("image:tag")` not `.WithImage()` (obsolete) |
+| Connection override | `services.ConfigureMarten(opts => opts.Connection(...))` | `services.ConfigurePolecat(opts => { opts.ConnectionString = ...; })` — NOT `AddPolecat` |
+| Data cleanup | `store.Advanced.Clean.DeleteAllDocumentsAsync()` | `host.Services.CleanAllPolecatDataAsync()` |
+| Daemon catchup | `store.WaitForNonStaleProjectionDataAsync(timeout)` | `host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(ct)` |
+| Extension method host | `IHost` / `IServiceProvider` (mixed) | All Polecat helpers are on `IServiceProvider` — use `Host.Services.*` |
 
 ### Polecat-Specific Testing Helpers
 
-`Wolverine.Polecat` provides first-class test helpers on `IHost` — prefer these over calling the raw store methods:
+`Wolverine.Polecat` provides first-class test helpers — prefer these over calling the raw store methods.
+
+> ⚠️ **Confirmed from M1 (S5):** These helpers are extension methods on `IServiceProvider`, not `IHost`.
+> Always call them on `host.Services`, not directly on `host`:
 
 ```csharp
 // Clean docs + events atomically (most common — use in InitializeAsync)
-await host.CleanAllPolecatDataAsync();
+await host.Services.CleanAllPolecatDataAsync();
 
 // Pause daemon, clean, resume — use when async projections are registered
-await host.ResetAllPolecatDataAsync();
+await host.Services.ResetAllPolecatDataAsync();
 
 // Force all async projections to catch up immediately
 // Better than WaitForNonStaleProjectionDataAsync for test reliability
-await host.ForceAllPolecatDaemonActivityToCatchUpAsync(cancellationToken);
+await host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(cancellationToken);
 
-// Get the document store (extension on IHost)
-var store = host.DocumentStore();
+// Get the document store (extension on IServiceProvider)
+var store = host.Services.DocumentStore();
 
 // Save to Polecat + wait for outgoing messages to flush
-await host.SaveInPolecatAndWaitForOutgoingMessagesAsync(session =>
+await host.Services.SaveInPolecatAndWaitForOutgoingMessagesAsync(session =>
 {
     session.Events.Append(streamId, new SomeEvent());
 });
@@ -889,5 +917,7 @@ Same rules as Marten BCs. In `InitializeAsync()` of each test class:
 public async Task InitializeAsync() => await _fixture.CleanAllPolecatDataAsync();
 ```
 
-If the BC has async projections, prefer `ResetAllPolecatDataAsync()` to ensure the daemon is paused before data is wiped (avoids race conditions between the daemon catching up on stale event data and the test writing fresh data).
+If the BC has async projections, prefer `ResetAllPolecatDataAsync()` to ensure the daemon is paused before
+data is wiped (avoids race conditions between the daemon catching up on stale event data and the test writing
+fresh data). Participants BC has no async projections in M1, so `CleanAllPolecatDataAsync()` is sufficient.
 

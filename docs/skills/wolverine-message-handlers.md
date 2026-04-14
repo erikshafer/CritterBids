@@ -673,6 +673,50 @@ Wolverine cascades from messages **returned** from `Handle()`. Events written vi
 - `bus.ScheduleAsync()` remains valid for delayed delivery
 - Call the inline policy in **every** handler that creates the relevant stream type
 
+### 14. ❌ `OutgoingMessages` Without a Routing Rule — `tracked.Sent.MessagesOf<T>()` Always Returns 0 ⚠️ CRITICAL
+
+```csharp
+// ❌ APPEARS TO WORK — no error at runtime, but the outbox assertion always fails
+var outgoing = new OutgoingMessages();
+outgoing.Add(new SellerRegistrationCompleted(participant.Id, evt.CompletedAt));
+return (Results.Ok(), evt, outgoing);
+
+// Test assertion fails even though the message was added to OutgoingMessages:
+tracked.Sent.MessagesOf<SellerRegistrationCompleted>().ShouldHaveSingleItem(); // → count: 0
+```
+
+**Root cause:** Wolverine's `PublishAsync` calls `Runtime.RoutingFor(type).RouteForPublish(message, options)`.
+With no routing rule configured for `SellerRegistrationCompleted`, this returns an empty route array.
+`PublishAsync` then calls `Runtime.MessageTracking.NoRoutesFor(envelope)` — recording `MessageEventType.NoRoutes`
+— and returns `ValueTask.CompletedTask`. The message never reaches `_outstanding`, never passes through
+`FlushOutgoingMessagesAsync`, and never calls any `ISendingAgent.EnqueueOutgoingAsync()`. `tracked.Sent` is
+populated by `ISendingAgent` implementations only — with no route, no sender is ever invoked.
+
+**Resolution:** Add a routing rule in `Program.cs` for the message type. This is required before any
+`tracked.Sent.MessagesOf<T>()` assertion will succeed:
+
+```csharp
+// Program.cs / host Wolverine configuration
+opts.Publish(x => x.Message<SellerRegistrationCompleted>()
+    .ToLocalQueue("participants-integration-events")); // M1 placeholder — no handler
+
+// When the consuming BC is implemented, replace with the appropriate transport rule:
+opts.Publish(x => x.Message<SellerRegistrationCompleted>()
+    .ToRabbitExchange("seller-registration")); // M2+
+```
+
+With this rule, the flow completes: `PublishAsync` → `PersistOrSendAsync` → `FlushOutgoingMessagesAsync` →
+`BufferedLocalQueue.EnqueueOutgoingAsync` → `_messageLogger.Sent(envelope)` → recorded in `tracked.Sent`.
+
+**M1 placeholder pattern:** Routing to a named local queue with no handler is safe. Wolverine's
+`NoHandlerContinuation` records `NoHandlers` then `MessageSucceeded` — no exception thrown,
+`AssertNoExceptions = true` (default) is not triggered.
+
+**This is a host configuration requirement, not a test-fixture concern.** The routing rule lives in
+`Program.cs`, not in the test fixture. Future slice prompts that introduce a new integration event type must
+include `Program.cs` in the allowed-file set, or require the routing rule to be pre-configured in a
+scaffolding session. See `docs/skills/critter-stack-testing-patterns.md` for the corresponding test prerequisite note.
+
 ---
 
 ## File Organization and Naming

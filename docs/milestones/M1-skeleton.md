@@ -178,7 +178,7 @@ One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session
 | 4 | `docs/prompts/M1-S4-participants-bc-scaffold.md` | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
 | 5 | `docs/prompts/M1-S5-slice-0-2-start-participant-session.md` | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
 | 6 | `docs/prompts/M1-S6-slice-0-3-register-as-seller.md` | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
-| 7 | *TBD* | Retrospective skills + ADR — `aspire.md`, `polecat-event-sourcing.md` 🟡 → ✅, Aspire MCP discovery note, `docs/decisions/0001-uuid-strategy.md` as Proposed. |
+| 7 | `docs/prompts/M1-S7-retrospective-skills-m1-close.md` | Retrospective skills + M1 close — `aspire.md` authored, `polecat-event-sourcing.md` 🟡 → ✅, S4-F4 schema verification confirmed, M1 retrospective written. |
 
 Sessions are intentionally small. Merging is discouraged — the ten rules treat "one prompt equals one PR" as the primary constraint. If a session's scope collapses during implementation, split work off rather than absorbing the next session's scope.
 

@@ -1,8 +1,8 @@
 # Event Sourcing with Polecat and Wolverine
 
-> **Status: Pre-implementation — confirmed against Polecat 2.x and Wolverine source (April 2026).**
+> **Status: Complete — filled in from M1 Participants BC implementation (April 2026).**
 >
-> CritterBids is the first project in this ecosystem to use Polecat. This skill documents confirmed API shapes and known SQL Server differences. Update with concrete findings from the first Polecat BC implementation (likely **Participants**).
+> CritterBids is the first project in this ecosystem to use Polecat. This skill documents confirmed API shapes and known SQL Server differences. Updated with concrete findings from the Participants BC (M1 sessions 4–6).
 
 ---
 
@@ -62,12 +62,14 @@ Treat `docs/skills/marten-event-sourcing.md` as the primary reference. The follo
 ### Standard BC Module Pattern
 
 ```csharp
-// Inside AddXyzModule() extension method
+// Inside AddXyzModule() extension method — confirmed from Participants BC (M1)
 services.AddPolecat(opts =>
 {
-    opts.Connection(connectionString);                         // ← same method as Marten
+    opts.ConnectionString = connectionString;                 // ← ✅ confirmed: property form works
+    // opts.Connection(connectionString);                     // ← not verified in M1; use ConnectionString property
     opts.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate; // ← NOT AutoCreate.All (doesn't exist in Polecat)
-    opts.UseSystemTextJsonForSerialization(EnumStorage.AsString);
+    // opts.UseSystemTextJsonForSerialization(...) — ⚠️ absent from Polecat 2.x API; Polecat uses
+    // System.Text.Json exclusively and there is no configuration method for serialization format.
 
     // Schema isolation — one schema per BC
     opts.DatabaseSchemaName = "participants"; // lowercase BC name
@@ -88,7 +90,11 @@ services.AddPolecat(opts =>
         .Identity(x => x.Id)
         .Index(x => x.Email);
 })
-.IntegrateWithWolverine();  // ← chains identically to Marten; optional configure callback available
+// ApplyAllDatabaseChangesOnStartup() is on PolecatConfigurationExpression (the builder),
+// NOT inside the StoreOptions lambda. Chain it before .IntegrateWithWolverine().
+// Required so test fixtures can call CleanAllPolecatDataAsync() before any ORM operation.
+.ApplyAllDatabaseChangesOnStartup()  // ← ✅ confirmed; must chain on builder, not inside lambda
+.IntegrateWithWolverine();           // ← chains identically to Marten; optional configure callback available
 ```
 
 ```csharp
@@ -194,7 +200,55 @@ public static (CreationResponse<Guid>, IStartStream) Handle(RegisterParticipant 
 
 `PolecatOps` also provides the full document side-effect set via `IPolecatOp` (the Polecat equivalent of `IMartenOp`): `Store<T>`, `Insert<T>`, `Update<T>`, `Delete<T>`, `DeleteWhere<T>`, `Nothing()`.
 
-For existing streams, `[WriteAggregate]` (or the HTTP alias `[Aggregate]`) works identically to Marten:
+For existing streams, `[WriteAggregate]` (or the HTTP alias `[Aggregate]`) works identically to Marten.
+
+### Single-Event Return Type — No `Events()` Wrapper ⚠️
+
+**Confirmed from M1 (S6).** When a `[WriteAggregate]` handler appends exactly one domain event, return it
+directly as a tuple element — **do not wrap it in `new Events(singleEvent)`**:
+
+```csharp
+// ✅ CORRECT — return the domain event type directly in the tuple
+public static (IResult, SellerRegistered, OutgoingMessages) Handle(
+    RegisterAsSeller cmd,
+    [WriteAggregate] Participant participant)
+{
+    var evt = new SellerRegistered(participant.Id, DateTimeOffset.UtcNow);
+    var outgoing = new OutgoingMessages();
+    outgoing.Add(new SellerRegistrationCompleted(participant.Id, evt.CompletedAt));
+    return (Results.Ok(), evt, outgoing);
+}
+
+// ❌ WRONG — CS1503: cannot convert 'SellerRegistered' to 'IEnumerable<object>'
+// Events() constructor requires IEnumerable<object>; a single domain event is not enumerable.
+return (Results.Ok(), new Events(evt), outgoing);
+```
+
+Wolverine/Polecat recognizes the domain event type in the tuple and appends it automatically. The
+`Events` collection class is needed only when multiple events are appended from one handler call.
+
+### `[WriteAggregate]` `OnMissing.Simple404` Fires Before `Before()` ⚠️
+
+**Confirmed from M1 (S6).** When no event stream exists for the aggregate ID, Wolverine returns a 404
+response **without calling `Before()`**. Consequence: `Before()` is only invoked when the stream
+exists — the aggregate parameter is always non-null when `Before()` runs. Declare it non-nullable:
+
+```csharp
+// ✅ CORRECT — Before() only runs when aggregate is loaded; non-nullable declaration is safe
+public static ProblemDetails Before(RegisterAsSeller cmd, Participant participant) { ... }
+
+// ❌ UNNECESSARY — the null check is unreachable when OnMissing.Simple404 is active
+public static ProblemDetails Before(RegisterAsSeller cmd, Participant? participant)
+{
+    if (participant is null) return new ProblemDetails { Status = 404 }; // Never reached
+}
+```
+
+The two rejection paths for a `[WriteAggregate]` endpoint are therefore:
+1. **Stream missing** → `OnMissing.Simple404` returns 404, `Before()` is never called
+2. **Stream exists, precondition fails** → `Before()` returns `ProblemDetails` (e.g., 409)
+
+For multi-event handlers:
 
 ```csharp
 public static (Events, OutgoingMessages) Handle(
@@ -355,20 +409,49 @@ await store.Advanced.CleanAsync<ParticipantView>(); // specific type
 
 ## Implementation Checklist
 
-Work through this during the first Polecat BC (**Participants**) and document findings:
+Filled in from M1 Participants BC (sessions 4–6). Items not reached in M1 are marked N/A (M1).
 
-- [ ] First end-to-end handler with `[WriteAggregate]` + `AutoApplyTransactions()`
-- [ ] `PolecatOps.StartStream<T>()` from Wolverine HTTP endpoint — confirm identical to Marten pattern
-- [ ] Inline snapshot registration and `session.LoadAsync<T>()` query verification
-- [ ] Multi-stream projection registration and query verification
-- [ ] Async projection + `host.ForceAllPolecatDaemonActivityToCatchUpAsync()` in tests
-- [ ] Test cleanup with `host.CleanAllPolecatDataAsync()` / `host.ResetAllPolecatDataAsync()`
-- [ ] `DatabaseSchemaName` isolation — confirm `pc_` tables land in correct schema, inbox/outbox in `wolverine` schema
-- [ ] `AddEntityTablesFromDbContext` + `EfCoreSingleStreamProjection` with `UseSqlServer`
-- [ ] SQL Server collation behavior with any string lookups
-- [ ] DCB `WithTag()` tagging and `FetchForWritingByTags` if needed
-- [ ] Document any anti-patterns discovered
-- [ ] Update this file with a "Known Gotchas" section
+- [x] First end-to-end handler with `[WriteAggregate]` + `AutoApplyTransactions()` — ✅ confirmed.
+      `RegisterAsSellerHandler` uses `[WriteAggregate]` on the `Participant` aggregate. `AutoApplyTransactions()`
+      is configured at host level in `Program.cs`; it applies to all BC handlers.
+
+- [x] `PolecatOps.StartStream<T>()` from Wolverine HTTP endpoint — ✅ confirmed identical to Marten pattern.
+      `StartParticipantSessionHandler` uses `PolecatOps.StartStream<Participant>(participantId, evt)` and
+      returns `(CreationResponse<Guid>, IStartStream)`. Namespace swap only: `using Wolverine.Polecat`.
+
+- [ ] Inline snapshot registration and `session.LoadAsync<T>()` query verification — N/A (M1).
+      Participants has no snapshots. Arrives when a BC with snapshot projections is implemented.
+
+- [ ] Multi-stream projection registration and query verification — N/A (M1).
+      Participants has no projections in M1. Arrives with Listings or Operations BC.
+
+- [ ] Async projection + `host.ForceAllPolecatDaemonActivityToCatchUpAsync()` in tests — N/A (M1).
+
+- [x] Test cleanup with `host.CleanAllPolecatDataAsync()` / `host.ResetAllPolecatDataAsync()` — ✅ confirmed.
+      `ParticipantsTestFixture` uses `Host.Services.CleanAllPolecatDataAsync()` (note: extension is on
+      `IServiceProvider`, not `IHost`). `ResetAllPolecatDataAsync()` is reserved for BCs with async projections;
+      not used in M1 because Participants has none.
+
+- [x] `DatabaseSchemaName` isolation — ✅ confirmed via direct SQL query (M1-S7 S4-F4 verification).
+      Polecat tables (`pc_events`, `pc_streams`, `pc_event_progression`) land in the `participants` schema.
+      Wolverine inbox/outbox tables (`wolverine_incoming_envelopes`, `wolverine_outgoing_envelopes`,
+      `wolverine_dead_letters`, `wolverine_nodes`, etc.) land in the `wolverine` schema — never `participants`.
+      Schema creation DDL is logged by `Wolverine.SqlServer.Persistence.SqlServerMessageStore` at startup,
+      which is a useful diagnostic signal.
+
+- [ ] `AddEntityTablesFromDbContext` + `EfCoreSingleStreamProjection` with `UseSqlServer` — N/A (M1).
+
+- [ ] SQL Server collation behavior with any string lookups — N/A (M1).
+      Participants uses GUID IDs for all aggregates. Collation behavior is relevant when string columns
+      are used for lookups; not encountered in M1.
+
+- [ ] DCB `WithTag()` tagging and `FetchForWritingByTags` if needed — N/A (M1).
+
+- [x] Document any anti-patterns discovered — ✅ see "Single-Event Return Type" and "`OnMissing.Simple404`"
+      sections above, and Anti-Pattern #14 in `wolverine-message-handlers.md` (outbox routing rule requirement).
+
+- [x] Update this file with a "Known Gotchas" section — ✅ incorporated inline into relevant sections above
+      rather than as a separate section; keeps findings co-located with the patterns they correct.
 
 ---
 

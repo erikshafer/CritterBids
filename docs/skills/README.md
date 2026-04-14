@@ -22,7 +22,8 @@ Skills are living documents. When a new pattern is established or an existing on
 | Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply                     |
 | Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids                   |
 | Marten querying | `marten-querying.md` | ✅ Complete | Authored from Marten docs + Jeremy Miller's blog |
-| Polecat event sourcing | `polecat-event-sourcing.md` | 🟡 Placeholder — fill in during first Polecat BC | New                                              |
+| Polecat event sourcing | `polecat-event-sourcing.md` | ✅ Complete | Filled in from M1 Participants BC                |
+| .NET Aspire orchestration | `aspire.md` | ✅ Complete | Authored from M1 (S1–S4) experience             |
 | Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply                     |
 | Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply                     |
 | SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply                     |
