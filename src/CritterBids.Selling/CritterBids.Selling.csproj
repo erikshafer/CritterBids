@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- WolverineFx.Marten provides AddMartenStore<T>(), .IntegrateWithWolverine(),
+         [MartenStore], and transitively brings in Marten itself.
+         S4 will upgrade to WolverineFx.Http.Marten when the first HTTP endpoint is added. -->
+    <PackageReference Include="WolverineFx.Marten" />
+  </ItemGroup>
+
+</Project>
