@@ -7,7 +7,7 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 ## Table of Contents
 
 1. [Core Philosophy](#core-philosophy)
-2. [TestFixture Pattern](#testfixture-pattern)
+2. [Marten BC TestFixture Pattern](#marten-bc-testfixture-pattern)
 3. [Test Authentication](#test-authentication)
 4. [Test Isolation](#test-isolation)
 5. [Event Sourcing Race Conditions](#event-sourcing-race-conditions)
@@ -20,13 +20,14 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 12. [Shouldly Assertions](#shouldly-assertions)
 13. [Test Organization](#test-organization)
 14. [Key Principles](#key-principles)
+15. [Polecat BC TestFixture Pattern](#polecat-bc-testfixture-pattern)
 
 ---
 
 ## Core Philosophy
 
 1. **Prefer integration tests over unit tests** — test complete vertical slices
-2. **Use real infrastructure** — Testcontainers for PostgreSQL, RabbitMQ
+2. **Use real infrastructure** — Testcontainers for PostgreSQL, SQL Server
 3. **Pure functions are easy to unit test** — thanks to A-Frame architecture
 4. **BDD-style for integration tests** — focus on behavior, not implementation
 
@@ -37,25 +38,34 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 | **xUnit** | Test framework |
 | **Shouldly** | Readable assertions |
 | **Alba** | HTTP integration testing via ASP.NET Core TestServer |
-| **Testcontainers** | Real PostgreSQL/RabbitMQ in Docker |
+| **Testcontainers** | Real PostgreSQL/SQL Server in Docker |
 | **NSubstitute** | Mocking (only when necessary) |
 
 ---
 
-## TestFixture Pattern
+## Marten BC TestFixture Pattern
 
-One standardized fixture per BC. All BCs share the same shape.
+CritterBids uses named Marten stores (one per BC via `AddMartenStore<IBcDocumentStore>()`). The test fixture overrides the named store's connection string with a Testcontainers-issued PostgreSQL connection. This re-registers the named store; the production connection string is replaced.
+
+> **Key difference from Polecat:** Polecat fixtures use `services.ConfigurePolecat()`. Marten named-store fixtures call `services.AddMartenStore<IBcDocumentStore>()` in the `ConfigureServices` override — this re-registers the named store with the test connection string.
 
 ```csharp
-namespace CritterBids.Auctions.IntegrationTests;
+using Alba;
+using Marten;   // Required for CleanAllMartenDataAsync(), ResetAllMartenDataAsync()
+using Testcontainers.PostgreSql;
+using Wolverine;
+
+namespace CritterBids.Auctions.Tests.Fixtures;
 
 public class AuctionsTestFixture : IAsyncLifetime
 {
-    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18-alpine")
-        .WithDatabase("auctions_test_db")
-        .WithName($"auctions-postgres-test-{Guid.NewGuid():N}")
-        .WithCleanUp(true)
-        .Build();
+    // Pass image tag directly to constructor (Testcontainers 4.x pattern)
+    private readonly PostgreSqlContainer _postgres =
+        new PostgreSqlBuilder("postgres:17-alpine")
+            .WithDatabase("auctions_test")
+            .WithName($"auctions-postgres-{Guid.NewGuid():N}")
+            .WithCleanUp(true)
+            .Build();
 
     public IAlbaHost Host { get; private set; } = null!;
 
@@ -70,23 +80,24 @@ public class AuctionsTestFixture : IAsyncLifetime
         {
             builder.ConfigureServices(services =>
             {
-                services.ConfigureMarten(opts => opts.Connection(connectionString));
-                services.DisableAllExternalWolverineTransports();
-
-                // Auth setup — see Test Authentication section
-                services.AddSingleton<ITestAuthContext, TestAuthContext>();
-                services.AddAuthentication("Test")
-                    .AddScheme<AuthenticationSchemeOptions, TestAuthHandler>("Test", _ => { });
-
-                // Bypass all authorization policies
-                services.AddAuthorization(opts =>
+                // Re-register the named store with the Testcontainers connection string.
+                // This replaces the production registration — the schema name and all
+                // other StoreOptions are inherited or re-set here as needed.
+                services.AddMartenStore<IAuctionsDocumentStore>(opts =>
                 {
-                    opts.AddPolicy("StaffOnly", p => p.RequireAssertion(_ => true));
+                    opts.Connection(connectionString);
+                    opts.DatabaseSchemaName = "auctions";
                 });
+
+                // Prevents advisory lock contention during test restarts — required
+                // alongside DisableAllExternalWolverineTransports().
+                services.RunWolverineInSoloMode();
+
+                // Suppress RabbitMQ and all external Wolverine transports.
+                // Wolverine inbox/outbox (backed by PostgreSQL) remains active.
+                services.DisableAllExternalWolverineTransports();
             });
         });
-
-        Host.AddDefaultAuthHeader(); // Inject Authorization header into all Alba scenarios
     }
 
     public async Task DisposeAsync()
@@ -107,26 +118,57 @@ public class AuctionsTestFixture : IAsyncLifetime
         await _postgres.DisposeAsync();
     }
 
-    // Core helper methods — every fixture exposes these
+    // ─── Helpers ──────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Returns a lightweight session for the Auctions BC's named store.
+    /// Use for seeding event streams, asserting state, and direct DB access in tests.
+    /// Never use GetRequiredService&lt;IDocumentSession&gt;() — IDocumentSession is not registered
+    /// (CritterBids uses named stores; there is no default IDocumentStore).
+    /// </summary>
     public IDocumentSession GetDocumentSession() =>
-        Host.Services.GetRequiredService<IDocumentStore>().LightweightSession();
+        Host.Services.GetRequiredService<IAuctionsDocumentStore>().LightweightSession();
 
-    public IDocumentStore GetDocumentStore() =>
-        Host.Services.GetRequiredService<IDocumentStore>();
+    /// <summary>
+    /// Returns the Auctions BC's named document store for advanced operations.
+    /// </summary>
+    public IAuctionsDocumentStore GetDocumentStore() =>
+        Host.Services.GetRequiredService<IAuctionsDocumentStore>();
 
-    public async Task CleanAllDocumentsAsync() =>
-        await GetDocumentStore().Advanced.Clean.DeleteAllDocumentsAsync();
+    /// <summary>
+    /// Deletes all Marten documents and event streams for the Auctions BC.
+    /// Call in InitializeAsync() of each test class for test isolation.
+    /// Extension method on IAlbaHost from the Marten namespace.
+    /// </summary>
+    public Task CleanAllMartenDataAsync() =>
+        Host.CleanAllMartenDataAsync();
+
+    /// <summary>
+    /// Disables all async projections/subscriptions, clears all data, then restarts them
+    /// from a fresh baseline. Use this instead of CleanAllMartenDataAsync() when async
+    /// projections are registered in this BC — prevents the daemon from processing stale
+    /// events after data wipe.
+    /// Extension method on IAlbaHost from the Marten namespace.
+    /// </summary>
+    public Task ResetAllMartenDataAsync() =>
+        Host.ResetAllMartenDataAsync();
+
+    /// <summary>
+    /// Wait for all async projections to process pending events.
+    /// Use after seeding event streams when tests verify async projection output.
+    /// </summary>
+    public Task WaitForNonStaleProjectionDataAsync(TimeSpan? timeout = null) =>
+        GetDocumentStore().WaitForNonStaleProjectionDataAsync(timeout ?? TimeSpan.FromSeconds(5));
 
     public async Task<ITrackedSession> ExecuteAndWaitAsync<T>(T message, int timeoutSeconds = 15)
         where T : class
     {
-        return await Host.TrackActivity(TimeSpan.FromSeconds(timeoutSeconds))
-            .DoNotAssertOnExceptionsDetected()
-            .AlsoTrack(Host)
-            .ExecuteAndWaitAsync(async ctx => await ctx.InvokeAsync(message));
+        return await Host.ExecuteAndWaitAsync(
+            async ctx => await ctx.InvokeAsync(message),
+            timeoutSeconds * 1000);
     }
 
-    protected async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
+    public async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
         Action<Scenario> configuration)
     {
         IScenarioResult result = null!;
@@ -138,6 +180,24 @@ public class AuctionsTestFixture : IAsyncLifetime
     }
 }
 ```
+
+### Marten Cleanup API Reference
+
+| Method | When to Use |
+|---|---|
+| `Host.CleanAllMartenDataAsync()` | Standard test isolation — deletes all docs and event streams. Call in `InitializeAsync()` of each test class. |
+| `Host.ResetAllMartenDataAsync()` | When async projections are registered — pauses daemon, clears data, restarts. Prevents daemon processing stale events. |
+| `store.WaitForNonStaleProjectionDataAsync(timeout)` | After seeding events, before asserting async projection state. |
+
+Both `CleanAllMartenDataAsync()` and `ResetAllMartenDataAsync()` are extension methods on `IAlbaHost` from the `Marten` namespace. Always add `using Marten;` at the top of the fixture file.
+
+### Named Store Fixture — Key Differences from Single-Store
+
+| Concern | Single-Store | Named Store (CritterBids) |
+|---|---|---|
+| Connection override | `services.ConfigureMarten(opts => opts.Connection(...))` | `services.AddMartenStore<IBcDocumentStore>(opts => { ... })` |
+| Session access | `GetRequiredService<IDocumentStore>().LightweightSession()` | `GetRequiredService<IBcDocumentStore>().LightweightSession()` |
+| `IDocumentStore` available? | Yes — registered as singleton | **No** — intentionally absent (see ADR 0002) |
 
 ---
 
@@ -186,24 +246,17 @@ public class TestAuthHandler : AuthenticationHandler<AuthenticationSchemeOptions
 }
 ```
 
-**After creating the AlbaHost, always call `Host.AddDefaultAuthHeader()`** — this injects `Authorization: Bearer test-token` into every Alba scenario. Without it, all HTTP requests fail with 401.
+**After creating the AlbaHost, call `Host.AddDefaultAuthHeader()`** — this injects `Authorization: Bearer test-token` into every Alba scenario. Without it, all HTTP requests to `[Authorize]` endpoints fail with 401.
+
+Note: CritterBids uses `[AllowAnonymous]` on all endpoints through M5. Auth setup in fixtures is needed from M6 onward.
 
 ### Authorization Policy Bypass
-
-Bypass all authorization policies in the test fixture. Missing a policy causes silent 403s:
 
 ```csharp
 services.AddAuthorization(opts =>
 {
-    // Bypass every policy used in this BC
     opts.AddPolicy("StaffOnly", p => p.RequireAssertion(_ => true));
-    opts.AddPolicy("AnotherPolicy", p => p.RequireAssertion(_ => true));
 });
-```
-
-Find all policies in a BC:
-```bash
-grep -r "Authorize(Policy" src/CritterBids.<BcName>/
 ```
 
 ---
@@ -213,15 +266,16 @@ grep -r "Authorize(Policy" src/CritterBids.<BcName>/
 ### Checklist
 
 **Fixture setup:**
+- [ ] `RunWolverineInSoloMode()` called (Marten BCs)
 - [ ] `DisableAllExternalWolverineTransports()` called
-- [ ] Test connection string overrides production
+- [ ] Test connection string overrides production via named store re-registration
 - [ ] Collection fixture defined for sequential execution
 
 **Test class:**
 - [ ] Implements `IAsyncLifetime`
-- [ ] `InitializeAsync()` calls `_fixture.CleanAllDocumentsAsync()`
+- [ ] `InitializeAsync()` calls `CleanAllMartenDataAsync()` (or `CleanAllPolecatDataAsync()` for Polecat BCs)
 - [ ] `DisposeAsync()` returns `Task.CompletedTask`
-- [ ] `[Collection(IntegrationTestCollection.Name)]` attribute present
+- [ ] `[Collection(XyzTestCollection.Name)]` attribute present
 
 **Test methods:**
 - [ ] Each test seeds its own data inline
@@ -232,31 +286,31 @@ grep -r "Authorize(Policy" src/CritterBids.<BcName>/
 
 ```csharp
 [CollectionDefinition(Name)]
-public class IntegrationTestCollection : ICollectionFixture<AuctionsTestFixture>
+public class AuctionsTestCollection : ICollectionFixture<AuctionsTestFixture>
 {
-    public const string Name = "Auctions Integration Tests";
+    public const string Name = "Auctions Tests";
 }
 
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuctionsTestCollection.Name)]
 public class BidPlacementTests : IAsyncLifetime
 {
     private readonly AuctionsTestFixture _fixture;
 
     public BidPlacementTests(AuctionsTestFixture fixture) => _fixture = fixture;
 
-    public async Task InitializeAsync() => await _fixture.CleanAllDocumentsAsync();
+    public async Task InitializeAsync() => await _fixture.CleanAllMartenDataAsync();
     public Task DisposeAsync() => Task.CompletedTask;
 }
 ```
 
 ### Seed Data Isolation
 
-Test classes that call `CleanAllDocumentsAsync()` in `DisposeAsync()` can wipe seed data before verification tests run — xUnit does not guarantee class execution order.
+Test classes that call `CleanAllMartenDataAsync()` in `DisposeAsync()` can wipe seed data before verification tests run — xUnit does not guarantee class execution order.
 
 Seed data verification classes must reseed in `InitializeAsync()` and must NOT clean in `DisposeAsync()`:
 
 ```csharp
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuctionsTestCollection.Name)]
 public class SeedDataTests : IAsyncLifetime
 {
     private readonly AuctionsTestFixture _fixture;
@@ -264,9 +318,6 @@ public class SeedDataTests : IAsyncLifetime
 
     public async Task InitializeAsync() => await _fixture.ReseedAsync(); // Reseed before verifying
     public Task DisposeAsync() => Task.CompletedTask; // Do NOT clean — leave seed data
-
-    [Fact]
-    public async Task Should_have_seeded_demo_listings() { /* verify */ }
 }
 ```
 
@@ -330,12 +381,12 @@ listing!.CurrentHighBid.ShouldBe(previousHighBid); // Before() rejected the comm
 ### HTTP Tests (Alba)
 
 ```csharp
-[Collection(IntegrationTestCollection.Name)]
+[Collection(AuctionsTestCollection.Name)]
 public class PlaceBidTests : IAsyncLifetime
 {
     private readonly AuctionsTestFixture _fixture;
     public PlaceBidTests(AuctionsTestFixture fixture) => _fixture = fixture;
-    public async Task InitializeAsync() => await _fixture.CleanAllDocumentsAsync();
+    public async Task InitializeAsync() => await _fixture.CleanAllMartenDataAsync();
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
@@ -357,21 +408,6 @@ public class PlaceBidTests : IAsyncLifetime
         {
             s.Post.Json(cmd).ToUrl($"/api/listings/{listingId}/bids");
             s.StatusCodeShouldBe(200);
-        });
-    }
-
-    [Fact]
-    public async Task PlaceBid_BelowCurrentHigh_Returns400()
-    {
-        // Arrange — listing with existing bid
-        await _fixture.ExecuteAndWaitAsync(new PlaceBid(listingId, ..., amount: 50m));
-
-        var cmd = new PlaceBid(listingId, Guid.NewGuid(), bidderId, 30m); // Below current high
-
-        await _fixture.Host.Scenario(s =>
-        {
-            s.Post.Json(cmd).ToUrl($"/api/listings/{listingId}/bids");
-            s.StatusCodeShouldBe(400);
         });
     }
 }
@@ -437,20 +473,21 @@ public async Task CloseBidding_WithWinner_PublishesListingSold()
 
 | Method | Purpose | When to Use |
 |---|---|---|
-| `GetDocumentSession()` | Direct DB access | Seeding event streams, asserting state |
-| `GetDocumentStore()` | Advanced operations | Cleanup |
-| `CleanAllDocumentsAsync()` | Clear all data | `InitializeAsync()` of every test class |
+| `GetDocumentSession()` | Direct DB access via named store | Seeding event streams, asserting state |
+| `GetDocumentStore()` | Named store reference | Advanced cleanup, schema operations |
+| `CleanAllMartenDataAsync()` | Clear all docs + event streams | `InitializeAsync()` of every test class (no async projections) |
+| `ResetAllMartenDataAsync()` | Pause daemon, clear, restart | `InitializeAsync()` when async projections are registered |
+| `WaitForNonStaleProjectionDataAsync()` | Sync async projection state | After seeding events, before asserting async projection output |
 | `ExecuteAndWaitAsync<T>()` | Invoke via Wolverine pipeline | Testing state-changing commands |
 | `TrackedHttpCall()` | HTTP + message tracking | Asserting integration messages published |
 
 ### ⚠️ AutoApplyTransactions Does Not Fire on Direct Handler Calls
 
-`AutoApplyTransactions()` only fires through the Wolverine pipeline — not when you call a handler method directly in a test. If you call a handler directly, you must `await session.SaveChangesAsync()` explicitly. Use `ExecuteAndWaitAsync()` to avoid this entirely.
+`AutoApplyTransactions()` only fires through the Wolverine pipeline — not when you call a handler method directly in a test. Use `ExecuteAndWaitAsync()` to avoid this entirely.
 
 ```csharp
 // ❌ WRONG — changes silently discarded
 var events = PlaceBidHandler.Handle(cmd, listing);
-// No SaveChangesAsync call — nothing persisted!
 
 // ✅ PREFERRED — use the pipeline
 await _fixture.ExecuteAndWaitAsync(cmd);
@@ -490,48 +527,28 @@ public class PlaceBidHandlerTests
 }
 ```
 
-Test Decider pure functions in the same way:
-
-```csharp
-[Fact]
-public void AuctionClosingDecider_WhenBidInExtensionWindow_ExtendsCloseTime()
-{
-    var saga = new AuctionClosingSaga
-    {
-        ExtendedBiddingEnabled = true,
-        ExtensionWindowMinutes = 2,
-        ScheduledCloseAt = DateTimeOffset.UtcNow.AddSeconds(90) // within window
-    };
-
-    var decision = AuctionClosingDecider.HandleBidPlaced(saga, bid, DateTimeOffset.UtcNow);
-
-    decision.NewCloseAt.ShouldNotBeNull();
-}
-```
-
 ---
 
 ## Testing Validators
 
 ```csharp
-public class PlaceBidValidatorTests
+public class ListingValidatorTests
 {
-    private readonly PlaceBidValidator _validator = new();
-
     [Fact]
-    public void Validate_WithZeroAmount_Fails()
+    public void ValidDraft_Passes()
     {
-        var cmd = new PlaceBid(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Amount: 0m);
-        var result = _validator.Validate(cmd);
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(e => e.PropertyName == "Amount");
+        var draft = CreateValidDraft();
+        var result = ListingValidator.Validate(draft);
+        result.IsValid.ShouldBeTrue();
     }
 
     [Fact]
-    public void Validate_WithValidCommand_Passes()
+    public void Title_Empty_IsRejected()
     {
-        var cmd = new PlaceBid(Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Amount: 50m);
-        _validator.Validate(cmd).IsValid.ShouldBeTrue();
+        var draft = CreateValidDraft() with { Title = "" };
+        var result = ListingValidator.Validate(draft);
+        result.IsValid.ShouldBeFalse();
+        result.Reason.ShouldBe("Title is required");
     }
 }
 ```
@@ -542,90 +559,29 @@ public class PlaceBidValidatorTests
 
 Handlers that check elapsed time must use an injectable clock — never `DateTimeOffset.UtcNow` directly.
 
-### Infrastructure
-
 ```csharp
-// Domain project (production code)
 public interface ISystemClock { DateTimeOffset UtcNow { get; } }
 public class SystemClock : ISystemClock { public DateTimeOffset UtcNow => DateTimeOffset.UtcNow; }
-
-// Test project only
 public class FrozenSystemClock : ISystemClock { public DateTimeOffset UtcNow { get; set; } = DateTimeOffset.UtcNow; }
 ```
-
-Register in production: `services.AddSingleton<ISystemClock, SystemClock>()`
 
 Expose on fixture and override in tests:
 
 ```csharp
-// In TestFixture
 public FrozenSystemClock Clock { get; private set; } = new();
 
 // During host init:
 services.RemoveAll<ISystemClock>();
-services.AddSingleton<ISystemClock>(Clock); // Share fixture's instance
+services.AddSingleton<ISystemClock>(Clock);
 ```
 
 **Always reset the clock in `InitializeAsync()` of each test class.** The clock is a singleton shared across the xUnit collection — one class advancing it affects subsequent classes.
-
-```csharp
-public async Task InitializeAsync()
-{
-    await _fixture.CleanAllDocumentsAsync();
-    _fixture.Clock.UtcNow = DateTimeOffset.UtcNow; // Reset every time
-}
-
-[Fact]
-public async Task ObligationSaga_After3Days_EscalatesDeadline()
-{
-    await SeedActiveObligation(obligationId);
-
-    _fixture.Clock.UtcNow = DateTimeOffset.UtcNow.AddDays(3); // Advance past deadline
-    await _fixture.ExecuteAndWaitAsync(new CheckObligationDeadlines());
-
-    using var session = _fixture.GetDocumentSession();
-    var saga = await session.LoadAsync<ObligationsSaga>(obligationId);
-    saga!.Status.ShouldBe(ObligationStatus.Escalated);
-}
-```
-
-### Handler Pattern
-
-```csharp
-public static async Task Handle(
-    CheckObligationDeadlines message,
-    IDocumentSession session,
-    ISystemClock clock) // Injected — never DateTimeOffset.UtcNow directly
-{
-    var daysSinceShipBy = (clock.UtcNow - deadline).TotalDays;
-    if (daysSinceShipBy < 3) return;
-    // escalate...
-}
-```
 
 ---
 
 ## Testing Failure Paths
 
-When the default test fixture uses a stub that always succeeds, testing failure paths requires a dedicated fixture with a failing implementation — to avoid breaking every happy-path test in the main collection.
-
-```csharp
-// Production stub (always succeeds in tests)
-public class StubCarrierTrackingService : ICarrierTrackingService
-{
-    public Task<TrackingResult> GetStatusAsync(string trackingNumber, CancellationToken ct)
-        => Task.FromResult(new TrackingResult("DELIVERED", DateTimeOffset.UtcNow, true));
-}
-
-// Failure test stub (always fails)
-public class AlwaysFailingCarrierTrackingService : ICarrierTrackingService
-{
-    public Task<TrackingResult> GetStatusAsync(string trackingNumber, CancellationToken ct)
-        => Task.FromResult(new TrackingResult(null, null, false, "Carrier API unavailable (test stub)"));
-}
-```
-
-Separate collection for failure tests:
+When the default test fixture uses a stub that always succeeds, testing failure paths requires a dedicated fixture with a failing implementation.
 
 ```csharp
 [CollectionDefinition(Name)]
@@ -633,55 +589,21 @@ public class TrackingFailureTestCollection : ICollectionFixture<TrackingFailureT
 {
     public const string Name = "Tracking Failure Tests";
 }
-
-public class TrackingFailureTestFixture : IAsyncLifetime
-{
-    // Identical to main fixture but swaps the stub:
-    // services.RemoveAll<ICarrierTrackingService>();
-    // services.AddSingleton<ICarrierTrackingService, AlwaysFailingCarrierTrackingService>();
-}
-
-[Collection(TrackingFailureTestCollection.Name)]
-public class TrackingFailureTests : IAsyncLifetime
-{
-    [Fact]
-    public async Task WhenCarrierUnavailable_ObligationFlagsForManualReview() { /* ... */ }
-}
 ```
 
-A separate `[CollectionDefinition]` creates a fully isolated fixture with its own PostgreSQL container. The cost is a second container startup — acceptable for a small set of targeted failure-path tests.
-
-### Decision Guide
-
-| Situation | Approach |
-|---|---|
-| Default stub "never fails"; need failure coverage | Separate fixture + separate xUnit collection |
-| Stub has a conditional failure mode | `RemoveAll + AddSingleton` per test class in main fixture |
-| Time-dependent behavior | `FrozenSystemClock` on main fixture; reset in `InitializeAsync()` |
+A separate `[CollectionDefinition]` creates a fully isolated fixture with its own Testcontainers instance. The cost is a second container startup — acceptable for a small set of targeted failure-path tests.
 
 ---
 
 ## Shouldly Assertions
 
 ```csharp
-// Null / existence
 result.ShouldNotBeNull();
-result.ShouldBeNull();
-
-// Value equality
 result.Status.ShouldBe(ListingStatus.Open);
 result.CurrentHighBid.ShouldBe(75m);
-
-// Numeric comparisons
 result.BidCount.ShouldBeGreaterThan(0);
-result.Amount.ShouldBeInRange(10m, 500m);
-
-// Collections
 events.ShouldNotBeEmpty();
-events.Count.ShouldBe(1);
 events.ShouldContain(e => e is BidPlaced);
-
-// Exceptions
 Should.Throw<InvalidOperationException>(() => /* ... */);
 await Should.ThrowAsync<InvalidOperationException>(async () => /* ... */);
 ```
@@ -692,29 +614,22 @@ await Should.ThrowAsync<InvalidOperationException>(async () => /* ... */);
 
 ```
 tests/
-  Auctions/
-    CritterBids.Auctions.IntegrationTests/
-      Fixtures/
-        AuctionsTestFixture.cs
-        IntegrationTestCollection.cs
-      Bidding/
-        PlaceBidTests.cs
-        BidRejectionTests.cs
-      AuctionClosing/
-        AuctionClosingTests.cs
-        ExtendedBiddingTests.cs
-    CritterBids.Auctions.UnitTests/
-      Handlers/
-        PlaceBidHandlerTests.cs
-      Deciders/
-        AuctionClosingDeciderTests.cs
-      Validators/
-        PlaceBidValidatorTests.cs
-  Settlement/
-    CritterBids.Settlement.IntegrationTests/
-    CritterBids.Settlement.UnitTests/
-  Obligations/
-    ...
+  CritterBids.Auctions.Tests/
+    Fixtures/
+      AuctionsTestFixture.cs
+      AuctionsTestCollection.cs
+    Bidding/
+      PlaceBidTests.cs
+      BidRejectionTests.cs
+    AuctionClosing/
+      AuctionClosingTests.cs
+  CritterBids.Selling.Tests/
+    Fixtures/
+      SellingTestFixture.cs
+      SellingTestCollection.cs
+    Listings/
+      DraftListingTests.cs
+      SubmitListingTests.cs
 ```
 
 ---
@@ -722,30 +637,19 @@ tests/
 ## Key Principles
 
 1. **Standardized TestFixture across all BCs** — same helper methods, same patterns
-2. **Integration tests cover vertical slices** — HTTP request through to database assertion
-3. **Unit tests cover pure functions** — `Before()`, `Handle()`, `Apply()`, Decider methods
-4. **Use stubs for external services** — tests must not depend on third-party APIs
-5. **Real infrastructure via Testcontainers** — real PostgreSQL, not SQLite or in-memory
-6. **Collection fixtures enforce sequential execution** — prevents DDL concurrency errors
-7. **`ExecuteAndWaitAsync` over HTTP POST + GET** — eliminates race conditions in ES tests
-8. **Assert full integration message payloads** — not just that the type was published
-
----
-
-## References
-
-- `docs/skills/marten-event-sourcing.md` — event sourcing race conditions, projection behavior
-- `docs/skills/wolverine-sagas.md` — saga testing patterns
-- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior
-- [Alba HTTP Testing](https://jasperfx.github.io/alba/)
-- [Testcontainers .NET](https://dotnet.testcontainers.org/)
-
+2. **Named store re-registration for connection override** — `AddMartenStore<IBcDocumentStore>()` in `ConfigureServices`, not `ConfigureMarten()`
+3. **`RunWolverineInSoloMode()` + `DisableAllExternalWolverineTransports()`** — both required in every Marten BC test fixture
+4. **`CleanAllMartenDataAsync()` in `InitializeAsync()`** — not `DisposeAsync()`; ensures clean state before each test class
+5. **Use `ResetAllMartenDataAsync()` when async projections are registered** — prevents daemon processing stale data
+6. **`ExecuteAndWaitAsync` over HTTP POST + GET** — eliminates race conditions in ES tests
+7. **Assert full integration message payloads** — not just that the type was published
+8. **Real infrastructure via Testcontainers** — real PostgreSQL/SQL Server, not SQLite or in-memory
 
 ---
 
 ## Polecat BC TestFixture Pattern
 
-Polecat BCs (Participants, Operations, Settlement) use SQL Server rather than PostgreSQL. The fixture shape is identical to Marten BCs — the only differences are the container, connection string, and cleanup helpers.
+Polecat BCs (Participants, Operations, Settlement) use SQL Server rather than PostgreSQL. The fixture shape is identical to Marten BCs — the only differences are the container, connection string override, and cleanup helpers.
 
 ```csharp
 // Verified from actual CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs (M1-S7)
@@ -774,24 +678,14 @@ public class ParticipantsTestFixture : IAsyncLifetime
             builder.ConfigureServices(services =>
             {
                 // Use ConfigurePolecat (IOptions override), NOT AddPolecat (competing store registration).
-                // ConfigurePolecat adds to the IOptions<PolecatOptions> chain and correctly overrides
-                // the connection string that AddParticipantsModule registered, while preserving
-                // DatabaseSchemaName, AutoCreateSchemaObjects, and all other module settings.
                 services.ConfigurePolecat(opts =>
                 {
                     opts.ConnectionString = connectionString;
                 });
 
-                // Disable RabbitMQ and any external Wolverine transports.
-                // Wolverine inbox/outbox (backed by SQL Server) remains active.
                 services.DisableAllExternalWolverineTransports();
-
-                // Auth setup — add when BC has [Authorize] endpoints (M2+).
-                // M1 Participants uses [AllowAnonymous] on all endpoints, so no auth wiring needed here.
             });
         });
-
-        // Call Host.AddDefaultAuthHeader() here if BC has [Authorize] endpoints.
     }
 
     public async Task DisposeAsync()
@@ -812,8 +706,6 @@ public class ParticipantsTestFixture : IAsyncLifetime
         await _sqlServer.DisposeAsync();
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
-
     // Note: DocumentStore(), CleanAllPolecatDataAsync(), TrackActivity(), and ExecuteAndWaitAsync()
     // are extension methods on IServiceProvider, not on IHost. Always use Host.Services.
     public IDocumentSession GetDocumentSession() =>
@@ -822,17 +714,9 @@ public class ParticipantsTestFixture : IAsyncLifetime
     public IDocumentStore GetDocumentStore() =>
         Host.Services.DocumentStore();
 
-    /// <summary>
-    /// Cleans all Polecat documents AND event data in one call.
-    /// Call in InitializeAsync() of each test class to ensure test isolation.
-    /// </summary>
     public Task CleanAllPolecatDataAsync() =>
         Host.Services.CleanAllPolecatDataAsync();
 
-    /// <summary>
-    /// Pauses async daemon, cleans all data, then resumes the daemon.
-    /// Use this when async projections are registered in the BC.
-    /// </summary>
     public Task ResetAllPolecatDataAsync() =>
         Host.Services.ResetAllPolecatDataAsync();
 
@@ -859,65 +743,37 @@ public class ParticipantsTestFixture : IAsyncLifetime
 }
 ```
 
-### Key Differences from Marten Fixtures
+### Key Differences Between Marten and Polecat Fixtures
 
 | Concern | Marten BC | Polecat BC |
 |---|---|---|
-| Container | `PostgreSqlBuilder` (Testcontainers) | `MsSqlBuilder` (Testcontainers) |
-| Image | `postgres:18-alpine` | `mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04` |
-| MsSqlBuilder ctor | — | Pass image tag in constructor: `new MsSqlBuilder("image:tag")` not `.WithImage()` (obsolete) |
-| Connection override | `services.ConfigureMarten(opts => opts.Connection(...))` | `services.ConfigurePolecat(opts => { opts.ConnectionString = ...; })` — NOT `AddPolecat` |
-| Data cleanup | `store.Advanced.Clean.DeleteAllDocumentsAsync()` | `host.Services.CleanAllPolecatDataAsync()` |
-| Daemon catchup | `store.WaitForNonStaleProjectionDataAsync(timeout)` | `host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(ct)` |
-| Extension method host | `IHost` / `IServiceProvider` (mixed) | All Polecat helpers are on `IServiceProvider` — use `Host.Services.*` |
+| Container | `PostgreSqlBuilder("postgres:17-alpine")` | `MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")` |
+| Connection override | `services.AddMartenStore<IBcDocumentStore>(opts => opts.Connection(...))` | `services.ConfigurePolecat(opts => { opts.ConnectionString = ...; })` |
+| Solo mode | `services.RunWolverineInSoloMode()` required | Not required (Polecat doesn't use advisory locks the same way) |
+| `IDocumentStore` available? | No — use `GetRequiredService<IBcDocumentStore>()` | Yes via `Host.Services.DocumentStore()` extension |
+| Data cleanup | `Host.CleanAllMartenDataAsync()` | `Host.Services.CleanAllPolecatDataAsync()` |
+| Daemon catchup | `store.WaitForNonStaleProjectionDataAsync(timeout)` | `Host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(ct)` |
+| Helper extension host | `IAlbaHost` | `IServiceProvider` — use `Host.Services.*` |
 
 ### Polecat-Specific Testing Helpers
 
-`Wolverine.Polecat` provides first-class test helpers — prefer these over calling the raw store methods.
-
-> ⚠️ **Confirmed from M1 (S5):** These helpers are extension methods on `IServiceProvider`, not `IHost`.
-> Always call them on `host.Services`, not directly on `host`:
+> ⚠️ **Confirmed from M1 (S7):** These helpers are extension methods on `IServiceProvider`, not `IHost`. Always call on `Host.Services`, not directly on `Host`.
 
 ```csharp
-// Clean docs + events atomically (most common — use in InitializeAsync)
-await host.Services.CleanAllPolecatDataAsync();
-
-// Pause daemon, clean, resume — use when async projections are registered
-await host.Services.ResetAllPolecatDataAsync();
-
-// Force all async projections to catch up immediately
-// Better than WaitForNonStaleProjectionDataAsync for test reliability
-await host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(cancellationToken);
-
-// Get the document store (extension on IServiceProvider)
-var store = host.Services.DocumentStore();
-
-// Save to Polecat + wait for outgoing messages to flush
-await host.Services.SaveInPolecatAndWaitForOutgoingMessagesAsync(session =>
-{
-    session.Events.Append(streamId, new SomeEvent());
-});
+await host.Services.CleanAllPolecatDataAsync();      // Most common — use in InitializeAsync()
+await host.Services.ResetAllPolecatDataAsync();      // When async projections registered
+await host.Services.ForceAllPolecatDaemonActivityToCatchUpAsync(ct); // Better than WaitForNonStale
+var store = host.Services.DocumentStore();           // Extension on IServiceProvider
 ```
 
-For `TrackedSessionConfiguration` (Wolverine tracked sessions):
+---
 
-```csharp
-// After execution, wait for non-stale daemon data
-configuration.WaitForNonStaleDaemonDataAfterExecution(TimeSpan.FromSeconds(10));
+## References
 
-// Pause daemon before, force catch-up after — cleanest option for async projection tests
-configuration.PauseThenCatchUpOnPolecatDaemonActivity();
-```
-
-### Test Isolation for Polecat BCs
-
-Same rules as Marten BCs. In `InitializeAsync()` of each test class:
-
-```csharp
-public async Task InitializeAsync() => await _fixture.CleanAllPolecatDataAsync();
-```
-
-If the BC has async projections, prefer `ResetAllPolecatDataAsync()` to ensure the daemon is paused before
-data is wiped (avoids race conditions between the daemon catching up on stale event data and the test writing
-fresh data). Participants BC has no async projections in M1, so `CleanAllPolecatDataAsync()` is sufficient.
-
+- `docs/skills/marten-event-sourcing.md` — event sourcing race conditions, projection behavior
+- `docs/skills/adding-bc-module.md` — BC module registration, named store patterns
+- `docs/skills/wolverine-sagas.md` — saga testing patterns
+- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior
+- `docs/decisions/0002-marten-bc-isolation.md` — named store ADR, test fixture override pattern
+- [Alba HTTP Testing](https://jasperfx.github.io/alba/)
+- [Testcontainers .NET](https://dotnet.testcontainers.org/)

@@ -13,9 +13,10 @@ Patterns and conventions for asynchronous message-based communication between bo
 5. [Integration Message Handlers](#integration-message-handlers)
 6. [Queue Naming Conventions](#queue-naming-conventions)
 7. [RabbitMQ Transport Configuration](#rabbitmq-transport-configuration)
-8. [Adding a New Integration — Checklist](#adding-a-new-integration--checklist)
-9. [Critical Warnings](#critical-warnings)
-10. [Lessons Learned](#lessons-learned)
+8. [Modular Monolith Routing Settings](#modular-monolith-routing-settings)
+9. [Adding a New Integration — Checklist](#adding-a-new-integration--checklist)
+10. [Critical Warnings](#critical-warnings)
+11. [Lessons Learned](#lessons-learned)
 
 ---
 
@@ -60,7 +61,7 @@ src/CritterBids.Contracts/
 │   ├── ObligationFulfilled.cs
 │   └── DisputeOpened.cs
 └── Participants/
-    └── ParticipantSessionStarted.cs
+    └── SellerRegistrationCompleted.cs
 ```
 
 **Namespace pattern:** `CritterBids.Contracts.<PublisherBcName>`
@@ -186,6 +187,7 @@ Integration handlers follow the same patterns as command handlers. See `wolverin
 
 ```csharp
 // Settlement BC handler — reacts to ListingSold from Auctions BC
+[MartenStore(typeof(ISettlementDocumentStore))]
 public static class ListingSoldHandler
 {
     public static (SettlementSaga, OutgoingMessages) Handle(
@@ -206,6 +208,8 @@ public static class ListingSoldHandler
     }
 }
 ```
+
+> ⚠️ **Named store handlers must carry `[MartenStore(typeof(IBcDocumentStore))]`.** Every Wolverine handler in a Marten BC requires this attribute. Without it, Wolverine does not route injected sessions to the correct named store.
 
 ### Choreography vs Orchestration
 
@@ -264,8 +268,10 @@ public static IStartStream Handle(ListingPublished message)
 
 | Queue | Consumer | Publisher | Category |
 |---|---|---|---|
+| `selling-participants-events` | Selling | Participants | seller registration |
+| `listings-selling-events` | Listings | Selling | listing published |
 | `settlement-auctions-events` | Settlement | Auctions | all significant |
-| `obligations-auctions-events` | Obligations | Settlement | payment confirmed |
+| `obligations-settlement-events` | Obligations | Settlement | payment confirmed |
 | `relay-auctions-events` | Relay | Auctions | bid activity |
 | `relay-settlement-events` | Relay | Settlement | payout issued |
 | `listings-auctions-events` | Listings | Auctions | status changes |
@@ -277,28 +283,91 @@ This pattern documents **who consumes** and **who publishes** directly in the qu
 
 ## RabbitMQ Transport Configuration
 
-Standard pattern in every BC's module registration:
+### Standard Pattern (Aspire — recommended)
+
+When running under .NET Aspire, use the named connection pattern. Aspire provides a URI, not a traditional connection string, and `UseRabbitMqUsingNamedConnection` handles both forms:
 
 ```csharp
-opts.UseRabbitMq(rabbit =>
-{
-    rabbit.HostName = config["RabbitMQ:hostname"] ?? "localhost";
-    rabbit.VirtualHost = config["RabbitMQ:virtualhost"] ?? "/";
-    rabbit.Port = config.GetValue<int?>("RabbitMQ:port") ?? 5672;
-    rabbit.UserName = config["RabbitMQ:username"] ?? "guest";
-    rabbit.Password = config["RabbitMQ:password"] ?? "guest";
-})
-.AutoProvision(); // Creates queues/exchanges automatically
+// Inside Program.cs UseWolverine() — not inside any BC module
+opts.UseRabbitMqUsingNamedConnection("rabbit")
+    .AutoProvision(); // Creates queues/exchanges automatically at startup
+```
 
+The connection name `"rabbit"` must match the resource name declared in `CritterBids.AppHost/Program.cs`.
+
+> **Do not configure RabbitMQ inside BC modules.** The transport is a host-level concern. BC modules declare which queues to publish to and listen on (`opts.PublishMessage<T>()`, `opts.ListenToRabbitQueue()`), but the transport itself is wired once in `Program.cs`.
+
+### Manual Factory Pattern (non-Aspire environments)
+
+For environments where Aspire connection string injection is not available:
+
+```csharp
+opts.UseRabbitMq(factory =>
+{
+    factory.HostName = config["RabbitMQ:hostname"] ?? "localhost";
+    factory.VirtualHost = config["RabbitMQ:virtualhost"] ?? "/";
+    factory.Port = config.GetValue<int?>("RabbitMQ:port") ?? 5672;
+    factory.UserName = config["RabbitMQ:username"] ?? "guest";
+    factory.Password = config["RabbitMQ:password"] ?? "guest";
+})
+.AutoProvision();
+```
+
+### Durability
+
+```csharp
 opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
 ```
 
-| Environment | Host | Notes |
-|---|---|---|
-| Local native | `localhost` | APIs on host, RabbitMQ in Docker |
-| Local containerized | `rabbitmq` | Docker service name |
-
 `AutoProvision()` creates durable queues and persistent messages automatically. All messages survive RabbitMQ restarts.
+
+---
+
+## Modular Monolith Routing Settings
+
+These three settings are required in `Program.cs`'s `UseWolverine()` block when multiple BCs share the same process. They are **not** per-BC settings — configure them once at the host level.
+
+```csharp
+builder.Host.UseWolverine(opts =>
+{
+    // 1. Each BC handler for the same message type gets its own dedicated queue.
+    //    Without this: multiple BC handlers for ListingPublished are combined into one
+    //    logical handler on a single queue — BC isolation is broken.
+    opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
+
+    // 2. Prevents durable inbox deduplication bug on fanout.
+    //    Without this: the inbox deduplicates by message ID alone. When the same
+    //    ListingPublished message fans out to selling-participants-events AND
+    //    listings-selling-events, only the first BC handler fires.
+    opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
+
+    // 3. All named Marten stores write envelope rows to a shared "wolverine" schema.
+    //    Without this: each named store creates its own duplicate envelope tables.
+    opts.Durability.MessageStorageSchemaName = "wolverine";
+
+    opts.UseRabbitMqUsingNamedConnection("rabbit").AutoProvision();
+});
+```
+
+### What `Separated` Mode Does
+
+In default (`ClassicCombineIntoOneLogicalHandler`) mode, multiple handlers for the same message type share one queue:
+
+```
+Default:  ListingPublished → single queue → [ListingsHandler, SettlementHandler, AuctionsHandler]
+
+Separated: ListingPublished → listings queue    → ListingsHandler (own transaction, own retry policy)
+           ListingPublished → settlement queue  → SettlementHandler (own transaction, own retry policy)
+           ListingPublished → auctions queue    → AuctionsHandler (own transaction, own retry policy)
+```
+
+When a message arrives from RabbitMQ, Wolverine auto-fans it out to all separated handler queues. No special routing is needed.
+
+### What `IdAndDestination` Does
+
+With the default `MessageIdentity.Id`, the durable inbox key is the message ID alone. When one `ListingPublished` message fans out to three handler queues, all three share the same message ID. The inbox treats them as duplicates and only processes the first.
+
+`MessageIdentity.IdAndDestination` uses `(messageId, destinationQueue)` as the inbox key. Each BC handler has a distinct destination queue, so all three are processed correctly.
 
 ---
 
@@ -306,13 +375,14 @@ opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
 
 1. **Define the contract** in `src/CritterBids.Contracts/<PublisherBc>/`
 2. **Document all consumers** in XML doc comment — list every BC that will subscribe
-3. **Declare the publisher** via `opts.PublishMessage<T>().ToRabbitQueue("...")` in publisher's `AddXyzModule()`
-4. **Declare the subscriber** via `opts.ListenToRabbitQueue("...")` in consumer's `AddXyzModule()`
-5. **Implement the handler** in the consumer BC
-6. **Verify queue name** matches exactly on both sides
-7. **Write a cross-BC smoke test** to verify the RabbitMQ pipeline end-to-end
-8. **When retiring a contract:** search codebase for every reference. Classify as active, dead-needs-migration, or dead-no-publisher. Never close a milestone with unresolved dead handlers.
-9. **Update `docs/vision/bounded-contexts.md`** only when adding a **new BC-to-BC integration direction**. Not for adding a new message to an existing direction.
+3. **Build the consumer table** before finalizing payload (see L2 in Lessons Learned)
+4. **Declare the publisher** via `opts.PublishMessage<T>().ToRabbitQueue("...")` in publisher's `AddXyzModule()`
+5. **Declare the subscriber** via `opts.ListenToRabbitQueue("...")` in consumer's `AddXyzModule()`
+6. **Implement the handler** in the consumer BC — include `[MartenStore(typeof(IBcDocumentStore))]` on all Marten BC handlers
+7. **Verify queue name** matches exactly on both sides
+8. **Write a cross-BC smoke test** to verify the RabbitMQ pipeline end-to-end
+9. **When retiring a contract:** search codebase for every reference. Classify as active, dead-needs-migration, or dead-no-publisher. Never close a milestone with unresolved dead handlers.
+10. **Update `docs/vision/bounded-contexts.md`** only when adding a **new BC-to-BC integration direction**. Not for adding a new message to an existing direction.
 
 ---
 
@@ -354,13 +424,11 @@ Saga handles `ObligationFulfilled` but not `DisputeResolved` or `PaymentFailed`.
 
 ### ⚠️ Warning 5: Returning Tuples from Integration Handlers Without `[WriteAggregate]`
 
-Handler returns `(Aggregate, Event)` tuple. Wolverine doesn't persist the event. Use `IStartStream`, `Events` collection, or `session.Events.Append()` explicitly. See `marten-event-sourcing.md` Anti-Pattern #8.
+Handler returns `(Aggregate, Event)` tuple. Wolverine doesn't persist the event. Use `IStartStream`, `Events` collection, or `session.Events.Append()` explicitly.
 
 ---
 
 ### ⚠️ Warning 6: Building Messages from Entity State Instead of Command Values
-
-Handler re-reads entity state to populate an outgoing message instead of passing the command value directly. The transient value the user submitted is silently lost.
 
 ```csharp
 // ❌ WRONG — re-reads from entity, loses command value
@@ -374,8 +442,6 @@ outgoing.Add(new TrackingInfoProvided(obligation.Id, cmd.Carrier, cmd.TrackingNu
 
 ### ⚠️ Warning 7: `bus.PublishAsync()` in HTTP Endpoints Bypasses the Outbox ⚠️ CRITICAL
 
-`IMessageBus.PublishAsync()` in HTTP endpoints publishes immediately, outside Wolverine's transactional outbox. If the Marten session commit fails, the message has already been sent.
-
 ```csharp
 // ❌ WRONG — published even if DB commit fails
 await bus.PublishAsync(new ListingSold(...));
@@ -386,23 +452,25 @@ outgoing.Add(new CritterBids.Contracts.Auctions.ListingSold(...));
 return (Results.Ok(), outgoing);
 ```
 
-`bus.ScheduleAsync()` remains valid for delayed delivery — it cannot be expressed via `OutgoingMessages`.
+---
+
+### ⚠️ Warning 8: Missing `MultipleHandlerBehavior.Separated` in Modular Monolith
+
+Without `Separated`, multiple BC handlers for the same message type share one queue and one transaction. If one BC's handler fails, it blocks all other BCs from processing the same message. This silently breaks BC isolation.
+
+**Fix:** Set `opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated` in `Program.cs`'s `UseWolverine()` block. Also set `opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination` to prevent fanout deduplication bugs.
 
 ---
 
 ## Lessons Learned
 
-These are distilled from real integration bugs. Each one represents a class of failure worth actively guarding against.
-
----
-
 **L1: Verify queue wiring end-to-end, not just via in-memory tracking.**
-Unit tests that use `fixture.Tracker.Sent` pass even when the RabbitMQ `PublishMessage<T>()` declaration is missing. Write cross-BC smoke tests with a real RabbitMQ container that verify publish → consume pipeline end-to-end.
+Write cross-BC smoke tests with a real RabbitMQ container that verify publish → consume pipeline end-to-end.
 
 ---
 
 **L2: Design contracts for all consumers before publishing the first message.**
-A contract designed only for the immediate consumer requires expansion as new consumers are added. Expanding a contract is a coordinated deployment. Avoid it by building a consumer table before finalizing the contract:
+Build a consumer table before finalizing the contract:
 
 | Event | Consumer A needs | Consumer B needs | Consumer C needs |
 |---|---|---|---|
@@ -411,37 +479,36 @@ A contract designed only for the immediate consumer requires expansion as new co
 ---
 
 **L3: Sagas must handle all terminal states from every BC they consume.**
-A saga that handles the happy path but not `PaymentFailed` or `DisputeResolved` will accumulate dangling documents. For every integration relationship a saga has, enumerate every terminal event that relationship produces.
+A saga that handles the happy path but not `PaymentFailed` will accumulate dangling documents.
 
 ---
 
 **L4: Integration event payloads must be rich enough for all consumers.**
-Clients receiving a push notification with only an ID will make follow-up HTTP calls. Include all context needed to act on the event without querying back.
+Include all context needed to act on the event without querying back.
 
 ---
 
 **L5: Required, non-nullable fields only on contracts.**
-Optional-with-default fields on message records invite sloppy construction. If a field is always populated, mark it required. Enforcement at construction time catches missing data immediately.
+Optional-with-default fields invite sloppy construction. If a field is always populated, mark it required.
 
 ---
 
 **L6: Event tuple returns don't persist events without `[WriteAggregate]`.**
-`(Aggregate, Event)` tuple returns only work when Wolverine controls the write path via `[WriteAggregate]`. Manual aggregate loading + tuple return silently discards events. Use `IStartStream`, `Events`, or `session.Events.Append()`. This has caused ~30 minutes of debugging more than once.
+Manual aggregate loading + tuple return silently discards events. Use `IStartStream`, `Events`, or `session.Events.Append()`.
 
 ---
 
 **L7: Publisher configuration must match subscriber expectations exactly.**
-Queue names must be identical on both sides. The publisher declares `.ToRabbitQueue("name")`. The subscriber declares `.ListenToRabbitQueue("name")`. One character off and messages are silently undeliverable.
+Queue names must be identical on both sides. One character off and messages are silently undeliverable.
 
 ---
 
 **L8: Build outgoing messages from command values, not entity state.**
-When a handler modifies entity state and then reads it back to build an outgoing message, transient values from the command can be silently overwritten by stale entity state. Pass command values explicitly as parameters.
+When a handler modifies entity state and then reads it back, transient command values can be silently overwritten.
 
 ---
 
 **L9: Fan-out pattern — parent returns `OutgoingMessages` with N child commands.**
-One parent command can dispatch N child commands via `OutgoingMessages`. Wolverine processes each as a separate handler invocation in its own transaction. Optimistic concurrency on the parent stream prevents duplicate fan-outs.
 
 ```csharp
 public static OutgoingMessages Handle(StartFlashSession cmd)
@@ -456,27 +523,26 @@ public static OutgoingMessages Handle(StartFlashSession cmd)
 ---
 
 **L10: Fan-out tests need generous timing.**
-N async messages + projection updates take longer than a single handler. If testing fan-out workflows that generate large numbers of child commands, allow adequate time for all side effects to complete before asserting.
+N async messages + projection updates take longer than a single handler.
 
 ---
 
 **L11: Assert the full payload of outgoing integration messages, not just the type.**
-A test that verifies `fixture.Tracker.Sent.Single<ListingSold>()` was published without checking `WinnerId`, `HammerPrice`, or `SellerId` will miss data loss bugs. Assert every field that matters to downstream consumers.
+A test that only checks the type was published will miss data loss bugs. Assert every field that matters to downstream consumers.
 
 ---
 
 **L12: Integration handler → SignalR pattern requires `async Task<T>` with explicit `SaveChangesAsync()`.**
-When a handler appends events to trigger inline projections and then immediately returns a real-time push message based on the updated projection, the handler must be `async Task<T>` and call `await session.SaveChangesAsync()` before querying the projection. Synchronous handlers cannot force the projection to update before the query.
+When a handler appends events to trigger inline projections and then immediately queries the projection for a push notification, the handler must be `async Task<T>` and call `await session.SaveChangesAsync()` before querying the projection.
 
 ---
 
 **L13: `OutgoingMessages` is the only safe publishing mechanism from HTTP endpoints.**
-`bus.PublishAsync()` bypasses the outbox in HTTP endpoints. Use `(IResult, OutgoingMessages)` or `(IResult, Events, OutgoingMessages)` return tuples. The outgoing messages are committed atomically with the Marten session. This is the most pervasive Critter Stack convention violation to watch for in code review.
+Use `(IResult, OutgoingMessages)` or `(IResult, Events, OutgoingMessages)` return tuples.
 
 ---
 
 **L14: Idempotent endpoints must not publish duplicate integration events.**
-An idempotent HTTP endpoint that returns the existing resource on duplicate calls must also return an empty `OutgoingMessages`. If the state change didn't happen, no integration event should fire.
 
 ```csharp
 var existing = await session.LoadAsync<Listing>(cmd.ListingId, ct);
@@ -487,20 +553,12 @@ if (existing is not null)
 ---
 
 **L15: Document enrichment tradeoffs when embedding data from other BCs.**
-When an integration message carries data that "belongs" to another BC (e.g., a seller's display name embedded in `ListingSold`), document the coupling explicitly. Enrichment is a shortcut with a maintenance cost. Record the tradeoff and the plan for remediation.
+Enrichment is a shortcut with a maintenance cost. Record the tradeoff explicitly.
 
 ---
 
 **L16: Dual-publish for safe contract retirement across multiple consumers.**
-When retiring a contract name with multiple consumers, don't do a hard cutover. Temporarily publish both old and new contract types simultaneously. Migrate consumers one at a time. Retire the dual-publish only after all consumers are migrated and verified. Strict sequence: add new handlers → verify → remove old handlers → remove dual-publish.
-
-```csharp
-// MIGRATION: Dual-publish for backward compat — remove after Relay BC migrates
-outgoing.Add(new LegacyContracts.BiddingClosed(listing.Id, ...));
-outgoing.Add(new CritterBids.Contracts.Auctions.ListingSold(listing.Id, ...));
-```
-
-After removing dual-publish: search the codebase for every reference to the retired contract name. Classify each as active, dead-needs-migration, or dead-no-publisher. Dead handlers must be cleaned up before the milestone closes.
+Temporarily publish both old and new contract types simultaneously. Migrate consumers one at a time. Retire the dual-publish only after all consumers are migrated and verified.
 
 ---
 
@@ -509,7 +567,9 @@ After removing dual-publish: search the codebase for every reference to the reti
 - [Wolverine Transport Fundamentals](https://wolverine.netlify.app/guide/messaging/transports/)
 - [RabbitMQ Transport](https://wolverine.netlify.app/guide/messaging/transports/rabbitmq/)
 - [Transactional Inbox/Outbox](https://wolverine.netlify.app/guide/durability/)
+- [Modular Monolith Tutorial](https://wolverine.netlify.app/tutorials/modular-monolith.html)
 - `docs/skills/wolverine-message-handlers.md` — handler patterns, return types
 - `docs/skills/wolverine-sagas.md` — orchestration sagas
 - `docs/skills/marten-event-sourcing.md` — domain events, aggregates
+- `docs/skills/adding-bc-module.md` — BC module registration, host-level Wolverine settings
 - `docs/vision/bounded-contexts.md` — CritterBids integration topology

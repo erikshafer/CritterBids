@@ -10,8 +10,9 @@
 Stand up the `CritterBids.Selling` bounded context as an empty, correctly-wired shell. At session
 close: the project exists, the named Marten store (`ISellingDocumentStore`) is registered, the
 `SellerListing` aggregate skeleton is in place, `AddSellingModule()` is called from the API host,
-the Wolverine host has `MessageStorageSchemaName` configured, and a smoke test confirms the full
-host boots cleanly with the new module wired in.
+the Wolverine host has `MultipleHandlerBehavior.Separated`, `MessageIdentity.IdAndDestination`, and
+`MessageStorageSchemaName` configured, and a smoke test confirms the full host boots cleanly with
+the new module wired in.
 
 No commands, no handlers, no HTTP endpoints, no RabbitMQ subscriptions, no projections — those
 arrive in S3–S5. This session establishes the structural foundation that every subsequent Selling BC
@@ -48,10 +49,11 @@ not silently use stale version assumptions.
 **`CritterBids.Selling.csproj`**
 
 New class library targeting .NET 10. References:
-- Core Marten package (verify current stable — Marten 8.x family)
-- Wolverine-Marten integration package (the package that provides `AddMartenStore<T>()` and
-  `IntegrateWithWolverine()` for Marten named stores — verify exact package name via NuGet or
-  Context7 before referencing)
+- `WolverineFx.Marten` — the Wolverine-Marten integration package. Provides `AddMartenStore<T>()`,
+  `.IntegrateWithWolverine()`, `[MartenStore]`, and transitively brings in `Marten` itself. For S2
+  (no HTTP endpoints), this single package is sufficient. S4 will upgrade to `WolverineFx.Http.Marten`
+  when the first HTTP endpoint is added — that package transitively includes `WolverineFx.Http` and
+  `WolverineFx.Marten`. **All `WolverineFx.*` packages in the solution must use the same version.**
 
 No `<PackageReference Version="...">` — central version management via `Directory.Packages.props`.
 
@@ -82,13 +84,15 @@ business key. Document this in a brief code comment on the class.
    - `opts.Connection(connectionString)`
    - `opts.DatabaseSchemaName = "selling"`
    - `opts.Policies.AutoApplyTransactions()` — required in every BC per M2 §6
-   - Register `SellerListing` with the event stream: `opts.Events.AddEventType<SellerListing>()` is
-     not correct — register the aggregate stream identity with
-     `opts.Schema.For<SellerListing>()` if document storage is needed, or leave stream registration
-     minimal until S4 adds actual event types. Confirm the correct minimal registration against
-     `marten-event-sourcing.md` before writing.
-3. Chain `.ApplyAllDatabaseChangesOnStartup()` on the builder returned by `AddMartenStore<T>()`.
-4. Chain `.IntegrateWithWolverine()` on the same builder.
+   - Minimal stream/document registration: confirm the correct registration against
+     `marten-event-sourcing.md` before writing. In S2 there are no event types yet; leave stream
+     registration minimal or absent until S4 adds `DraftListingCreated`.
+3. Chain `.UseLightweightSessions()` on the builder returned by `AddMartenStore<T>()`. This
+   disables identity map overhead and is the recommended session type for all Marten BC modules.
+4. Chain `.ApplyAllDatabaseChangesOnStartup()` on the same builder.
+5. Chain `.IntegrateWithWolverine()` on the same builder.
+
+The complete chain: `AddMartenStore<ISellingDocumentStore>(...).UseLightweightSessions().ApplyAllDatabaseChangesOnStartup().IntegrateWithWolverine()`.
 
 No RabbitMQ `opts.ListenToRabbitQueue()` or `opts.PublishMessage<T>()` calls — those arrive in S3
 when the `RegisteredSellers` consumer is wired.
@@ -96,18 +100,39 @@ when the `RegisteredSellers` consumer is wired.
 No `services.AddSingleton<ISellerRegistrationService, SellerRegistrationService>()` — that arrives
 in S3 alongside the service's implementation.
 
-### `src/CritterBids.Api/Program.cs` — two changes
+### `src/CritterBids.Api/Program.cs` — four changes
 
 **`AddSellingModule()` call.** Add `services.AddSellingModule(builder.Configuration)` alongside
 `services.AddParticipantsModule(builder.Configuration)`.
 
-**`MessageStorageSchemaName` in Wolverine host configuration.** The host's `UseWolverine()` call
-(or equivalent) in `Program.cs` must set `opts.Durability.MessageStorageSchemaName = "wolverine"`
-so all named Marten stores write envelope rows to a shared PostgreSQL schema rather than each
-creating their own envelope tables. This setting belongs in the host-level Wolverine configuration,
-not inside any BC module. If the existing Wolverine host configuration does not expose a
-`Durability.MessageStorageSchemaName` option, verify the correct API path against ADR 0002 and the
-Wolverine documentation; flag in the retro if the API shape differs from what the ADR describes.
+**Wolverine modular monolith settings.** The host's `UseWolverine()` block must include three
+settings that belong at the host level, not in any BC module:
+
+```
+opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
+opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
+opts.Durability.MessageStorageSchemaName = "wolverine";
+```
+
+- `Separated` — each BC handler for the same message type gets its own dedicated queue with its own
+  transaction and retry policy. In the default combined mode, multiple BC handlers for `ListingPublished`
+  (Listings, Settlement, Auctions) would run in one combined handler, breaking BC isolation.
+- `MessageIdentity.IdAndDestination` — prevents the durable inbox from deduplicating messages that
+  arrive on different queues but share the same message ID (fanout deduplication bug without this).
+- `MessageStorageSchemaName` — routes all named Marten stores' envelope rows to a shared schema
+  instead of each store creating its own envelope tables.
+
+If any of these properties do not exist at the paths shown, verify the correct API via Context7 and
+flag the discrepancy in the retrospective.
+
+**`RunJasperFxCommands`.** Check whether `Program.cs` currently ends with `app.Run()` or
+`return await app.RunJasperFxCommands(args)`. The canonical Wolverine bootstrap requires
+`RunJasperFxCommands` — it enables the `db-apply`, `db-assert`, `db-dump`, and `codegen` CLI
+commands. If `app.Run()` is present, replace it with `return await app.RunJasperFxCommands(args)`.
+
+**`public partial class Program`.** Check whether `Program.cs` ends with
+`public partial class Program { }`. This declaration is required for test projects to reference
+`Program` via `AlbaHost.For<Program>()`. If absent, add it.
 
 ### `CritterBids.sln` — add new projects
 
@@ -118,9 +143,8 @@ Add both new projects to the solution file:
 ### `Directory.Packages.props` — new package pins
 
 Pin the packages required by this session. Verify current stable versions at session time.
-Packages to add:
-- Core Marten package (Marten 8.x)
-- Wolverine-Marten integration package
+Packages to add (if not already present):
+- `WolverineFx.Marten` — same version family as all other `WolverineFx.*` packages in the solution
 - `Testcontainers.PostgreSql` — PostgreSQL container for test fixtures
 
 Do not add `Version=` to any `<PackageReference>` anywhere in the solution.
@@ -139,21 +163,22 @@ Test project. References:
 **`Fixtures/SellingTestFixture.cs`**
 
 Follows the same structural shape as `ParticipantsTestFixture.cs` adapted for a named Marten store:
-- Starts a PostgreSQL Testcontainers container (`PostgreSqlBuilder`, verify constructor pattern —
-  use same style as `MsSqlBuilder` in M1 Participants fixture)
-- Builds `AlbaHost.For<Program>` with a `ConfigureServices` override that calls
-  `AddMartenStore<ISellingDocumentStore>()` with `opts.Connection(pgContainer.ConnectionString)` and
-  `opts.DatabaseSchemaName = "selling"` — this re-registers the named store, replacing the
-  production connection string with the Testcontainers-issued one. Per ADR 0002 Consequences:
-  overriding a named store re-registers it; the production registration is replaced.
-- Calls `DisableAllExternalWolverineTransports()` in the `UseWolverine` configuration to suppress
-  RabbitMQ during tests.
-- Exposes `Host` and any helper methods used by tests in this project (minimal in S2 — a
-  `CleanAllMartenDataAsync()` or equivalent for future test isolation, if Marten provides one).
-
-Note: confirm the correct Marten extension method for test data cleanup (equivalent to Polecat's
-`CleanAllPolecatDataAsync()`). Check `marten-event-sourcing.md` or Context7 for the Marten API.
-Document the finding in the retrospective regardless of whether a direct equivalent exists.
+- Starts a PostgreSQL Testcontainers container (`PostgreSqlBuilder` — verify constructor pattern;
+  Testcontainers 4.x uses `new PostgreSqlBuilder("image:tag")` constructor form matching the
+  `MsSqlBuilder` pattern from M1-S7 finding #3)
+- Builds `AlbaHost.For<Program>` with a `ConfigureServices` override that:
+  - Calls `AddMartenStore<ISellingDocumentStore>()` with `opts.Connection(pgContainer.ConnectionString)`
+    and `opts.DatabaseSchemaName = "selling"` — re-registers the named store, replacing the production
+    connection string with the Testcontainers-issued one
+  - Calls `services.RunWolverineInSoloMode()` — prevents advisory lock contention during test
+    restarts (required alongside `DisableAllExternalWolverineTransports()`)
+  - Calls `services.DisableAllExternalWolverineTransports()` — suppresses RabbitMQ during tests
+- Exposes `Host` for test access
+- Exposes `CleanAllMartenDataAsync()` as an async helper for future test isolation. The canonical
+  Marten cleanup API is `await _host.CleanAllMartenDataAsync()` — an extension method on `IAlbaHost`
+  from the `Marten` namespace. This deletes all documents and event streams. A second method
+  `ResetAllMartenDataAsync()` exists for async projection tests (disables/clears/restarts
+  projections) — expose it too for completeness, even if no test calls it in S2.
 
 **`Fixtures/SellingTestCollection.cs`**
 
@@ -164,7 +189,8 @@ Document the finding in the retrospective regardless of whether a direct equival
 
 One test method: `SellingModule_BootsClean`. Verifies that:
 1. The test host starts without throwing (AlbaHost construction succeeds)
-2. `ISellingDocumentStore` is resolvable from the DI container (`Host.Services.GetRequiredService<ISellingDocumentStore>()` does not throw)
+2. `ISellingDocumentStore` is resolvable from the DI container
+   (`Host.Services.GetRequiredService<ISellingDocumentStore>()` does not throw)
 
 No HTTP calls, no event stream operations. Boot and DI resolution only.
 
@@ -194,53 +220,55 @@ Update §9 S2 row from the prompt filename placeholder to
 ## Conventions to pin or follow
 
 - **Named store registration via `AddMartenStore<ISellingDocumentStore>()`** — the ADR corrects the
-  §5 working assumption. Do not call `AddMarten()` from any BC module. See ADR 0002 Decision and
-  Consequences sections.
+  §5 working assumption. Do not call `AddMarten()` from any BC module. See ADR 0002.
+- **`.UseLightweightSessions()`** — chain on `AddMartenStore<T>()` in every Marten BC module.
+  Disables identity map overhead. Required for the canonical Marten module pattern.
 - **`[MartenStore(typeof(ISellingDocumentStore))]` on handlers** — S2 has no handlers, so no
-  attribute placements are needed today. However, establish this requirement in a code comment
-  inside `SellingModule.cs` (e.g., a comment on the `AddMartenStore<T>()` call noting that all
-  Wolverine handlers in this BC must carry the attribute). This convention is established now so
-  that S3+ agents see it at the call site.
-- **`opts.Policies.AutoApplyTransactions()`** — required in every BC's store configuration per M2
-  §6 (BC-engine-agnostic convention).
+  attribute placements are needed today. Establish this requirement in a code comment inside
+  `SellingModule.cs` so that S3+ agents see it at the call site.
+- **`opts.Policies.AutoApplyTransactions()`** — required in every BC's store configuration per M2 §6.
 - **UUID v7 stream IDs** — `Guid.CreateVersion7()` at creation time; no namespace constant. Add a
   brief comment to `SellerListing.cs` noting this per ADR 0002.
-- **`MessageStorageSchemaName = "wolverine"`** — set once in host-level Wolverine configuration;
-  not in any BC module.
-- **`[AllowAnonymous]` everywhere through M5** — no endpoints in S2, so no action needed. No
-  `[Authorize]` or `[AllowAnonymous]` attributes introduced in this session.
-- **`sealed record` for all records** — no records in S2; no action needed.
+- **`MultipleHandlerBehavior.Separated` + `MessageIdentity.IdAndDestination`** — host-level Wolverine
+  settings; not in any BC module. Both must be set in the same `UseWolverine()` block as
+  `MessageStorageSchemaName`.
+- **`RunJasperFxCommands`** — all Wolverine projects use `return await app.RunJasperFxCommands(args)`
+  instead of `app.Run()`.
+- **`RunWolverineInSoloMode()` + `DisableAllExternalWolverineTransports()`** — both required in every
+  Marten BC test fixture `ConfigureServices` override.
 - **No `Version=` on any `<PackageReference>` anywhere in the solution.**
 
 ## Acceptance criteria
 
-- [ ] `src/CritterBids.Selling/CritterBids.Selling.csproj` exists and references the core Marten
-      package and Wolverine-Marten integration package.
+- [ ] `src/CritterBids.Selling/CritterBids.Selling.csproj` exists and references `WolverineFx.Marten`.
 - [ ] `ISellingDocumentStore` interface exists, is public, and inherits from `IDocumentStore`.
 - [ ] `SellerListing` class exists with `public Guid Id { get; set; }` and a code comment noting
       UUID v7 stream ID strategy.
 - [ ] `AddSellingModule()` extension method exists on `IServiceCollection`, calls
       `AddMartenStore<ISellingDocumentStore>()` with `DatabaseSchemaName = "selling"` and
-      `opts.Policies.AutoApplyTransactions()`, and chains `.ApplyAllDatabaseChangesOnStartup()` and
-      `.IntegrateWithWolverine()`.
+      `opts.Policies.AutoApplyTransactions()`, and chains `.UseLightweightSessions()`,
+      `.ApplyAllDatabaseChangesOnStartup()`, and `.IntegrateWithWolverine()`.
 - [ ] `AddSellingModule()` throws `InvalidOperationException` if the PostgreSQL connection string
       is absent from `IConfiguration`.
 - [ ] `AddSellingModule()` does **not** call `AddMarten()`.
 - [ ] `SellingModule.cs` contains a comment noting that all Wolverine handlers in this BC require
       `[MartenStore(typeof(ISellingDocumentStore))]`.
 - [ ] `CritterBids.Api/Program.cs` calls `services.AddSellingModule(builder.Configuration)`.
-- [ ] `CritterBids.Api/Program.cs` sets `opts.Durability.MessageStorageSchemaName = "wolverine"`
-      (or equivalent verified API path) in the host Wolverine configuration.
+- [ ] `CritterBids.Api/Program.cs` `UseWolverine()` block includes `MultipleHandlerBehavior.Separated`,
+      `MessageIdentity.IdAndDestination`, and `MessageStorageSchemaName = "wolverine"`.
+- [ ] `CritterBids.Api/Program.cs` ends with `return await app.RunJasperFxCommands(args)`, not
+      `app.Run()`.
+- [ ] `CritterBids.Api/Program.cs` contains `public partial class Program { }`.
 - [ ] Both new projects are added to `CritterBids.sln`.
-- [ ] `Directory.Packages.props` contains pins for the core Marten package, the Wolverine-Marten
-      integration package, and `Testcontainers.PostgreSql`. No `Version=` on any `<PackageReference>`.
+- [ ] `Directory.Packages.props` contains a pin for `WolverineFx.Marten` and `Testcontainers.PostgreSql`.
+      No `Version=` on any `<PackageReference>`.
 - [ ] `SellingTestFixture` exists, starts a PostgreSQL Testcontainers container, bootstraps
       `AlbaHost.For<Program>` with a `ConfigureServices` override that re-registers
-      `AddMartenStore<ISellingDocumentStore>()` with the Testcontainers connection string, and calls
-      `DisableAllExternalWolverineTransports()`.
+      `AddMartenStore<ISellingDocumentStore>()` with the Testcontainers connection string, calls
+      `services.RunWolverineInSoloMode()`, and calls `DisableAllExternalWolverineTransports()`.
+- [ ] `SellingTestFixture` exposes `CleanAllMartenDataAsync()` and `ResetAllMartenDataAsync()` helpers.
 - [ ] `SellingTestCollection` defines the xUnit collection fixture.
-- [ ] `SellingModule_BootsClean` test passes: host starts, `ISellingDocumentStore` is resolvable
-      from DI.
+- [ ] `SellingModule_BootsClean` test passes: host starts, `ISellingDocumentStore` is resolvable from DI.
 - [ ] `dotnet test` reports 9 passing tests, zero failing (8 existing + 1 new smoke test).
 - [ ] `dotnet build` succeeds with zero errors and zero warnings across all projects.
 - [ ] No files created or modified outside: `src/CritterBids.Selling/`, `src/CritterBids.Api/Program.cs`,
@@ -251,35 +279,24 @@ Update §9 S2 row from the prompt filename placeholder to
 
 ## Open questions
 
-- **Exact Wolverine-Marten integration package name.** The ADR and skills doc refer to the
-  integration capability but do not specify the NuGet package name. Likely `WolverineFx.Marten` or
-  a sub-package — verify via NuGet before referencing. If the package that provides
-  `AddMartenStore<T>()` with `.IntegrateWithWolverine()` differs from what `marten-event-sourcing.md`
-  implies, document the correct name in the retrospective so future sessions and skill files can be
-  updated.
-
-- **Minimal `SellerListing` stream registration in `StoreOptions`.** Marten requires event types
-  to be registered before they can be appended to a stream. In S2 there are no event types yet.
-  Confirm whether any stream-identity or aggregate registration is needed in `StoreOptions` at
+- **Minimal `SellerListing` stream registration in `StoreOptions`.** In S2 there are no event types
+  yet. Confirm whether any stream-identity or aggregate registration is needed in `StoreOptions` at
   scaffold time, or whether the stream simply does not need configuration until S4 introduces
   `DraftListingCreated`. Document the approach in the retrospective.
 
-- **Marten data-cleanup API for test fixtures.** Polecat provides `CleanAllPolecatDataAsync()` and
-  `ResetAllPolecatDataAsync()` as extension methods on `IServiceProvider`. Verify whether Marten
-  provides equivalent helpers (e.g. `IDocumentStore.Advanced.Clean.DeleteAllDocumentsAsync()` or
-  similar) for use in future Selling BC integration tests. The S2 fixture should expose the cleanup
-  method even if no test calls it yet. Document the API found in the retrospective.
-
-- **`MessageStorageSchemaName` exact API path.** ADR 0002 describes this as
-  `opts.Durability.MessageStorageSchemaName`. Verify this path exists in the actual Wolverine 5.x
-  `WolverineOptions` object. If the property lives elsewhere (e.g. `opts.Node`, `opts.Storage`, or
-  requires a different builder chain), use the correct path and flag the discrepancy in the
-  retrospective so the ADR can be updated.
+- **`MultipleHandlerBehavior`, `MessageIdentity`, and `MessageStorageSchemaName` exact API paths.**
+  The prompt shows the expected paths based on Wolverine 5.x documentation. If any property does not
+  exist at the path shown, verify the correct path via Context7 and document the actual API shape in
+  the retrospective so the gap analysis document and skill files can be updated at M2-S7.
 
 - **`PostgreSqlBuilder` constructor pattern.** Testcontainers 4.x changed `MsSqlBuilder` to use a
-  constructor-with-image-tag pattern (M1-S7 finding, key learning #3 in that retro). Verify whether
-  `PostgreSqlBuilder` follows the same pattern or uses a different API shape. Use whatever the
-  current Testcontainers.PostgreSql API requires; document in the retrospective.
+  constructor-with-image-tag pattern (M1-S7 finding). Verify whether `PostgreSqlBuilder` follows the
+  same pattern or uses a different API shape. Use whatever the current API requires; document in the
+  retrospective.
+
+- **`RunJasperFxCommands` and `public partial class Program` — already present?** These are likely
+  already in `Program.cs` if they were established during M1. Check before modifying; if already
+  present, note that in the retrospective rather than re-adding.
 
 - **If any root configuration file conflicts with this prompt's scope, flag and stop before
   editing.** Carried forward from prior sessions.
