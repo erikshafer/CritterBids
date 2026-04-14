@@ -1,3 +1,4 @@
+using CritterBids.Contracts;
 using CritterBids.Participants;
 using Wolverine;
 using Wolverine.Http;
@@ -24,6 +25,11 @@ builder.UseWolverine(opts =>
     // Wrap all Wolverine message handlers in Polecat transactions automatically.
     // Established here at host level; applies to all BCs registered via AddXyzModule().
     opts.Policies.AutoApplyTransactions();
+
+    // Integration event routing — local queues for M1 (no RabbitMQ topology yet).
+    // Replace with exchange publish rules when each consuming BC is implemented.
+    opts.Publish(x => x.Message<SellerRegistrationCompleted>()
+        .ToLocalQueue("participants-integration-events"));
 });
 
 // SQL Server — connection string injected by Aspire via WithReference(sqlServer) in production.

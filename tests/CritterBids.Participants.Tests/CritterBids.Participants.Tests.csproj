@@ -19,6 +19,8 @@
     <!-- Required for AlbaHost.For<Program> to access the API entry point -->
     <ProjectReference Include="..\..\src\CritterBids.Api\CritterBids.Api.csproj" />
     <ProjectReference Include="..\..\src\CritterBids.Participants\CritterBids.Participants.csproj" />
+    <!-- Required for SellerRegistrationCompleted outbox assertions -->
+    <ProjectReference Include="..\..\src\CritterBids.Contracts\CritterBids.Contracts.csproj" />
   </ItemGroup>
 
 </Project>
