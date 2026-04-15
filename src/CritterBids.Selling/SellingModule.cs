@@ -14,11 +14,15 @@ public static class SellingModule
         {
             opts.Schema.For<RegisteredSeller>().DatabaseSchemaName("selling");
 
-            // SellerListing aggregate stream — registered so Marten knows the stream type and
-            // can enforce UseMandatoryStreamTypeDeclaration (set in Program.cs). DraftListingCreated
-            // is the first event in the stream; additional events arrive in S6+.
+            // SellerListing aggregate stream — all event types registered so Marten can enforce
+            // UseMandatoryStreamTypeDeclaration (set in Program.cs) and correctly reconstruct
+            // aggregate state (missing Apply() for a registered event type causes silent null return).
             opts.Events.AddEventType<DraftListingCreated>();
             opts.Events.AddEventType<DraftListingUpdated>();
+            opts.Events.AddEventType<ListingSubmitted>();
+            opts.Events.AddEventType<ListingApproved>();
+            opts.Events.AddEventType<ListingRejected>();
+            opts.Events.AddEventType<ListingPublished>();
         });
 
         services.AddTransient<ISellerRegistrationService, SellerRegistrationService>();

@@ -35,6 +35,9 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("selling-participants-events");
         opts.ListenToRabbitQueue("selling-participants-events")
             .ProcessInline();
+
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
+            .ToRabbitQueue("listings-selling-events");
     }
 
     opts.Policies.AutoApplyTransactions();

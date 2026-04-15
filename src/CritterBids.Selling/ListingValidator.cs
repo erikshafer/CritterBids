@@ -14,10 +14,9 @@ public sealed record ValidationResult
 }
 
 /// <summary>
-/// Pure-function validator for <see cref="CreateDraftListing"/> commands.
+/// Pure-function validator for listing configuration.
 /// No framework, no host, no database — all 14 rules are synchronous and deterministic.
-/// Called by <c>SubmitListingHandler</c> in S6 before publishing. Authored in S5 so the
-/// rule set is independently testable before the submission flow is implemented.
+/// Called by <c>SubmitListingHandler</c> before publishing.
 /// </summary>
 public static class ListingValidator
 {
@@ -69,4 +68,22 @@ public static class ListingValidator
 
         return ValidationResult.Valid();
     }
+
+    /// <summary>
+    /// Validates the current state of a <see cref="SellerListing"/> aggregate against the same 14
+    /// rules as <see cref="Validate(CreateDraftListing)"/>. Called by <c>SubmitListingHandler</c>
+    /// which receives the aggregate, not a command.
+    /// </summary>
+    public static ValidationResult Validate(SellerListing listing) =>
+        Validate(new CreateDraftListing(
+            listing.SellerId,
+            listing.Title,
+            listing.Format,
+            listing.StartingBid,
+            listing.ReservePrice,
+            listing.BuyItNowPrice,
+            listing.Duration,
+            listing.ExtendedBiddingEnabled,
+            listing.ExtendedBiddingTriggerWindow,
+            listing.ExtendedBiddingExtension));
 }
