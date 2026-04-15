@@ -515,11 +515,21 @@ opts.Events.Upcast<BidPlacedV1, BidPlaced>(v1 =>
 
 ## Marten Configuration
 
-### Standard BC Module Pattern (ADR 009)
+### Standard BC Module Pattern (ADR 009, extended by ADR 011)
 
-CritterBids uses a **single primary `IDocumentStore`** registered in `Program.cs`. Each Marten BC
-contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Never call
-`AddMarten()` or `AddMartenStore<T>()` from inside a BC module.
+*Confirmed by CritterStackSamples north star analysis (§9 — Modular Monolith Architecture, §14 — Cross-Cutting Similarities)*
+
+CritterBids uses a **single primary `IDocumentStore`** registered in `Program.cs`. Every one of the
+eight BCs contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Never
+call `AddMarten()` or `AddMartenStore<T>()` from inside a BC module.
+
+`opts.Schema.For<T>().DatabaseSchemaName("bc-name")` is how each BC claims its schema namespace
+within the shared store. Document tables for BC-owned types are isolated in the BC's schema; the
+shared `mt_events` and `mt_streams` tables live in the root schema defined by `Program.cs`.
+
+`opts.Projections.Snapshot<T>(SnapshotLifecycle.Inline)` is registered here for any aggregate that
+needs fast read access via LINQ queries. Inline lifecycle means the snapshot updates in the same
+transaction as the event append — always consistent, no daemon required.
 
 ```csharp
 // Inside AddAuctionsModule() — no connection string, no store provisioning
@@ -568,15 +578,28 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
 
 ### Host-Level Wolverine Settings (`Program.cs` — not in BC modules)
 
+*Confirmed by CritterStackSamples north star analysis: `AutoApplyTransactions()` is always in `UseWolverine()` globally, never inside a BC's `ConfigureMarten()` call.*
+
 ```csharp
 builder.UseWolverine(opts =>
 {
     opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
     opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
     opts.Durability.MessageStorageSchemaName = "wolverine";
-    opts.Policies.AutoApplyTransactions();
+    opts.Policies.AutoApplyTransactions();   // ← global policy, applies to every BC's handlers
 });
 ```
+
+`AutoApplyTransactions()` is a global Wolverine policy registered once in `UseWolverine()`. It
+applies to every handler in the process — there is no need to, and you must not, include it inside
+a BC's `services.ConfigureMarten()` call. This matches every CritterStackSamples reference project
+without exception.
+
+Note: earlier CritterBids documents (M2 milestone §6, pre-ADR 011) showed `AutoApplyTransactions()`
+inside the `AddMarten()` lambda in each BC module. That placement is incorrect. The correct placement
+is `opts.Policies.AutoApplyTransactions()` inside `UseWolverine()` in `Program.cs`. The existing
+`SellingTestFixture.cs` does not include it in the fixture's `AddMarten()` call precisely because
+the host's `UseWolverine()` block covers it.
 
 ### ⚠️ CRITICAL: `AutoApplyTransactions()` Is Non-Negotiable
 

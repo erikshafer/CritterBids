@@ -14,7 +14,7 @@ docs/decisions/0007-uuid-strategy.md     ❌ four-digit — do not use
 docs/decisions/7-uuid-strategy.md        ❌ no padding — do not use
 ```
 
-The next ADR is **`010-<slug>.md`**. Check this index before creating one to confirm the next available number.
+The next ADR is **`012-<slug>.md`**. Check this index before creating one to confirm the next available number.
 
 ---
 
@@ -31,7 +31,8 @@ The next ADR is **`010-<slug>.md`**. Check this index before creating one to con
 | [007](007-uuid-strategy.md) | UUID Strategy for Stream IDs and Event Row IDs | 🟡 Proposed | 2026-04-13 | UUID v5 where a natural business key exists, v7 otherwise; event row ID strategy pending acceptance gates (Marten 8 / Polecat 2 capability check + JasperFx team input at M3) |
 | [008](008-marten-bc-isolation.md) | Marten BC Isolation: Named Stores per BC | ~~Superseded by 009~~ | 2026-04-14 | Named stores via `AddMartenStore<T>()` — superseded when ancillary store API was found to omit critical Wolverine registrations |
 | [009](009-shared-marten-store.md) | Shared Primary Marten Store | ✅ Accepted | 2026-04-14 | Single primary `IDocumentStore` in `Program.cs`; each Marten BC contributes its types via `services.ConfigureMarten()` inside `AddXyzModule()` |
-| [010](010-wolverine-dual-store-resolution.md) | Wolverine Dual-Store Resolution | 🟡 Proposed — Pending JasperFx input | 2026-04-15 | Both `AddMarten().IntegrateWithWolverine()` and `AddPolecat().IntegrateWithWolverine()` claim "main" store; Polecat has no ancillary-store API; production Aspire start blocked pending JasperFx resolution |
+| [010](010-wolverine-dual-store-resolution.md) | Wolverine Dual-Store Resolution | ~~Resolved by ADR 011~~ | 2026-04-15 | Both `AddMarten().IntegrateWithWolverine()` and `AddPolecat().IntegrateWithWolverine()` claim "main" store; Polecat has no ancillary-store API; production Aspire start blocked — resolved by removing the dual-store scenario (ADR 011) |
+| [011](011-all-marten-pivot.md) | All-Marten Pivot | ✅ Accepted | 2026-04-15 | Migrate Participants, Settlement, Operations from Polecat/SQL Server to Marten/PostgreSQL; eliminates dual-store conflict; all 8 BCs use uniform bootstrap pattern; supersedes ADR 003 |
 
 **Status key:** ✅ Accepted · 🟡 Proposed (acceptance gates open) · ~~Superseded~~
 
@@ -42,6 +43,12 @@ The next ADR is **`010-<slug>.md`**. Check this index before creating one to con
 ```
 ADR 008 (Named Marten Stores)
   └─ superseded by ADR 009 (Shared Primary Marten Store)
+
+ADR 003 (Polecat BCs)
+  └─ superseded by ADR 011 (All-Marten Pivot)
+
+ADR 010 (Wolverine Dual-Store Resolution)
+  └─ resolved/superseded by ADR 011 (scenario eliminated)
 ```
 
 ---

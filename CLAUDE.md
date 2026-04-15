@@ -1,6 +1,6 @@
 # CritterBids — AI Development Guidelines
 
-CritterBids is an open-source auction platform built on the Critter Stack (Wolverine + Marten + Polecat). It is structured as a **.NET modular monolith** — a single deployable unit with well-enforced bounded context (BC) boundaries. It is modeled after eBay's platform conventions and is designed as both a reference architecture and a live conference demo vehicle.
+CritterBids is an open-source auction platform built on the Critter Stack (Wolverine + Marten + PostgreSQL). It is structured as a **.NET modular monolith** — a single deployable unit with well-enforced bounded context (BC) boundaries. It is modeled after eBay's platform conventions and is designed as both a reference architecture and a live conference demo vehicle.
 
 > **Companion project:** CritterSupply (e-commerce) demonstrates the same Critter Stack in a different domain. Patterns established there carry over here unless explicitly overridden.
 
@@ -12,13 +12,13 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
    - Single deployable API host (`src/CritterBids.Api`) wiring 8 BC modules together
    - Each BC is a separate .NET class library — no BC references another BC's internals
    - BCs communicate exclusively through types in `src/CritterBids.Contracts`
-   - PostgreSQL (Marten) for auction-core BCs; SQL Server (Polecat) for Operations, Settlement, Participants
+   - All eight BCs use PostgreSQL via Marten (ADR 011 — All-Marten Pivot)
 
 2. **Run the system locally:**
    ```bash
    dotnet run --project src/CritterBids.AppHost --launch-profile http
    ```
-   .NET Aspire (`CritterBids.AppHost`) is the single local-orchestration path — it provisions Postgres, SQL Server, RabbitMQ, and any other infrastructure dependencies, and launches the API host. Dashboard at `http://localhost:15237`. To use the `https` profile instead, first run `dotnet dev-certs https --trust` once. All three infrastructure containers are labelled `com.docker.compose.project=critterbids` and appear grouped under **critterbids** in Docker Desktop.
+   .NET Aspire (`CritterBids.AppHost`) is the single local-orchestration path — it provisions Postgres, RabbitMQ, and any other infrastructure dependencies, and launches the API host. Dashboard at `http://localhost:15237`. To use the `https` profile instead, first run `dotnet dev-certs https --trust` once. Infrastructure containers are labelled `com.docker.compose.project=critterbids` and appear grouped under **critterbids** in Docker Desktop.
 
 3. **Key files to orient yourself:**
    - **[CLAUDE.md](./CLAUDE.md)** — this file, AI development entry point
@@ -83,8 +83,7 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 |---|---|
 | Language | C# 14+ / .NET 10+ |
 | Message handling | Wolverine 5+ |
-| Event sourcing (PostgreSQL) | Marten 8+ |
-| Event sourcing (SQL Server) | Polecat 2+ |
+| Event sourcing | Marten 8+ (PostgreSQL — all BCs) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
@@ -99,7 +98,7 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 - `IReadOnlyList<T>` not `List<T>` for collections
 - Handlers return events/messages — never call `session.Store()` directly
 - All saga terminal paths must call `MarkCompleted()`
-- `opts.Policies.AutoApplyTransactions()` required in every BC's Marten configuration
+- `opts.Policies.AutoApplyTransactions()` in `UseWolverine()` in `Program.cs` — not inside BC `ConfigureMarten()` calls
 - `[Authorize]` on all non-auth endpoints from first commit
 - Integration events published via `OutgoingMessages` — never `IMessageBus` directly
 - `bus.ScheduleAsync()` is the only justified use of `IMessageBus` in handlers
@@ -107,20 +106,33 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 - No "Event" suffix on domain event type names — ever
 - No direct references to "paddle" — participants are identified by `BidderId`
 
+### Canonical Bootstrap Sequence
+
+The uniform bootstrap for all BCs — confirmed by analysis of all 12 CritterStackSamples reference
+projects (`C:\Code\JasperFx\critter-stack-samples-analysis.md`, §1 and §14):
+
+1. `AddMarten(...).IntegrateWithWolverine().UseLightweightSessions()` — primary store, outbox wiring, session optimization
+2. `UseWolverine(opts => { opts.Policies.AutoApplyTransactions(); ... })` — message bus with automatic transaction policy
+3. `AddWolverineHttp()` + `app.MapWolverineEndpoints()` — HTTP endpoint discovery
+
+Every BC contributes its document types, projections, and aggregate registrations via
+`services.ConfigureMarten()` inside its own `AddXyzModule()` extension method. `Program.cs` contains
+exactly one `AddMarten()` call.
+
 ---
 
 ## BC Module Quick Reference
 
 | BC | Project | Storage | Key Patterns |
 |---|---|---|---|
-| Participants | `CritterBids.Participants` | SQL Server / Polecat | Event-sourced aggregate |
+| Participants | `CritterBids.Participants` | PostgreSQL / Marten *(migration pending — ADR 011)* | Event-sourced aggregate |
 | Selling | `CritterBids.Selling` | PostgreSQL / Marten | Event-sourced aggregate, state machine |
 | Auctions | `CritterBids.Auctions` | PostgreSQL / Marten | DCB, Auction Closing saga, Proxy Bid saga |
 | Listings | `CritterBids.Listings` | PostgreSQL / Marten | Multi-stream projections, full-text search |
-| Settlement | `CritterBids.Settlement` | SQL Server / Polecat | Saga, financial event stream |
+| Settlement | `CritterBids.Settlement` | PostgreSQL / Marten | Saga, financial event stream |
 | Obligations | `CritterBids.Obligations` | PostgreSQL / Marten | Saga, cancellable scheduled messages |
 | Relay | `CritterBids.Relay` | PostgreSQL / Marten | Wolverine handlers, SignalR hub |
-| Operations | `CritterBids.Operations` | SQL Server / Polecat | Cross-BC projections, SignalR hub |
+| Operations | `CritterBids.Operations` | PostgreSQL / Marten | Cross-BC projections, SignalR hub |
 
 ---
 
@@ -133,7 +145,6 @@ Load the relevant skill before implementing. Skills encode hard-won patterns.
 | Adding a Wolverine handler | `docs/skills/wolverine-message-handlers.md` |
 | Creating a saga | `docs/skills/wolverine-sagas.md` |
 | Event-sourced aggregate (Marten) | `docs/skills/marten-event-sourcing.md` |
-| Event-sourced aggregate (Polecat) | `docs/skills/polecat-event-sourcing.md` |
 | Marten projection | `docs/skills/marten-projections.md` |
 | DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary.md` |
 | Integration messaging | `docs/skills/integration-messaging.md` |

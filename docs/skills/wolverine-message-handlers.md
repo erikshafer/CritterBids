@@ -245,19 +245,11 @@ public static class OpenBiddingHandler
 
 ## Entity and Document Loading
 
-Load documents (non-event-sourced) using `[Entity]` (Marten BCs) or `[Document]` (Polecat BCs):
+Load documents (non-event-sourced) using `[Entity]` in Marten BC handlers:
 
 ```csharp
-// Marten BC — [Entity] from Wolverine.Http.Marten
+// Basic [Entity] — loads SomeDocument by ID from route/query, returns 404 if missing
 public static ProblemDetails Before(UpdateSomething cmd, [Entity] SomeDocument? doc)
-{
-    if (doc is null)
-        return new ProblemDetails { Detail = "Not found", Status = 404 };
-    return WolverineContinue.NoProblems;
-}
-
-// Polecat BC — [Document] from Wolverine.Http.Polecat (functionally identical)
-public static ProblemDetails Before(UpdateSomething cmd, [Document] SomeDocument? doc)
 {
     if (doc is null)
         return new ProblemDetails { Detail = "Not found", Status = 404 };
@@ -265,7 +257,63 @@ public static ProblemDetails Before(UpdateSomething cmd, [Document] SomeDocument
 }
 ```
 
-ID resolution for both: property named `{EntityName}Id`, `[Identity]` attribute, or HTTP route parameter.
+ID resolution: property named `{EntityName}Id`, `[Identity]` attribute, or HTTP route parameter.
+
+### `[Entity]` Batch-Query Pattern — Multiple Entities in One Round-Trip
+
+*Confirmed by CritterStackSamples north star analysis (§4.3 — Entity Loading with `[Entity]`)*
+
+When multiple related entities must be loaded to fulfil a request, multiple `[Entity]` parameters
+on the same handler method signature trigger a single Marten batch query rather than sequential
+`LoadAsync` calls. This is one of the most significant performance patterns Wolverine provides over
+manual document loading.
+
+Two variants control what happens when a referenced entity is not found:
+
+- Without `OnMissing`: a missing entity resolves as `null`, and a `Required = true` combination
+  returns 404. This is appropriate when a missing entity means the resource doesn't exist.
+- With `OnMissing = OnMissing.ProblemDetailsWith400`: a missing entity short-circuits with a 400
+  response. This is appropriate when the ID comes from the client payload and a missing entity
+  means the client sent an invalid reference — a bad input, not a missing resource.
+
+When both entities are loaded via `[Entity]`, the `Validate` (sync) method receives them as
+already-loaded parameters. Business rule checks against their state are synchronous — no async
+database call needed in the validation step.
+
+The `Validate`/`ValidateAsync` pair and `[Entity]` combine to produce the cleanest form of the
+compound handler lifecycle: load entities declaratively, validate business rules synchronously
+against the loaded state, execute the happy path in `Handle()` with no conditional returns.
+
+### `ValidateAsync` and `Validate` — Railway Programming Pre-Handler Pattern
+
+*Confirmed by CritterStackSamples north star analysis (§5 — Validation Patterns)*
+
+Wolverine calls `ValidateAsync` (or `Validate`) before the main handler method. Returning a
+populated `ProblemDetails` short-circuits with that status; returning `WolverineContinue.NoProblems`
+proceeds to `Handle()`.
+
+**`ValidateAsync` — for database-dependent checks:**
+
+Use when the validation requires an async database query that cannot be covered by `[Entity]`
+declarative loading — typically uniqueness checks or existence checks on types that don't have
+a corresponding `[Entity]` parameter. The method receives `IQuerySession` as an injected parameter.
+Returning a populated `ProblemDetails` stops the pipeline; returning `WolverineContinue.NoProblems`
+continues.
+
+**`Validate` (synchronous) — for business rules against already-loaded state:**
+
+When business rules can be evaluated against aggregate state (loaded by `[AggregateHandler]` or
+`[WriteAggregate]`) or entity state (loaded by `[Entity]`), use the synchronous `Validate` form.
+The aggregate or entity is already in scope as a parameter — no async call is needed. This keeps
+validation fast and the happy-path handler completely unconditional.
+
+`WolverineContinue.NoProblems` is the continue sentinel in both variants. The main `Handle()` method
+is always the happy path — no conditional returns, no error-state branches, no null checks.
+If `Validate` or `ValidateAsync` allowed execution to reach `Handle()`, the command is valid.
+
+Wolverine calls the validation layers in this order: FluentValidation structural rules →
+`Validate`/`ValidateAsync` business rules → `Handle()` happy path. The separation means each layer
+has a single responsibility and the handler itself is a pure business decision function.
 
 ---
 

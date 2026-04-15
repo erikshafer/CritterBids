@@ -44,6 +44,26 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 
 ---
 
+## North Star Test Class Lifecycle
+
+*Confirmed by CritterStackSamples north star analysis (§11 — Alba Integration Testing). All 12 reference samples use this identical structure.*
+
+Every test class that exercises the host follows the same lifecycle contract:
+
+- Implement `IAsyncLifetime` — xUnit's async setup/teardown hook.
+- In `InitializeAsync()`: boot the host (or receive it from the fixture) and call `CleanAllMartenDataAsync()` to reset all Marten documents and event streams before each class.
+- In `DisposeAsync()`: return `Task.CompletedTask` (or dispose the host if the class owns it).
+
+`CleanAllMartenDataAsync()` is the canonical cleanup call in every sample — it is an extension method on `IAlbaHost` from the `Marten` namespace and wipes all documents, event streams, and snapshot rows in a single operation. It is always called in `InitializeAsync()`, never in `DisposeAsync()`, so the database is clean before the test class starts rather than after it ends (xUnit does not guarantee class execution order, so cleaning on exit does not protect the next class).
+
+The `_host.DocumentStore().LightweightSession()` pattern provides direct Marten access for both seeding test data and making post-request assertions. It bypasses the HTTP layer and is the correct tool when you need to seed an event stream before a scenario or verify persisted state after `ExecuteAndWaitAsync()`.
+
+For host-once-per-collection scenarios, CritterBids uses the `ICollectionFixture<XyzTestFixture>` pattern (see Collection Fixture for Sequential Execution below). The fixture boots the host once; each test class calls `CleanAllMartenDataAsync()` in its own `InitializeAsync()` to reset state. This matches the `AppFixture` + `ICollectionFixture<AppFixture>` pattern from the ProjectManagement CritterStackSample.
+
+`services.DisableAllExternalWolverineTransports()` must appear in every `AlbaHost.For<Program>()` override that uses external transports (RabbitMQ, Azure Service Bus). Without it, Wolverine attempts to connect to the external broker during test startup and fails. The `SellingTestFixture` demonstrates this — see the Marten BC TestFixture Pattern below.
+
+---
+
 ## Marten BC TestFixture Pattern
 
 CritterBids uses a single primary `IDocumentStore` registered in `Program.cs` (ADR 009). Each Marten BC contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Test fixtures provision a PostgreSQL Testcontainers container and register both the primary Marten store AND the BC module directly in `ConfigureServices`.

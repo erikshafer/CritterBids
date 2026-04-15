@@ -23,7 +23,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Marten named stores (archived) | `marten-named-stores.md` | ⚠️ Archived — superseded by ADR 009 | Named/ancillary store API; not used in CritterBids |
 | Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids |
 | Marten querying | `marten-querying.md` | ✅ Complete | Authored from Marten docs + Jeremy Miller's blog |
-| Polecat event sourcing | `polecat-event-sourcing.md` | ✅ Complete | Filled in from M1 Participants BC |
+| Polecat event sourcing (archived) | `polecat-event-sourcing.md` | ⚠️ Archived — inactive (ADR 011) | All BCs migrated to Marten/PostgreSQL; Polecat patterns remain valid reference for future Polecat-showcase work |
 | .NET Aspire orchestration | `aspire.md` | ✅ Complete | Authored from M1 (S1–S4) experience |
 | Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply |
 | Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (Aspire RabbitMQ, Separated mode) |
@@ -53,7 +53,6 @@ Skills are living documents. When a new pattern is established or an existing on
 | Saga (multi-step workflow) | `wolverine-sagas.md` | `integration-messaging.md` |
 | Scheduled messages / timeouts | `wolverine-sagas.md` | — |
 | Event-sourced aggregate (Marten) | `marten-event-sourcing.md` | `csharp-coding-standards.md` |
-| Event-sourced aggregate (Polecat) | `polecat-event-sourcing.md` | `marten-event-sourcing.md` |
 | Marten native projection | `marten-event-sourcing.md` | — |
 | EF Core projection (Marten or Polecat) | `marten-projections.md` | `polecat-event-sourcing.md` |
 | Read model query (LINQ / compiled / batched) | `marten-querying.md` | `csharp-coding-standards.md` |
