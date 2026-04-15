@@ -14,7 +14,7 @@ public class RegisterAsSellerTests : IAsyncLifetime
     public RegisterAsSellerTests(ParticipantsTestFixture fixture)
         => _fixture = fixture;
 
-    public async Task InitializeAsync() => await _fixture.CleanAllPolecatDataAsync();
+    public async Task InitializeAsync() => await _fixture.CleanAllMartenDataAsync();
     public Task DisposeAsync() => Task.CompletedTask;
 
     /// <summary>
@@ -49,7 +49,7 @@ public class RegisterAsSellerTests : IAsyncLifetime
             s.StatusCodeShouldBe(200);
         });
 
-        // (b) Assert domain event in Polecat stream
+        // (b) Assert domain event in Marten stream
         await using var session = _fixture.GetDocumentSession();
         var events = await session.Events.FetchStreamAsync(participantId);
 

@@ -1,8 +1,10 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <PackageReference Include="Polecat" />
-    <PackageReference Include="WolverineFx.Http.Polecat" />
+    <!-- WolverineFx.Http.Marten mirrors WolverineFx.Http.Polecat: combines Wolverine HTTP
+         endpoint discovery ([WolverinePost], CreationResponse<T>, WolverineContinue) with
+         Marten integration (MartenOps, IntegrateWithWolverine). ADR 011 All-Marten pivot. -->
+    <PackageReference Include="WolverineFx.Http.Marten" />
   </ItemGroup>
 
   <ItemGroup>

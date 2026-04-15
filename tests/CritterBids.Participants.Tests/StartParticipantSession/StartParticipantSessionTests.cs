@@ -12,7 +12,7 @@ public class StartParticipantSessionTests : IAsyncLifetime
     public StartParticipantSessionTests(ParticipantsTestFixture fixture)
         => _fixture = fixture;
 
-    public async Task InitializeAsync() => await _fixture.CleanAllPolecatDataAsync();
+    public async Task InitializeAsync() => await _fixture.CleanAllMartenDataAsync();
     public Task DisposeAsync() => Task.CompletedTask;
 
     /// <summary>

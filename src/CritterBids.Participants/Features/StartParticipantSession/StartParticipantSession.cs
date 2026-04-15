@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Wolverine.Http;
-using Wolverine.Polecat;
+using Wolverine.Marten;
 
 namespace CritterBids.Participants.Features.StartParticipantSession;
 
@@ -68,9 +68,9 @@ public static class StartParticipantSessionHandler
             creditCeiling,
             DateTimeOffset.UtcNow);
 
-        // PolecatOps.StartStream<T> is the correct pattern — direct session.Events.StartStream()
+        // MartenOps.StartStream<T> is the correct pattern — direct session.Events.StartStream()
         // silently discards events (anti-pattern #9 in wolverine-message-handlers.md).
-        var stream = PolecatOps.StartStream<Participant>(participantId, evt);
+        var stream = MartenOps.StartStream<Participant>(participantId, evt);
 
         // HTTP response type must be first in the tuple (anti-pattern #3 in wolverine-message-handlers.md).
         return (new CreationResponse<Guid>($"/api/participants/{participantId}", participantId), stream);

@@ -1,29 +1,22 @@
-using JasperFx;
-using JasperFx.Events;
+using CritterBids.Participants.Features.RegisterAsSeller;
+using CritterBids.Participants.Features.StartParticipantSession;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
-using Polecat;
-using Wolverine.Polecat;
 
 namespace CritterBids.Participants;
 
 public static class ParticipantsModule
 {
-    public static IServiceCollection AddParticipantsModule(
-        this IServiceCollection services,
-        string connectionString)
+    public static IServiceCollection AddParticipantsModule(this IServiceCollection services)
     {
-        services.AddPolecat(opts =>
+        // Contribute Participants event types to the primary Marten store registered in Program.cs.
+        // UseMandatoryStreamTypeDeclaration = true (set globally) requires all event types to be
+        // explicitly registered — unregistered types cause a runtime error on stream append.
+        services.ConfigureMarten(opts =>
         {
-            opts.ConnectionString = connectionString;
-            opts.DatabaseSchemaName = "participants";
-            opts.AutoCreateSchemaObjects = AutoCreate.CreateOrUpdate;
-            opts.Events.StreamIdentity = StreamIdentity.AsGuid;
-        })
-        // Eagerly apply all schema changes at host startup so test fixtures
-        // (and Testcontainers) have a fully-initialised schema before any
-        // CleanAllPolecatDataAsync / FetchStreamAsync calls are made.
-        .ApplyAllDatabaseChangesOnStartup()
-        .IntegrateWithWolverine();
+            opts.Events.AddEventType<ParticipantSessionStarted>();
+            opts.Events.AddEventType<SellerRegistered>();
+        });
 
         return services;
     }

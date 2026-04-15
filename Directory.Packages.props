@@ -14,6 +14,7 @@
         <PackageVersion Include="WolverineFx" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Http" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Http.Polecat" Version="5.30.0" />
+        <PackageVersion Include="WolverineFx.Http.Marten" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Marten" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.Polecat" Version="5.30.0" />
         <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.30.0" />

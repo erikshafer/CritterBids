@@ -2,20 +2,20 @@ using Alba;
 using CritterBids.Contracts;
 using CritterBids.Participants;
 using JasperFx.CommandLine;
+using JasperFx.Events;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
-using Polecat;
-using Testcontainers.MsSql;
+using Testcontainers.PostgreSql;
 using Wolverine;
-using Wolverine.Polecat;
+using Wolverine.Marten;
 using Wolverine.Tracking;
 
 namespace CritterBids.Participants.Tests.Fixtures;
 
 public class ParticipantsTestFixture : IAsyncLifetime
 {
-    private readonly MsSqlContainer _sqlServer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")
-        .WithPassword("CritterBids#Test2025!")
-        .WithName($"participants-sqlserver-test-{Guid.NewGuid():N}")
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .WithName($"participants-postgres-test-{Guid.NewGuid():N}")
         .WithCleanUp(true)
         .Build();
 
@@ -23,8 +23,8 @@ public class ParticipantsTestFixture : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
-        await _sqlServer.StartAsync();
-        var connectionString = _sqlServer.GetConnectionString();
+        await _postgres.StartAsync();
+        var postgresConnectionString = _postgres.GetConnectionString();
 
         JasperFxEnvironment.AutoStartHost = true;
 
@@ -32,18 +32,34 @@ public class ParticipantsTestFixture : IAsyncLifetime
         {
             builder.ConfigureServices(services =>
             {
-                // Register the Participants BC module directly with the Testcontainers connection.
-                // Program.cs's AddParticipantsModule() is null-guarded on the sqlserver connection
-                // string, which is absent in tests (no ConfigureAppConfiguration for sqlserver).
-                // ConfigureServices runs after Program.cs, so this is the only Polecat registration —
-                // no competing "main" Wolverine message store conflict.
-                services.AddParticipantsModule(connectionString);
+                // Register the primary Marten store with the Testcontainers connection string.
+                // Program.cs's AddMarten() is null-guarded on the Aspire postgres connection
+                // string, which is absent in tests. ConfigureServices runs after Program.cs, so
+                // this registration is always present and wins for IDocumentStore resolution.
+                services.AddMarten(opts =>
+                {
+                    opts.Connection(postgresConnectionString);
+                    opts.DatabaseSchemaName = "public";
+                    opts.Events.AppendMode = EventAppendMode.Quick;
+                    opts.Events.UseMandatoryStreamTypeDeclaration = true;
+                    opts.DisableNpgsqlLogging = true;
+                })
+                .UseLightweightSessions()
+                .ApplyAllDatabaseChangesOnStartup()
+                .IntegrateWithWolverine();
 
-                // No PostgreSQL is provisioned here — Program.cs's AddMarten() and AddSellingModule()
-                // guards both fail (no postgres connection). Selling BC handlers inject IDocumentSession
-                // and cannot be code-generated without SessionVariableSource. Exclude them.
+                // Register the Participants BC module so its event types (ParticipantSessionStarted,
+                // SellerRegistered) are contributed to the primary Marten store above.
+                // Program.cs guards this inside the postgres null check, which ConfigureServices bypasses.
+                services.AddParticipantsModule();
+
+                // Selling BC handlers inject ISellerRegistrationService (registered by AddSellingModule()).
+                // AddSellingModule() is NOT called here — the Selling BC is not under test in this fixture.
+                // Exclude Selling BC handlers from Wolverine discovery to prevent code-gen failures at startup.
+                // The stub routing rule ensures tracked.Sent captures SellerRegistrationCompleted.
                 services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
 
+                services.RunWolverineInSoloMode();
                 services.DisableAllExternalWolverineTransports();
             });
         });
@@ -64,39 +80,36 @@ public class ParticipantsTestFixture : IAsyncLifetime
                 e is OperationCanceledException or ObjectDisposedException)) { }
         }
 
-        await _sqlServer.DisposeAsync();
+        await _postgres.DisposeAsync();
     }
 
     // ─── Document store helpers ───────────────────────────────────────────────
 
-    public IDocumentSession GetDocumentSession() =>
-        Host.Services.DocumentStore().LightweightSession();
+    public Marten.IDocumentSession GetDocumentSession() =>
+        Host.DocumentStore().LightweightSession();
 
     public IDocumentStore GetDocumentStore() =>
-        Host.Services.DocumentStore();
+        Host.DocumentStore();
 
     // ─── Cleanup helpers ──────────────────────────────────────────────────────
 
-    public Task CleanAllPolecatDataAsync() =>
-        Host.Services.CleanAllPolecatDataAsync();
+    public Task CleanAllMartenDataAsync() => Host.CleanAllMartenDataAsync();
 
     // ─── Wolverine tracking helpers ───────────────────────────────────────────
 
     public async Task<ITrackedSession> ExecuteAndWaitAsync<T>(T message, int timeoutSeconds = 15)
         where T : class
     {
-        return await Host.Services
-            .TrackActivity(TimeSpan.FromSeconds(timeoutSeconds))
-            .DoNotAssertOnExceptionsDetected()
-            .AlsoTrack(Host.Services)
-            .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async ctx => await ctx.InvokeAsync(message)));
+        return await Host.ExecuteAndWaitAsync(
+            async ctx => await ctx.InvokeAsync(message),
+            timeoutSeconds * 1000);
     }
 
     public async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
         Action<Scenario> configuration)
     {
         IScenarioResult result = null!;
-        var tracked = await Host.Services.ExecuteAndWaitAsync(async () =>
+        var tracked = await Host.ExecuteAndWaitAsync(async () =>
         {
             result = await Host.Scenario(configuration);
         });
@@ -105,11 +118,11 @@ public class ParticipantsTestFixture : IAsyncLifetime
 }
 
 /// <summary>
-/// Excludes Selling BC handler types from Wolverine discovery when Marten is not provisioned.
-/// Program.cs's AddMarten() and AddSellingModule() are null-guarded on the postgres connection
-/// string, which is absent in the Participants fixture. Without IDocumentStore, SessionVariableSource
-/// is absent — handlers injecting IDocumentSession cause code-gen failures.
-/// The stub routing rule ensures tracked.Sent captures SellerRegistrationCompleted.
+/// Excludes Selling BC handler types from Wolverine discovery in the Participants fixture.
+/// AddSellingModule() is not called here, so ISellerRegistrationService is not registered —
+/// Selling BC handlers that inject it would cause code-gen failures at host startup.
+/// The stub routing rule ensures tracked.Sent captures SellerRegistrationCompleted when
+/// RegisterAsSeller publishes the integration event via OutgoingMessages.
 /// </summary>
 internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
 {
@@ -118,7 +131,7 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Selling BC inactive — Marten not configured (no postgres in Participants fixture)",
+                "Selling BC inactive — AddSellingModule() not called in Participants fixture",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
         });
 

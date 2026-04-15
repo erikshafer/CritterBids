@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Wolverine;
 using Wolverine.Http;
-using Wolverine.Polecat;
+using Wolverine.Marten;
 
 namespace CritterBids.Participants.Features.RegisterAsSeller;
 

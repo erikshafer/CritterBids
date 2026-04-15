@@ -14,7 +14,11 @@ public static class SellingModule
         {
             opts.Schema.For<RegisteredSeller>().DatabaseSchemaName("selling");
 
-            // Add event types, projections, and snapshots here as slices introduce them.
+            // SellerListing aggregate stream — registered so Marten knows the stream type and
+            // can enforce UseMandatoryStreamTypeDeclaration (set in Program.cs). DraftListingCreated
+            // is the first event in the stream; additional events arrive in S6+.
+            opts.Events.AddEventType<DraftListingCreated>();
+            opts.Events.AddEventType<DraftListingUpdated>();
         });
 
         services.AddTransient<ISellerRegistrationService, SellerRegistrationService>();
