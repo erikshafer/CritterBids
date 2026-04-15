@@ -1,4 +1,6 @@
 using Alba;
+using CritterBids.Contracts;
+using CritterBids.Participants;
 using JasperFx.CommandLine;
 using Microsoft.Extensions.DependencyInjection;
 using Polecat;
@@ -11,8 +13,6 @@ namespace CritterBids.Participants.Tests.Fixtures;
 
 public class ParticipantsTestFixture : IAsyncLifetime
 {
-    // SQL Server 2025 image required — Polecat 2.x uses the native `json` data type by default,
-    // which requires SQL Server 2025+. See polecat-event-sourcing.md §SQL Server-Specific Gotchas.
     private readonly MsSqlContainer _sqlServer = new MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")
         .WithPassword("CritterBids#Test2025!")
         .WithName($"participants-sqlserver-test-{Guid.NewGuid():N}")
@@ -26,28 +26,27 @@ public class ParticipantsTestFixture : IAsyncLifetime
         await _sqlServer.StartAsync();
         var connectionString = _sqlServer.GetConnectionString();
 
-        // Required for Wolverine to auto-start the host during test execution.
         JasperFxEnvironment.AutoStartHost = true;
 
         Host = await AlbaHost.For<Program>(builder =>
         {
             builder.ConfigureServices(services =>
             {
-                // Override the Polecat connection string with the test container's.
-                // ConfigurePolecat adds to the IOptions<PolecatOptions> chain, correctly
-                // overriding the connection string that AddParticipantsModule registered
-                // while preserving DatabaseSchemaName, AutoCreateSchemaObjects, etc.
-                services.ConfigurePolecat(opts =>
-                {
-                    opts.ConnectionString = connectionString;
-                });
+                // Register the Participants BC module directly with the Testcontainers connection.
+                // Program.cs's AddParticipantsModule() is null-guarded on the sqlserver connection
+                // string, which is absent in tests (no ConfigureAppConfiguration for sqlserver).
+                // ConfigureServices runs after Program.cs, so this is the only Polecat registration —
+                // no competing "main" Wolverine message store conflict.
+                services.AddParticipantsModule(connectionString);
 
-                // Disable RabbitMQ and any other external Wolverine transports.
-                // Wolverine inbox/outbox (backed by SQL Server) remains active.
+                // No PostgreSQL is provisioned here — Program.cs's AddMarten() and AddSellingModule()
+                // guards both fail (no postgres connection). Selling BC handlers inject IDocumentSession
+                // and cannot be code-generated without SessionVariableSource. Exclude them.
+                services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
+
                 services.DisableAllExternalWolverineTransports();
             });
         });
-
     }
 
     public async Task DisposeAsync()
@@ -70,37 +69,19 @@ public class ParticipantsTestFixture : IAsyncLifetime
 
     // ─── Document store helpers ───────────────────────────────────────────────
 
-    /// <summary>
-    /// Opens a lightweight Polecat document session for direct event stream access in tests.
-    /// Always dispose the returned session after use (use `await using`).
-    /// </summary>
     public IDocumentSession GetDocumentSession() =>
         Host.Services.DocumentStore().LightweightSession();
 
-    /// <summary>
-    /// Returns the Polecat IDocumentStore for advanced operations (e.g., manual cleanup).
-    /// Prefer the host-level CleanAllPolecatDataAsync() for test isolation cleanup.
-    /// </summary>
     public IDocumentStore GetDocumentStore() =>
         Host.Services.DocumentStore();
 
     // ─── Cleanup helpers ──────────────────────────────────────────────────────
 
-    /// <summary>
-    /// Cleans all Polecat documents and event data atomically.
-    /// Call in InitializeAsync() of each test class to ensure test isolation.
-    /// </summary>
     public Task CleanAllPolecatDataAsync() =>
         Host.Services.CleanAllPolecatDataAsync();
 
     // ─── Wolverine tracking helpers ───────────────────────────────────────────
 
-    /// <summary>
-    /// Invokes a message through the Wolverine pipeline and waits for all side effects
-    /// (event persistence, outbox messages) to complete before returning.
-    /// Use this instead of HTTP POST + direct query to avoid race conditions with
-    /// Wolverine's async transaction commit.
-    /// </summary>
     public async Task<ITrackedSession> ExecuteAndWaitAsync<T>(T message, int timeoutSeconds = 15)
         where T : class
     {
@@ -111,10 +92,6 @@ public class ParticipantsTestFixture : IAsyncLifetime
             .ExecuteAndWaitAsync((Func<IMessageContext, Task>)(async ctx => await ctx.InvokeAsync(message)));
     }
 
-    /// <summary>
-    /// Executes an Alba HTTP scenario and waits for all Wolverine side effects to complete.
-    /// Use for tests that assert both HTTP response shape and downstream message/event outcomes.
-    /// </summary>
     public async Task<(ITrackedSession, IScenarioResult)> TrackedHttpCall(
         Action<Scenario> configuration)
     {
@@ -124,5 +101,28 @@ public class ParticipantsTestFixture : IAsyncLifetime
             result = await Host.Scenario(configuration);
         });
         return (tracked, result);
+    }
+}
+
+/// <summary>
+/// Excludes Selling BC handler types from Wolverine discovery when Marten is not provisioned.
+/// Program.cs's AddMarten() and AddSellingModule() are null-guarded on the postgres connection
+/// string, which is absent in the Participants fixture. Without IDocumentStore, SessionVariableSource
+/// is absent — handlers injecting IDocumentSession cause code-gen failures.
+/// The stub routing rule ensures tracked.Sent captures SellerRegistrationCompleted.
+/// </summary>
+internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Selling BC inactive — Marten not configured (no postgres in Participants fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+
+        options.PublishMessage<SellerRegistrationCompleted>()
+            .ToLocalQueue("selling-participants-stub");
     }
 }

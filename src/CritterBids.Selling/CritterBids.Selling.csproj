@@ -7,4 +7,10 @@
     <PackageReference Include="WolverineFx.Marten" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- CritterBids.Contracts provides SellerRegistrationCompleted (consumed in S3)
+         and future Selling BC integration contracts (ListingPublished in S5). -->
+    <ProjectReference Include="..\CritterBids.Contracts\CritterBids.Contracts.csproj" />
+  </ItemGroup>
+
 </Project>

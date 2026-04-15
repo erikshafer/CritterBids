@@ -10,7 +10,7 @@ public static class StartParticipantSessionHandler
 {
     // Word lists for display name generation.
     // Names are derived from UUID v7 random bytes — uniqueness is guaranteed by stream ID uniqueness.
-    // See docs/decisions/0001-uuid-strategy.md for rationale on UUID v7 for Participants.
+    // See docs/decisions/007-uuid-strategy.md for rationale on UUID v7 for Participants.
     private static readonly string[] Adjectives =
     [
         "Bold", "Swift", "Fierce", "Calm", "Bright", "Nimble", "Keen",
@@ -37,7 +37,7 @@ public static class StartParticipantSessionHandler
     {
         // Stream ID is UUID v7: StartParticipantSession has no natural business key,
         // so UUID v5 determinism does not apply. UUID v7 is correct for anonymous participants.
-        // See docs/decisions/0001-uuid-strategy.md.
+        // See docs/decisions/007-uuid-strategy.md.
         var participantId = Guid.CreateVersion7();
 
         var bytes = participantId.ToByteArray();

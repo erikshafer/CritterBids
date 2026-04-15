@@ -175,7 +175,7 @@ This skill should cover:
 | `OutgoingMessages` for integration event publishing | ✅ Confirmed |
 | `[WriteAggregate]` attribute — same API for Marten and Polecat | ✅ Confirmed by polecat skill |
 | `sealed record` for all commands/events/queries | ✅ Confirmed |
-| ADR 0002 named stores + `[MartenStore]` attribute | ✅ Confirmed by modular-monolith.md |
+| ADR 008 named stores + `[MartenStore]` attribute | ✅ Confirmed by modular-monolith.md |
 | `MessageStorageSchemaName = "wolverine"` | ✅ Confirmed by modular-monolith.md |
 | `DisableAllExternalWolverineTransports()` in test fixtures | ✅ Confirmed (supplemented by `RunWolverineInSoloMode()`) |
 | UUID v7 for Marten BC stream IDs | ✅ Not contradicted |

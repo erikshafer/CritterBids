@@ -11,14 +11,15 @@ Patterns for event-sourced systems using Marten (event store + document database
 3. [Aggregate Design](#aggregate-design)
 4. [Domain Event Structure](#domain-event-structure)
 5. [Projections](#projections)
-6. [Snapshot Strategies](#snapshot-strategies)
-7. [Wolverine Integration Patterns](#wolverine-integration-patterns)
-8. [Tagged Event Writes (DCB)](#tagged-event-writes-dcb)
-9. [Testing Event-Sourced Systems](#testing-event-sourced-systems)
-10. [Event Versioning](#event-versioning)
-11. [Marten Configuration](#marten-configuration)
-12. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-13. [Lessons Learned](#lessons-learned)
+6. [ProjectLatest — Pending Event State](#projectlatest--pending-event-state)
+7. [Snapshot Strategies](#snapshot-strategies)
+8. [Wolverine Integration Patterns](#wolverine-integration-patterns)
+9. [Tagged Event Writes (DCB)](#tagged-event-writes-dcb)
+10. [Testing Event-Sourced Systems](#testing-event-sourced-systems)
+11. [Event Versioning](#event-versioning)
+12. [Marten Configuration](#marten-configuration)
+13. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+14. [Lessons Learned](#lessons-learned)
 
 ---
 
@@ -118,11 +119,9 @@ public sealed record Listing(
     ListingStatus Status,
     DateTimeOffset PublishedAt)
 {
-    // Derived properties — computed from state, no side effects
     public bool IsOpen => Status == ListingStatus.Open;
     public bool HasReserve => ReservePrice.HasValue;
 
-    // Factory method — creates aggregate from first event
     public static Listing Create(IEvent<ListingPublished> @event) =>
         new(@event.StreamId,
             @event.Data.SellerId,
@@ -135,7 +134,6 @@ public sealed record Listing(
             ListingStatus.Pending,
             @event.Data.PublishedAt);
 
-    // Apply methods — pure functions, always use @event parameter name
     public Listing Apply(BiddingOpened @event) =>
         this with { Status = ListingStatus.Open };
 
@@ -168,8 +166,6 @@ public enum ListingStatus { Pending, Open, Closed, Withdrawn }
 
 ### Decider Pattern
 
-Two flavors:
-
 **Inline handler logic** — for simple aggregates with 1–3 handlers:
 
 ```csharp
@@ -201,7 +197,6 @@ public static class OpenBiddingHandler
 **Separate Decider class** — for complex aggregates with many handlers:
 
 ```csharp
-// Pure static functions — no infrastructure dependencies
 public static class ListingDecider
 {
     public static ListingDecision HandleBidPlaced(Listing listing, BidPlaced bid, DateTimeOffset now)
@@ -219,8 +214,6 @@ public static class ListingDecider
 }
 ```
 
-Use a separate Decider class when: complex logic with multiple decision paths, many handlers on one aggregate, logic benefits from unit testing in isolation.
-
 ---
 
 ## Domain Event Structure
@@ -230,7 +223,7 @@ Use a separate Decider class when: complex logic with multiple decision paths, m
 ```csharp
 // ✅ CORRECT — aggregate ID first
 public sealed record BidPlaced(
-    Guid ListingId,       // Always first — matches stream ID
+    Guid ListingId,
     Guid BidId,
     Guid BidderId,
     decimal Amount,
@@ -239,11 +232,9 @@ public sealed record BidPlaced(
 
 // ❌ WRONG — missing aggregate ID
 public sealed record BidPlaced(
-    Guid BidId,           // Missing ListingId!
+    Guid BidId,
     decimal Amount);
 ```
-
-**Why:** Marten inline projections expect the ID in event data. Events are self-documenting when viewed in isolation. Enables correlation in queries and diagnostics.
 
 **Naming:** Past tense. `BidPlaced`, `BiddingOpened`, `ReserveMet` — not `PlaceBid`, `OpenBidding`.
 
@@ -254,8 +245,6 @@ public sealed record BidPlaced(
 Marten supports four projection types:
 
 ### 1. Inline Snapshots
-
-Aggregate state persisted as a JSON document in the same transaction as event append. Zero-lag read models for hot-path queries.
 
 ```csharp
 opts.Projections.Snapshot<Listing>(SnapshotLifecycle.Inline);
@@ -276,11 +265,7 @@ var openListings = await session.Query<Listing>()
 
 ### 2. Multi-Stream Projections
 
-Read models derived from events across multiple streams, keyed differently than the source streams.
-
 ```csharp
-// CatalogListingView: a discovery-optimized read model
-// Combines events from Selling BC (ListingPublished) + Auctions BC (BiddingOpened, BidPlaced, BiddingClosed)
 public sealed class CatalogListingViewProjection : MultiStreamProjection<CatalogListingView, Guid>
 {
     public CatalogListingViewProjection()
@@ -289,18 +274,10 @@ public sealed class CatalogListingViewProjection : MultiStreamProjection<Catalog
         Identity<BiddingOpened>(x => x.ListingId);
         Identity<BidPlaced>(x => x.ListingId);
         Identity<BiddingClosed>(x => x.ListingId);
-        Identity<ListingWithdrawn>(x => x.ListingId);
     }
 
     public CatalogListingView Create(ListingPublished evt) =>
-        new()
-        {
-            Id = evt.ListingId,
-            SellerId = evt.SellerId,
-            Title = evt.Title,
-            StartingBid = evt.StartingBid,
-            Status = "Pending"
-        };
+        new() { Id = evt.ListingId, SellerId = evt.SellerId, Title = evt.Title, Status = "Pending" };
 
     public static CatalogListingView Apply(CatalogListingView view, BiddingOpened evt) =>
         view with { Status = "Open", ClosesAt = evt.ScheduledCloseAt };
@@ -313,19 +290,15 @@ public sealed class CatalogListingViewProjection : MultiStreamProjection<Catalog
 }
 ```
 
-```csharp
-opts.Projections.Add<CatalogListingViewProjection>(ProjectionLifecycle.Inline);
-```
-
 ### 3. Async Projections
 
-Processed by background daemon, not in the write transaction. For complex denormalized views, analytics, or high-write throughput.
+Processed by background daemon — for complex denormalized views, analytics, or high-write throughput.
 
 ```csharp
 opts.Projections.Add<OperationsDashboardProjection>(ProjectionLifecycle.Async);
 ```
 
-When using named stores (CritterBids multi-BC pattern), async daemon distribution is managed by Wolverine — do not call `AddAsyncDaemon()` directly. Instead, configure `UseWolverineManagedEventSubscriptionDistribution = true` in the `IntegrateWithWolverine()` call:
+When using Wolverine-managed event subscription distribution, async daemon distribution is managed by Wolverine — do not call `AddAsyncDaemon()` directly. Instead, configure `UseWolverineManagedEventSubscriptionDistribution = true` in the `IntegrateWithWolverine()` call:
 
 ```csharp
 .IntegrateWithWolverine(m =>
@@ -334,14 +307,7 @@ When using named stores (CritterBids multi-BC pattern), async daemon distributio
 })
 ```
 
-For single-store single-BC projects, `AddAsyncDaemon(DaemonMode.Solo)` is the simpler alternative.
-
-**Pros:** Low write latency, high throughput, complex cross-stream aggregation.
-**Cons:** Eventual consistency lag, requires daemon monitoring.
-
 ### 4. Live Aggregation
-
-Aggregate state computed by replaying events at query time. No persistence.
 
 ```csharp
 var listing = await session.Events.AggregateStreamAsync<Listing>(listingId);
@@ -349,7 +315,7 @@ var listingAtTime = await session.Events.AggregateStreamAsync<Listing>(listingId
     timestamp: DateTime.UtcNow.AddHours(-1));
 ```
 
-Good for: testing, diagnostics, admin audit tools. Not for hot-path queries.
+Good for testing, diagnostics, admin audit tools. Not for hot-path queries.
 
 ### Decision Matrix
 
@@ -364,19 +330,73 @@ Good for: testing, diagnostics, admin audit tools. Not for hot-path queries.
 
 ---
 
+## ProjectLatest — Pending Event State
+
+Marten 8.29+ ships a `ProjectLatest` API that projects an aggregate against pending (uncommitted)
+events, returning the would-be state before `SaveChangesAsync()` is called. Two patterns are
+relevant to CritterBids:
+
+### Pattern 1 — Validate against the would-be state
+
+```csharp
+public static class PlaceBidHandler
+{
+    public static async Task<ProblemDetails> ValidateAsync(
+        PlaceBid cmd, [ReadAggregate] Listing? listing, IDocumentSession session)
+    {
+        if (listing is null)
+            return new ProblemDetails { Detail = "Listing not found", Status = 404 };
+        if (!listing.IsOpen)
+            return new ProblemDetails { Detail = "Listing closed", Status = 400 };
+        if (cmd.Amount <= listing.CurrentHighBid)
+            return new ProblemDetails { Detail = "Bid does not exceed current high", Status = 400 };
+
+        var pendingEvent = new BidPlaced(listing.Id, cmd.BidId, cmd.BidderId, cmd.Amount);
+        var wouldBe = await session.Events.ProjectLatest<Listing>(listing.Id, pendingEvent);
+        // Inspect wouldBe for further business rules...
+
+        return WolverineContinue.NoProblems;
+    }
+
+    public static (Events, OutgoingMessages) Handle(PlaceBid cmd, [WriteAggregate] Listing listing)
+    {
+        var events = new Events();
+        events.Add(new BidPlaced(listing.Id, cmd.BidId, cmd.BidderId, cmd.Amount));
+        var outgoing = new OutgoingMessages();
+        outgoing.Add(new Contracts.BidPlaced(listing.Id, cmd.BidderId, cmd.Amount));
+        return (events, outgoing);
+    }
+}
+```
+
+### Pattern 2 — Return the updated state from an HTTP command handler
+
+```csharp
+[WolverinePost("/api/listings/{listingId}/bids")]
+public static async Task<(IResult, Events, OutgoingMessages)> Handle(
+    PlaceBid cmd, [WriteAggregate] Listing listing, IDocumentSession session)
+{
+    var evt = new BidPlaced(listing.Id, cmd.BidId, cmd.BidderId, cmd.Amount);
+    var updated = await session.Events.ProjectLatest<Listing>(listing.Id, evt);
+
+    var outgoing = new OutgoingMessages();
+    outgoing.Add(new Contracts.BidPlaced(listing.Id, cmd.BidderId, cmd.Amount));
+
+    return (Results.Ok(updated), new Events(evt), outgoing);
+}
+```
+
+**`ProjectLatest` is read-only** — it computes the projected state in memory but does not append events. The return value of `Handle()` (the `Events` object) is what Wolverine persists.
+
+---
+
 ## Snapshot Strategies
 
 Configure inline snapshots for any aggregate you need to query via LINQ. Without a snapshot, `session.Query<T>()` returns empty even when the event stream exists.
 
 ```csharp
-// ✅ Makes aggregate queryable
 opts.Projections.Snapshot<Listing>(SnapshotLifecycle.Inline);
-
-// ✅ Async variant when write latency must be minimized
 opts.Projections.Snapshot<HeavyAggregate>(SnapshotLifecycle.Async);
-
-// ✅ Cache aggregates in identity map — avoids extra DB round trip with FetchForWriting
-// WARNING: do not mutate cached aggregate objects outside Marten's projection pipeline
 opts.Projections.UseIdentityMapForAggregates = true;
 ```
 
@@ -412,20 +432,14 @@ public static IEnumerable<object> Handle(CompleteCheckout cmd, [WriteAggregate] 
 }
 ```
 
-**`[MartenStore]` attribute on handlers (named stores):**
+**`[MartenStore]` attribute (named/ancillary stores only):**
 
-When using named Marten stores (`AddMartenStore<IBcDocumentStore>()`), every Wolverine handler that injects a Marten session must carry the `[MartenStore]` attribute. Without it, Wolverine does not route the injected session to the correct store.
+> **ADR 009:** CritterBids uses a single primary `IDocumentStore`. `[MartenStore]` is **not** required
+> on any handler. `IDocumentSession` is injected directly by Wolverine's `SessionVariableSource`.
 
-```csharp
-[MartenStore(typeof(IAuctionsDocumentStore))]
-public static class PlaceBidHandler
-{
-    public static (Events, OutgoingMessages) Handle(PlaceBid cmd, [WriteAggregate] Listing listing)
-    {
-        // listing loaded from IAuctionsDocumentStore — correct
-    }
-}
-```
+If named or ancillary stores are ever introduced (e.g. multi-server deployments), every handler
+targeting that store must carry `[MartenStore(typeof(IBcDocumentStore))]`. Without it, Wolverine
+routes the injected session to the wrong store. This does not apply to current CritterBids handlers.
 
 ---
 
@@ -449,46 +463,31 @@ See `docs/skills/dynamic-consistency-boundary.md` for the complete DCB implement
 
 ### The Race Condition Problem
 
-HTTP-based tests for event-sourced aggregates fail under load due to a timing issue: Wolverine's `AutoApplyTransactions()` commits the transaction asynchronously — the HTTP response returns *before* the commit completes. Subsequent reads see stale state.
+HTTP-based tests for event-sourced aggregates fail under load: Wolverine's `AutoApplyTransactions()` commits asynchronously — the HTTP response returns before the commit completes.
 
 ```csharp
-// ❌ Race condition — transaction may not be committed when GET fires
+// ❌ Race condition
 await _fixture.Host.Scenario(s => s.Post.Json(cmd).ToUrl(url));
 await _fixture.Host.Scenario(s => s.Get.Url(url)); // Stale data!
-
-// Task.Delay() is not a fix — timing-based solutions are inherently fragile
 ```
 
 ### ✅ The Fix: Direct Command Invocation
 
 ```csharp
-[Fact]
-public async Task Listing_WhenBidAccepted_UpdatesHighBid()
-{
-    var listingId = Guid.CreateVersion7();
-    await _fixture.ExecuteAndWaitAsync(new PublishListing(listingId, ...));
-    await _fixture.ExecuteAndWaitAsync(new OpenBidding(listingId, ...));
+await _fixture.ExecuteAndWaitAsync(new PlaceBid(listingId, Guid.NewGuid(), bidderId, 50m));
 
-    // ✅ Direct invocation — waits for all Wolverine side effects
-    await _fixture.ExecuteAndWaitAsync(new PlaceBid(listingId, Guid.NewGuid(), bidderId, 50m));
+await using var session = _fixture.GetDocumentSession();
+var listing = await session.Events.AggregateStreamAsync<Listing>(listingId);
 
-    // ✅ Query event store directly — guaranteed to see committed state
-    await using var session = _fixture.GetDocumentSession();
-    var listing = await session.Events.AggregateStreamAsync<Listing>(listingId);
-
-    listing.ShouldNotBeNull();
-    listing.CurrentHighBid.ShouldBe(50m);
-    listing.HighBidderId.ShouldBe(bidderId);
-}
+listing.ShouldNotBeNull();
+listing.CurrentHighBid.ShouldBe(50m);
 ```
-
-**When to use each:**
 
 | Test Type | Approach |
 |---|---|
 | Aggregate state transitions | Direct command invocation + query event store |
 | HTTP endpoint routing / serialization | HTTP via Alba |
-| Integration flows (events published to bus) | Direct command invocation |
+| Integration flows | Direct command invocation |
 | E2E tests | HTTP or Playwright |
 
 ---
@@ -497,171 +496,116 @@ public async Task Listing_WhenBidAccepted_UpdatesHighBid()
 
 ### Default: Additive-Only Changes
 
-New fields on events must be nullable or have defaults. Old events deserialize cleanly.
+New fields must be nullable or have defaults:
 
 ```csharp
-// Version 1
-public sealed record BidPlaced(Guid ListingId, Guid BidId, Guid BidderId, decimal Amount);
-
 // Version 2 — safe additive change
 public sealed record BidPlaced(Guid ListingId, Guid BidId, Guid BidderId, decimal Amount,
-    bool IsProxyBid = false); // New optional field, defaults for old events
+    bool IsProxyBid = false);
 ```
 
 ### Breaking Changes: Upcasting
-
-For unavoidable breaking changes, register an upcaster in the BC's Marten configuration:
 
 ```csharp
 opts.Events.Upcast<BidPlacedV1, BidPlaced>(v1 =>
     new BidPlaced(v1.ListingId, v1.BidId, v1.BidderId, v1.Amount, IsProxyBid: false));
 ```
 
-Old events remain in the store unchanged; transformation happens at read time.
-
-### Versioned Type Names (Last Resort)
-
-`BidPlaced_V2` as a new type. Original retained for backward compatibility. Expensive — use additive changes or upcasting first.
-
-**See also:** `docs/decisions/005-contract-versioning.md` for the CritterBids policy.
-
 ---
 
 ## Marten Configuration
 
-### Standard BC Module Pattern (CritterBids Multi-BC)
+### Standard BC Module Pattern (ADR 009)
 
-CritterBids uses named Marten stores — one per BC — via `AddMartenStore<IBcDocumentStore>()`. This is required for true schema isolation in a modular monolith where multiple BCs run in the same process. Do NOT call `AddMarten()` from any BC module (see ADR 0002).
+CritterBids uses a **single primary `IDocumentStore`** registered in `Program.cs`. Each Marten BC
+contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Never call
+`AddMarten()` or `AddMartenStore<T>()` from inside a BC module.
 
 ```csharp
-// Inside AddAuctionsModule() extension method on IServiceCollection
-public static IServiceCollection AddAuctionsModule(
-    this IServiceCollection services,
-    IConfiguration config)
+// Inside AddAuctionsModule() — no connection string, no store provisioning
+public static IServiceCollection AddAuctionsModule(this IServiceCollection services)
 {
-    var connectionString = config["ConnectionStrings:critterbids-postgres"]
-        ?? throw new InvalidOperationException("Missing Auctions BC PostgreSQL connection string");
-
-    services.AddMartenStore<IAuctionsDocumentStore>(opts =>
+    services.ConfigureMarten(opts =>
     {
-        opts.Connection(connectionString);
+        // Schema isolation: document tables in "auctions" schema, mt_events shared
+        opts.Schema.For<Listing>().DatabaseSchemaName("auctions");
+        opts.Schema.For<Listing>().Identity(x => x.Id).Index(x => x.SellerId);
 
-        // Schema isolation — one schema per BC, lowercase BC name
-        opts.DatabaseSchemaName = "auctions";
-
-        // AutoApplyTransactions is required in every BC's store configuration
-        opts.Policies.AutoApplyTransactions();
-
-        // ── Recommended greenfield event settings ────────────────────────────
-
-        // QuickAppend: ~50% throughput improvement over default append mode
-        opts.Events.AppendMode = EventAppendMode.Quick;
-
-        // Requires aggregate type to be declared on stream — enables rebuild optimizations
-        opts.Events.UseMandatoryStreamTypeDeclaration = true;
-
-        // Allow marking events for skipping in projections/subscriptions (useful for poison events)
-        opts.Events.EnableEventSkippingInProjectionsOrSubscriptions = true;
-
-        // ── Projection configuration ──────────────────────────────────────────
-
-        // Inline snapshot projections
         opts.Projections.Snapshot<Listing>(SnapshotLifecycle.Inline);
-
-        // Cache aggregates — eliminates extra DB round trip with FetchForWriting
-        // WARNING: treat identity-mapped aggregates as read-only outside the projection pipeline
-        opts.Projections.UseIdentityMapForAggregates = true;
-
-        // Improved async projection progress tracking
-        opts.Projections.EnableAdvancedAsyncTracking = true;
-
-        // Multi-stream projections
         opts.Projections.Add<CatalogListingViewProjection>(ProjectionLifecycle.Inline);
+        opts.Projections.UseIdentityMapForAggregates = true;
+    });
 
-        // Document indexes for query performance
-        opts.Schema.For<Listing>()
-            .Identity(x => x.Id)
-            .Index(x => x.SellerId);
-
-        // Reduce Npgsql logging noise in production
-        opts.DisableNpgsqlLogging = true;
-    })
-    // Chain on the builder — not inside the opts lambda
-    .UseLightweightSessions()           // No identity map overhead for sessions — always use this
-    .ApplyAllDatabaseChangesOnStartup() // Schema objects applied at startup — required for test fixtures
-    .IntegrateWithWolverine();          // Transactional outbox + Wolverine transaction middleware
-
-    // ⚠️ All Wolverine handlers in this BC must carry [MartenStore(typeof(IAuctionsDocumentStore))]
-    // Without it, Wolverine will not route injected sessions to this named store.
-
+    services.AddTransient<IAuctionPricingService, AuctionPricingService>();
     return services;
 }
 ```
 
-**Builder chain order matters:**
-```
-AddMartenStore<T>(opts => { ... })
-  .UseLightweightSessions()
-  .ApplyAllDatabaseChangesOnStartup()
-  .IntegrateWithWolverine()
-```
-
-### Single-BC / Single-Project Pattern
-
-For standalone projects with only one Marten BC, `AddMarten()` is valid and simpler. CritterBids does not use this pattern — it is documented here for reference only.
+### Primary Store Registration (`Program.cs`)
 
 ```csharp
-services.AddMarten(opts =>
+var postgresConnectionString = builder.Configuration.GetConnectionString("postgres");
+if (!string.IsNullOrEmpty(postgresConnectionString))
 {
-    opts.Connection(connectionString);
-    opts.DatabaseSchemaName = "myapp";
-    opts.Policies.AutoApplyTransactions();
-})
-.UseLightweightSessions()
-.ApplyAllDatabaseChangesOnStartup()
-.IntegrateWithWolverine();
+    builder.Services.AddMarten(opts =>
+    {
+        opts.Connection(postgresConnectionString);
+        opts.DatabaseSchemaName = "public";
+        opts.Events.AppendMode = EventAppendMode.Quick;
+        opts.Events.UseMandatoryStreamTypeDeclaration = true;
+        opts.DisableNpgsqlLogging = true;
+    })
+    .UseLightweightSessions()
+    .ApplyAllDatabaseChangesOnStartup()
+    .IntegrateWithWolverine();
+
+    // All Marten BC modules registered here — inside the postgres null guard
+    builder.Services.AddSellingModule();
+    // builder.Services.AddAuctionsModule();
+    // builder.Services.AddListingsModule();
+}
 ```
 
-The key difference: `AddMarten()` registers `IDocumentStore` as a singleton. A second `AddMarten()` call creates a conflicting registration — the first BC's config is silently lost. This is why CritterBids uses `AddMartenStore<T>()`.
-
-### Host-Level Wolverine Settings (Program.cs — not in BC modules)
-
-These settings are configured once in `Program.cs`'s `UseWolverine()` block — never inside any BC module:
+### Host-Level Wolverine Settings (`Program.cs` — not in BC modules)
 
 ```csharp
-builder.Host.UseWolverine(opts =>
+builder.UseWolverine(opts =>
 {
-    // Each BC handler for the same message type gets its own dedicated queue.
-    // Required for correct BC isolation — without this, multiple BC handlers for the same
-    // integration event (e.g., ListingPublished) are combined into one handler on one queue.
     opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
-
-    // Prevents durable inbox from deduplicating messages fanned out to multiple BC queues.
-    // Without this, only one BC handler fires when the same message ID arrives on multiple queues.
     opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
-
-    // Routes all named Marten stores' envelope rows to a shared schema.
-    // Without this, each named store creates its own duplicate envelope tables.
     opts.Durability.MessageStorageSchemaName = "wolverine";
+    opts.Policies.AutoApplyTransactions();
 });
 ```
 
 ### ⚠️ CRITICAL: `AutoApplyTransactions()` Is Non-Negotiable
 
-Without `AutoApplyTransactions()` in the Wolverine configuration, handlers do not commit Marten changes. Silent failure — handlers return success, no data persists.
-
-**Diagnosis:** Handler returns HTTP 200, events table is empty, projections not updated, no exceptions thrown → check `AutoApplyTransactions()` is present in the BC's store configuration.
+Without `AutoApplyTransactions()`, handlers do not commit Marten changes — silent failure.
+**Diagnosis:** Handler returns HTTP 200, events table is empty, no exceptions → verify
+`AutoApplyTransactions()` is in `Program.cs`'s `UseWolverine()` block.
 
 ### ⚠️ Do Not Call `SaveChangesAsync()` in Wolverine Handlers
 
-`AutoApplyTransactions()` commits the session automatically after handler execution. Manual `SaveChangesAsync()` calls are redundant and misleading. Remove them.
+`AutoApplyTransactions()` commits the session after handler execution. Manual `SaveChangesAsync()` is redundant — remove it.
 
 ### Session Types
 
 ```csharp
-LightweightSession()    // Default via UseLightweightSessions() — no change tracking, best performance
+LightweightSession()    // Default via UseLightweightSessions() — best performance
 DirtyTrackedSession()   // Change tracking — rare, only when conditional saves needed
 QuerySession()          // Read-only — HTTP GET endpoints
+```
+
+### Projection Configuration Reference
+
+```csharp
+opts.Projections.Snapshot<T>(SnapshotLifecycle.Inline);               // Zero-lag snapshot
+opts.Projections.Snapshot<T>(SnapshotLifecycle.Async);                // Low write latency
+opts.Projections.Add<TProjection>(ProjectionLifecycle.Inline);        // Multi-stream inline
+opts.Projections.Add<TProjection>(ProjectionLifecycle.Async);         // Async daemon
+opts.Projections.UseIdentityMapForAggregates = true;                  // Cache aggregates
+opts.Projections.EnableAdvancedAsyncTracking = true;                  // Better daemon tracking
+opts.Events.EnableEventSkippingInProjectionsOrSubscriptions = true;   // Poison event handling
 ```
 
 ---
@@ -672,9 +616,9 @@ QuerySession()          // Read-only — HTTP GET endpoints
 
 ```csharp
 // ❌ WRONG
-public sealed record Listing(Guid Id, List<Bid> Bids) // Mutable list!
+public sealed record Listing(Guid Id, List<Bid> Bids)
 {
-    public void Apply(BidPlaced @event) { Bids.Add(...); } // Mutation!
+    public void Apply(BidPlaced @event) { Bids.Add(...); }
 }
 
 // ✅ CORRECT
@@ -725,11 +669,20 @@ Silent data loss. Handler returns success, nothing persisted.
 
 ### 11. ❌ Missing `[MartenStore]` on Handlers
 
-Named store handlers without `[MartenStore(typeof(IBcDocumentStore))]` do not route to the correct store. Wolverine does not infer the store from the parameter type. Silent misconfiguration — wrong store is used or no session is injected.
+> **ADR 009 update:** CritterBids uses a shared primary store — `[MartenStore]` attributes are not
+> required on handlers. This anti-pattern applied under ADR 008 (superseded). Retained here as
+> reference if named/ancillary stores are introduced for multi-server deployments.
 
-### 12. ❌ Calling `AddMarten()` in Multiple BC Modules
+Named store handlers without `[MartenStore(typeof(IBcDocumentStore))]` do not route to the correct store.
+Wolverine does not infer the store from the parameter type. Silent misconfiguration — wrong store is used
+or no session is injected.
 
-Two `AddMarten()` calls in the same process register competing `IDocumentStore` singletons. The second call's configuration is silently discarded. Use `AddMartenStore<IBcDocumentStore>()` — see ADR 0002.
+### 12. ❌ Calling `AddMarten()` in Multiple BC Modules or `AddMartenStore<T>()` Per BC
+
+Two `AddMarten()` calls in the same process register competing `IDocumentStore` singletons — the second
+call silently discards the first BC's configuration. The fix is not `AddMartenStore<T>()` (which
+loses `IDocumentSession` injection and `AutoApplyTransactions`) but a single `AddMarten()` in `Program.cs`
+with each BC contributing via `services.ConfigureMarten()` inside its `AddXyzModule()`. See ADR 009.
 
 ### 13. ❌ DCB Boundary State Missing `Guid Id` Property
 
@@ -753,7 +706,7 @@ Marten registers boundary state classes as documents. Without `public Guid Id { 
 
 **L7: Don't call `SaveChangesAsync()` in Wolverine handlers.** `AutoApplyTransactions()` handles commits.
 
-**L8: `[MartenStore]` is required on every handler in a named-store BC.** Omitting it causes the handler to receive sessions from the wrong store or no store at all. Add a comment to the module registration as a reminder.
+**L8: Under ADR 009 (shared primary store), `[MartenStore]` is not required on handlers.** `IDocumentSession` is injected by `SessionVariableSource` from the primary store registered in `Program.cs` via `AddMarten().IntegrateWithWolverine()`. The named-store constraint (ADR 008, superseded) required the attribute for inbox routing.
 
 **L9: `MultipleHandlerBehavior.Separated` + `MessageIdentity.IdAndDestination` must both be set.** Without `Separated`, multiple BC handlers for the same message type combine into one queue — BC isolation is broken. Without `IdAndDestination`, fanout deduplication silently prevents some BC handlers from firing.
 
@@ -765,7 +718,8 @@ Marten registers boundary state classes as documents. Without `public Guid Id { 
 - [Marten Projections](https://martendb.io/events/projections/)
 - [Wolverine Marten Integration](https://wolverinefx.net/guide/durability/marten/)
 - [Decider Pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
-- `docs/decisions/0002-marten-bc-isolation.md` — named store pattern, ADR
+- `docs/decisions/009-shared-marten-store.md` — shared primary store, ConfigureMarten() pattern (current)
+- `docs/decisions/008-marten-bc-isolation.md` — named store ADR (superseded)
 - `docs/skills/adding-bc-module.md` — canonical BC module registration pattern
 - `docs/skills/dynamic-consistency-boundary.md`
 - `docs/skills/wolverine-message-handlers.md`

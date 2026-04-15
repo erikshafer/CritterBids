@@ -186,8 +186,9 @@ opts.ListenToRabbitQueue("settlement-auctions-events")
 Integration handlers follow the same patterns as command handlers. See `wolverine-message-handlers.md`.
 
 ```csharp
-// Settlement BC handler — reacts to ListingSold from Auctions BC
-[MartenStore(typeof(ISettlementDocumentStore))]
+// Settlement BC handler — reacts to ListingSold from Auctions BC.
+// No [MartenStore] attribute needed — CritterBids uses a single primary IDocumentStore (ADR 009).
+// IDocumentSession is injected by Wolverine's SessionVariableSource from the primary store.
 public static class ListingSoldHandler
 {
     public static (SettlementSaga, OutgoingMessages) Handle(
@@ -208,8 +209,6 @@ public static class ListingSoldHandler
     }
 }
 ```
-
-> ⚠️ **Named store handlers must carry `[MartenStore(typeof(IBcDocumentStore))]`.** Every Wolverine handler in a Marten BC requires this attribute. Without it, Wolverine does not route injected sessions to the correct named store.
 
 ### Choreography vs Orchestration
 
@@ -341,8 +340,8 @@ builder.Host.UseWolverine(opts =>
     //    listings-selling-events, only the first BC handler fires.
     opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
 
-    // 3. All named Marten stores write envelope rows to a shared "wolverine" schema.
-    //    Without this: each named store creates its own duplicate envelope tables.
+    // 3. Wolverine envelope tables live in the "wolverine" schema rather than the default
+    //    Marten schema — keeps framework tables separate from application tables.
     opts.Durability.MessageStorageSchemaName = "wolverine";
 
     opts.UseRabbitMqUsingNamedConnection("rabbit").AutoProvision();
@@ -378,7 +377,7 @@ With the default `MessageIdentity.Id`, the durable inbox key is the message ID a
 3. **Build the consumer table** before finalizing payload (see L2 in Lessons Learned)
 4. **Declare the publisher** via `opts.PublishMessage<T>().ToRabbitQueue("...")` in publisher's `AddXyzModule()`
 5. **Declare the subscriber** via `opts.ListenToRabbitQueue("...")` in consumer's `AddXyzModule()`
-6. **Implement the handler** in the consumer BC — include `[MartenStore(typeof(IBcDocumentStore))]` on all Marten BC handlers
+6. **Implement the handler** in the consumer BC — no `[MartenStore]` attribute required (ADR 009: single primary store; `IDocumentSession` injected via `SessionVariableSource`)
 7. **Verify queue name** matches exactly on both sides
 8. **Write a cross-BC smoke test** to verify the RabbitMQ pipeline end-to-end
 9. **When retiring a contract:** search codebase for every reference. Classify as active, dead-needs-migration, or dead-no-publisher. Never close a milestone with unresolved dead handlers.

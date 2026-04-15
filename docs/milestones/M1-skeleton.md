@@ -26,7 +26,7 @@ Stand up the CritterBids solution skeleton with the Participants BC as the first
 - [ ] `docs/skills/aspire.md` authored (new skill, retrospectively from sessions 1–4)
 - [ ] `docs/skills/polecat-event-sourcing.md` filled in from 🟡 → ✅ based on actual M1 implementation experience
 - [ ] Aspire MCP discovery note committed (candidate servers tracked, no integration committed)
-- [ ] `docs/decisions/0001-uuid-strategy.md` ADR authored as **Proposed** (v5 for stream IDs, v7 under consideration for event row IDs / high-write projections — gated on Marten 8 / Polecat 2 capability check and JasperFx team input)
+- [ ] `docs/decisions/007-uuid-strategy.md` ADR authored as **Proposed** (v5 for stream IDs, v7 under consideration for event row IDs / high-write projections — gated on Marten 8 / Polecat 2 capability check and JasperFx team input)
 - [ ] M1 retrospective doc written
 
 ---
@@ -119,7 +119,7 @@ CritterBids/
 Conventions inherit from `CLAUDE.md` unless overridden below.
 
 - **Stream IDs:** UUID v5 with BC-specific namespace constant. `ParticipantsNamespace = new Guid("TODO-GENERATE-AT-IMPLEMENTATION");` — resolved when session 4 lands (Participants BC scaffold). v5 stays the convention for stream IDs because determinism from business key is load-bearing for idempotent stream creation.
-- **Event row IDs:** Not pinned in M1. See §8 and `docs/decisions/0001-uuid-strategy.md` (Proposed).
+- **Event row IDs:** Not pinned in M1. See §8 and `docs/decisions/007-uuid-strategy.md` (Proposed).
 - **Integration events:** Published via `OutgoingMessages` collection returned from handlers. Never `IMessageBus` directly. `bus.ScheduleAsync()` is the only justified `IMessageBus` use in handlers — not needed in M1.
 - **AutoApplyTransactions:** Required in the Participants BC's Polecat configuration. `CLAUDE.md` currently phrases this rule in Marten-specific terms; the Polecat equivalent is pinned here for M1 and CLAUDE.md will be cleaned up later as conventions stabilize.
 - **`[AllowAnonymous]` — M1-ONLY OVERRIDE:** The global convention in `CLAUDE.md` is `[Authorize]` on all non-auth endpoints from first commit. **M1 overrides this** with `[AllowAnonymous]` on every endpoint. Real authentication scheme is deferred (§8). This override does not extend to M2.
@@ -160,7 +160,7 @@ Each test asserts against both (a) the HTTP response shape and (b) the Polecat e
 | ID | Question | Disposition |
 |---|---|---|
 | M1-D1 | Real authentication scheme | **Deferred.** M1 uses `[AllowAnonymous]`. Revisit when frontend milestone (M6) plans the auth story. |
-| M1-D3 | UUID v7 for event row IDs and high-write projection IDs | **Leaning adopt; ADR Proposed.** Authored in session 5 as `docs/decisions/0001-uuid-strategy.md`. Stream IDs stay v5 (determinism is load-bearing). v7 is a legitimate consideration for high-write tables — primarily Auctions bid events and Listings projections — because its Unix-ms prefix gives insert locality and composes well with Postgres range partitioning. Acceptance gates before moving from Proposed to Accepted: (a) verify Marten 8 / Polecat 2 expose event row ID generation at all; (b) verify v7 support or path to it; (c) JasperFx team input. Not blocking M1 — Participants is low-write and M1 doesn't touch Auctions. Re-surfaces naturally at M3 (Auctions BC). |
+| M1-D3 | UUID v7 for event row IDs and high-write projection IDs | **Leaning adopt; ADR Proposed.** Authored in session 5 as `docs/decisions/007-uuid-strategy.md`. Stream IDs stay v5 (determinism is load-bearing). v7 is a legitimate consideration for high-write tables — primarily Auctions bid events and Listings projections — because its Unix-ms prefix gives insert locality and composes well with Postgres range partitioning. Acceptance gates before moving from Proposed to Accepted: (a) verify Marten 8 / Polecat 2 expose event row ID generation at all; (b) verify v7 support or path to it; (c) JasperFx team input. Not blocking M1 — Participants is low-write and M1 doesn't touch Auctions. Re-surfaces naturally at M3 (Auctions BC). |
 | M1-D4 | Polecat namespace GUID for Participants stream IDs | **TODO at session 4** (Participants BC scaffold). Generate once, pin as constant in code. |
 | M1-D5 | CLAUDE.md cleanup: Marten-specific wording of `AutoApplyTransactions` rule | **Deferred cleanup.** Track, address when conventions stabilize. |
 

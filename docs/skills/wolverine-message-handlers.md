@@ -19,7 +19,8 @@ Patterns and conventions for building message handlers and HTTP endpoints with W
 7. [Railway Programming](#railway-programming)
 8. [HTTP Endpoints](#http-endpoints)
 9. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-10. [File Organization and Naming](#file-organization-and-naming)
+10. [Debugging with the Wolverine Diagnostics CLI](#debugging-with-the-wolverine-diagnostics-cli)
+11. [File Organization and Naming](#file-organization-and-naming)
 
 ---
 
@@ -716,6 +717,46 @@ With this rule, the flow completes: `PublishAsync` → `PersistOrSendAsync` → 
 `Program.cs`, not in the test fixture. Future slice prompts that introduce a new integration event type must
 include `Program.cs` in the allowed-file set, or require the routing rule to be pre-configured in a
 scaffolding session. See `docs/skills/critter-stack-testing-patterns.md` for the corresponding test prerequisite note.
+
+---
+
+## Debugging with the Wolverine Diagnostics CLI
+
+Wolverine ships three CLI sub-commands specifically designed for diagnosing AI-assisted development
+issues. Run them from the project root with `dotnet run --project src/CritterBids.Api -- <command>`:
+
+```bash
+# Preview the generated C# handler code for any message type.
+# Use this first when IDocumentSession injection fails or a handler behaves unexpectedly.
+# Shows exactly what SessionVariableSource resolved, what middleware fired, and what
+# return-type interceptors were code-generated.
+dotnet run -- wolverine-diagnostics codegen-preview --message SellerRegistrationCompleted
+
+# Or preview by HTTP route:
+dotnet run -- wolverine-diagnostics codegen-preview --route "POST /api/listings"
+
+# List every configured routing rule — message type, transport, queue/exchange name.
+# Use this when tracked.Sent.MessagesOf<T>() returns 0 (see Anti-Pattern #14).
+# If a message type has no entry here, Wolverine calls NoRoutesFor() and drops the message.
+dotnet run -- wolverine-diagnostics describe-routing
+
+# Show all error handling and circuit breaker policies per handler.
+dotnet run -- wolverine-diagnostics describe-resiliency
+```
+
+**When to reach for each command:**
+
+| Symptom | First command to run |
+|---|---|
+| `IDocumentSession` not injectable / code-gen failure | `codegen-preview --message T` |
+| `[Entity]` or `[WriteAggregate]` not loading | `codegen-preview --route "VERB /path"` |
+| `tracked.Sent.MessagesOf<T>()` returns 0 | `describe-routing` |
+| Handler runs but wrong middleware applied | `codegen-preview` |
+| Retry/circuit breaker not triggering | `describe-resiliency` |
+
+`codegen-preview` is particularly valuable for diagnosing `SessionVariableSource`-related failures:
+if the generated code shows no session variable being resolved, it confirms that
+`IntegrateWithWolverine()` was not called on the store that handler belongs to.
 
 ---
 

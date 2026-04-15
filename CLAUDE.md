@@ -25,6 +25,7 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
    - **[docs/vision/bounded-contexts.md](./docs/vision/bounded-contexts.md)** — BC map, ownership, integration topology
    - **[docs/vision/domain-events.md](./docs/vision/domain-events.md)** — canonical event vocabulary
    - **[docs/skills/README.md](./docs/skills/README.md)** — skill index, load before implementing
+   - **[docs/decisions/README.md](./docs/decisions/README.md)** — ADR index, naming convention, next available number
 
 4. **Before implementing anything:**
    - Check `docs/vision/bounded-contexts.md` for BC boundaries
@@ -46,6 +47,7 @@ docs/skills/*.md                         ← Implementation patterns (load on de
     ↑
 docs/personas/*.md                       ← Agent personas for workshops
     ↑
+docs/decisions/README.md                 ← ADR index, naming convention, next available number
 docs/decisions/*.md (ADRs)               ← Architectural decisions with rationale
     ↑
 docs/milestones/*.md                     ← Scope per milestone
@@ -137,9 +139,10 @@ Load the relevant skill before implementing. Skills encode hard-won patterns.
 | Integration messaging | `docs/skills/integration-messaging.md` |
 | SignalR real-time | `docs/skills/wolverine-signalr.md` |
 | Writing tests | `docs/skills/critter-stack-testing-patterns.md` |
+| Cross-BC handler isolation in test fixtures | `docs/skills/critter-stack-testing-patterns.md` |
 | Running an Event Modeling workshop | `docs/skills/event-modeling/SKILL.md` |
 
-> **Note:** Some skills are tracked but not yet written (`adding-bc-module.md`, `domain-event-conventions.md`, `react-frontend.md`, an Aspire skill). See `docs/skills/README.md` for the current status ledger.
+> **Full skill status ledger:** `docs/skills/README.md`
 
 ---
 

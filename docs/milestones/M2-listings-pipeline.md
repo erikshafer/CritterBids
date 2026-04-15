@@ -21,7 +21,7 @@ Extend the M1 skeleton into a functional listings pipeline. A registered seller 
 - [ ] `CritterBids.Contracts.Selling.ListingPublished` authored — first Selling BC integration contract
 - [ ] Cross-BC pipeline verified end-to-end: `SellerRegistrationCompleted` → `RegisteredSellers` projection; `ListingPublished` → `CatalogListingView` projection
 - [ ] All acceptance tests pass (see §7)
-- [ ] Marten named stores ADR authored (`docs/decisions/0002-marten-bc-isolation.md`)
+- [ ] Marten named stores ADR authored (`docs/decisions/008-marten-bc-isolation.md`)
 - [ ] `docs/skills/adding-bc-module.md` authored (retrospectively from S2–S3)
 - [ ] `docs/skills/domain-event-conventions.md` authored (retrospectively from S4–S5)
 - [ ] M2 retrospective doc written
@@ -121,7 +121,7 @@ The Layout 2 rule (one test project per production project) established in M1-S1
 
 Selling and Listings are the first BCs to use PostgreSQL via Marten. Both share the same PostgreSQL server instance (already provisioned by `CritterBids.AppHost` in M1). Schema isolation is enforced at the Marten configuration level — each BC owns its own PostgreSQL schema.
 
-> **Decision:** CritterBids uses per-BC Marten configuration with explicit `DatabaseSchemaName` set to the BC name in lowercase. Each Marten BC is isolated to its own schema. Selling BC schema: `selling`. Listings BC schema: `listings`. Full ADR: `docs/decisions/0002-marten-bc-isolation.md` (authored in S1).
+> **Decision:** CritterBids uses per-BC Marten configuration with explicit `DatabaseSchemaName` set to the BC name in lowercase. Each Marten BC is isolated to its own schema. Selling BC schema: `selling`. Listings BC schema: `listings`. Full ADR: `docs/decisions/008-marten-bc-isolation.md` (authored in S1).
 
 ### Marten module pattern
 
@@ -199,7 +199,7 @@ True schema isolation per BC. Each Marten BC owns exactly one PostgreSQL schema.
 
 No BC may reference another BC's Marten tables directly. Cross-BC data flows exclusively through integration events over RabbitMQ.
 
-Detailed pattern confirmed by ADR `0002-marten-bc-isolation.md` authored in S1.
+Detailed pattern confirmed by ADR `008-marten-bc-isolation.md` authored in S1.
 
 ### ISellerRegistrationService — Module Seam Pattern
 
@@ -219,7 +219,7 @@ This is the canonical pattern for API-layer cross-BC state checks in CritterBids
 
 ### UUID v7 for Marten BC Stream IDs
 
-Under the scope of `docs/decisions/0001-uuid-strategy.md` (Proposed), Marten BC stream IDs use UUID v7 (`Guid.CreateVersion7()`). Marten BCs do not have the same determinism requirement as Polecat BCs — `SellerListing` streams have no natural business key that a v5 derivation would meaningfully encode. UUID v7 provides insert locality via its Unix-ms prefix and aligns with the forward-looking standard.
+Under the scope of `docs/decisions/007-uuid-strategy.md` (Proposed), Marten BC stream IDs use UUID v7 (`Guid.CreateVersion7()`). Marten BCs do not have the same determinism requirement as Polecat BCs — `SellerListing` streams have no natural business key that a v5 derivation would meaningfully encode. UUID v7 provides insert locality via its Unix-ms prefix and aligns with the forward-looking standard.
 
 UUID v5 remains the convention for stream IDs in Polecat BCs (Participants) where determinism from a business key is load-bearing for idempotent stream creation. The split convention is:
 
@@ -228,7 +228,7 @@ UUID v5 remains the convention for stream IDs in Polecat BCs (Participants) wher
 | Polecat BCs (Participants, Settlement, Operations) | UUID v5 with BC-specific namespace constant |
 | Marten BCs (Selling, Listings, Auctions, Obligations, Relay) | UUID v7 |
 
-This convention is confirmed for M2 but the underlying ADR (`0001-uuid-strategy.md`) remains **Proposed** pending Marten 8 / Polecat 2 capability verification and JasperFx team input. ADR promotion gates are re-evaluated at M3.
+This convention is confirmed for M2 but the underlying ADR (`007-uuid-strategy.md`) remains **Proposed** pending Marten 8 / Polecat 2 capability verification and JasperFx team input. ADR promotion gates are re-evaluated at M3.
 
 ### Integration Event Placement
 
@@ -367,11 +367,11 @@ Mapping from `001-scenarios.md` slices 1.3 and 1.4. Integration tests verifying 
 
 | ID | Question | Disposition |
 |---|---|---|
-| M2-D1 | Named Marten stores: `AddMartenStore<T>()` vs schema-per-BC within separate `AddMarten()` calls | **Resolved in S1 (ADR 0002). Named stores required; working assumption corrected.** Separate `AddMarten()` calls per BC conflict in DI — the second call registers a competing `IDocumentStore` singleton and silently discards the first BC's configuration. Each Marten BC uses `AddMartenStore<IBcDocumentStore>()` with a BC-scoped marker interface and its own lowercase schema name. See `docs/decisions/0002-marten-bc-isolation.md`. |
+| M2-D1 | Named Marten stores: `AddMartenStore<T>()` vs schema-per-BC within separate `AddMarten()` calls | **Resolved in S1 (ADR 008). Named stores required; working assumption corrected.** Separate `AddMarten()` calls per BC conflict in DI — the second call registers a competing `IDocumentStore` singleton and silently discards the first BC's configuration. Each Marten BC uses `AddMartenStore<IBcDocumentStore>()` with a BC-scoped marker interface and its own lowercase schema name. See `docs/decisions/008-marten-bc-isolation.md`. |
 | M2-D2 | `ListingPublished` contract payload completeness | **Resolved in S5.** Walk `integration-messaging.md` L2 consumer table before finalizing. All three downstream consumers (Listings, Settlement, Auctions) must be represented in the payload even though only Listings subscribes in M2 (see §6 Integration Event Placement). |
 | M2-D3 | Is `RegisteredSellers` the only Selling BC projection? | **Confirm during M2 coding** (W004-P2-9). Expected: yes, for M2 scope. |
 | M1-deferred: S4-F2 | Named Polecat stores | **Still deferred.** Only one Polecat BC (Participants) exists in M2. Address when Settlement or Operations arrives. |
-| M1-deferred: ADR 0001 | UUID v7 promotion gates — Marten 8 / Polecat 2 capability check + JasperFx team input | **Stays Proposed through M2.** Re-evaluate at M3 (Auctions BC — the high-write motivation for v7 insert locality). |
+| M1-deferred: ADR 007 | UUID v7 promotion gates — Marten 8 / Polecat 2 capability check + JasperFx team input | **Stays Proposed through M2.** Re-evaluate at M3 (Auctions BC — the high-write motivation for v7 insert locality). |
 | M1-deferred: CLAUDE.md | `AutoApplyTransactions` Marten-specific wording | **Resolved in S7.** Update CLAUDE.md to BC-engine-agnostic phrasing as part of the skills pass. |
 
 ---
@@ -382,7 +382,7 @@ Seven sessions, matching M1's shape. S1 is a pure ADR / documentation session �
 
 | # | Prompt file | Scope summary |
 |---|---|---|
-| 1 | `docs/prompts/M2-S1-marten-bc-isolation-adr.md` | Marten BC isolation ADR — named stores vs schema-per-BC decision, schema naming convention, module pattern sketch, UUID v7 in Marten BCs confirmed. Documentation only; no code, no projects created. Authors `docs/decisions/0002-marten-bc-isolation.md`. |
+| 1 | `docs/prompts/M2-S1-marten-bc-isolation-adr.md` | Marten BC isolation ADR — named stores vs schema-per-BC decision, schema naming convention, module pattern sketch, UUID v7 in Marten BCs confirmed. Documentation only; no code, no projects created. Authors `docs/decisions/008-marten-bc-isolation.md`. |
 | 2 | `docs/prompts/M2-S2-selling-bc-scaffold.md` | Selling BC scaffold — `CritterBids.Selling` and `CritterBids.Selling.Tests` projects, `SellerListing` aggregate (empty shell), `AddSellingModule()` with Marten config + `AutoApplyTransactions()` + `IntegrateWithWolverine()`, smoke test. No handlers, no slices. |
 | 3 | `docs/prompts/M2-S3-registered-sellers-consumer.md` | `RegisteredSellers` consumer — `SellerRegistrationCompleted` Wolverine handler, `RegisteredSeller` Marten document, `ISellerRegistrationService` interface + implementation registered in `AddSellingModule()`. `Program.cs` routing update: remove local queue fallback rule, add real RabbitMQ routing (`selling-participants-events`). 4 projection integration tests. |
 | 4 | `docs/prompts/M2-S4-slice-1-1-create-draft-listing.md` | Slice 1.1 — `CreateDraftListing` command, `DraftListingCreated` event, `SellerListing` aggregate (draft lifecycle), `ListingValidator` pure-function rules, `POST /api/listings/draft` endpoint with `ISellerRegistrationService` gate. 5 aggregate tests + 14 pure-function tests + 2 API gateway tests. |
