@@ -2,10 +2,10 @@
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Marten-336791?logo=postgresql&logoColor=white)](https://martendb.io/)
-[![SQL Server](https://img.shields.io/badge/SQL_Server-Polecat-CC2927?logo=microsoftsqlserver&logoColor=white)](https://wolverine.netlify.app/)
+[![SQL Server](https://img.shields.io/badge/SQL_Server-Polecat-CC2927?logo=microsoftsqlserver&logoColor=white)](https://polecat.netlify.app/)
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-4.x-FF6600?logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Build](https://github.com/erikshafer/CritterSupply/actions/workflows/dotnet.yml/badge.svg?branch=main)](https://github.com/erikshafer/CritterBids/actions/workflows/ci.yml)
+[![Build](https://github.com/erikshafer/CritterBids/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/erikshafer/CritterBids/actions/workflows/ci.yml)
 
 > An open-source auction platform built on the [Critter Stack](https://wolverine.netlify.app/) — a reference architecture and live conference demo vehicle for event-driven .NET systems.
 
@@ -73,7 +73,7 @@ The SQL Server BCs reflect a real organizational pattern: finance and ops data b
 | Language | C# 14 / .NET 10 |
 | Message handling | [Wolverine 5+](https://wolverine.netlify.app/) |
 | Event sourcing (PostgreSQL) | [Marten 8+](https://martendb.io/) |
-| Event sourcing (SQL Server) | Polecat 2+ |
+| Event sourcing (SQL Server) | [Polecat 2+](https://polecat.netlify.app/) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
@@ -226,6 +226,7 @@ Contributions welcome. Before submitting a PR:
 - **Blog:** [event-sourcing.dev](https://www.event-sourcing.dev)
 - **Wolverine:** [wolverine.netlify.app](https://wolverine.netlify.app/)
 - **Marten:** [martendb.io](https://martendb.io/)
+- **Polecat:** [polecat.netlify.app](https://polecat.netlify.app/)
 - **JasperFx:** [jasperfx.github.io](https://jasperfx.github.io/)
 - **Tools:** [JetBrains Rider](https://www.jetbrains.com/rider/), [DataGrip](https://www.jetbrains.com/datagrip/)
 
