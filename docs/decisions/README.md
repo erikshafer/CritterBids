@@ -31,6 +31,7 @@ The next ADR is **`010-<slug>.md`**. Check this index before creating one to con
 | [007](007-uuid-strategy.md) | UUID Strategy for Stream IDs and Event Row IDs | 🟡 Proposed | 2026-04-13 | UUID v5 where a natural business key exists, v7 otherwise; event row ID strategy pending acceptance gates (Marten 8 / Polecat 2 capability check + JasperFx team input at M3) |
 | [008](008-marten-bc-isolation.md) | Marten BC Isolation: Named Stores per BC | ~~Superseded by 009~~ | 2026-04-14 | Named stores via `AddMartenStore<T>()` — superseded when ancillary store API was found to omit critical Wolverine registrations |
 | [009](009-shared-marten-store.md) | Shared Primary Marten Store | ✅ Accepted | 2026-04-14 | Single primary `IDocumentStore` in `Program.cs`; each Marten BC contributes its types via `services.ConfigureMarten()` inside `AddXyzModule()` |
+| [010](010-wolverine-dual-store-resolution.md) | Wolverine Dual-Store Resolution | 🟡 Proposed — Pending JasperFx input | 2026-04-15 | Both `AddMarten().IntegrateWithWolverine()` and `AddPolecat().IntegrateWithWolverine()` claim "main" store; Polecat has no ancillary-store API; production Aspire start blocked pending JasperFx resolution |
 
 **Status key:** ✅ Accepted · 🟡 Proposed (acceptance gates open) · ~~Superseded~~
 
