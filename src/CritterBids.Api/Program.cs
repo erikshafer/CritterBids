@@ -28,7 +28,8 @@ builder.UseWolverine(opts =>
     var rabbitMqUri = builder.Configuration.GetConnectionString("rabbitmq");
     if (!string.IsNullOrEmpty(rabbitMqUri))
     {
-        opts.UseRabbitMq(new Uri(rabbitMqUri));
+        opts.UseRabbitMq(new Uri(rabbitMqUri))
+            .AutoProvision(); // Declares queues/exchanges at startup if they don't exist
 
         opts.PublishMessage<SellerRegistrationCompleted>()
             .ToRabbitQueue("selling-participants-events");
