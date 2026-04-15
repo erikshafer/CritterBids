@@ -129,23 +129,16 @@ Load the relevant skill before implementing. Skills encode hard-won patterns.
 | Task | Skill to load |
 |---|---|
 | Adding a Wolverine handler | `docs/skills/wolverine-message-handlers.md` |
-| Handler in a Marten named-store BC (no default `IDocumentStore`) | `docs/skills/marten-named-stores.md` |
 | Creating a saga | `docs/skills/wolverine-sagas.md` |
 | Event-sourced aggregate (Marten) | `docs/skills/marten-event-sourcing.md` |
 | Event-sourced aggregate (Polecat) | `docs/skills/polecat-event-sourcing.md` |
 | Marten projection | `docs/skills/marten-projections.md` |
-| Marten BC test fixture / named-store cleanup | `docs/skills/marten-named-stores.md` |
 | DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary.md` |
 | Integration messaging | `docs/skills/integration-messaging.md` |
 | SignalR real-time | `docs/skills/wolverine-signalr.md` |
 | Writing tests | `docs/skills/critter-stack-testing-patterns.md` |
 | Cross-BC handler isolation in test fixtures | `docs/skills/critter-stack-testing-patterns.md` |
 | Running an Event Modeling workshop | `docs/skills/event-modeling/SKILL.md` |
-
-> **Named-store note:** CritterBids has **no default `IDocumentStore`** — only named stores via `AddMartenStore<T>()`.
-> `IDocumentSession` is **not** injectable in handlers. `CleanAllMartenDataAsync()` (non-generic) will throw.
-> Load `docs/skills/marten-named-stores.md` for the complete constraint reference before implementing
-> any Marten-backed handler or test fixture.
 
 > **Full skill status ledger:** `docs/skills/README.md`
 

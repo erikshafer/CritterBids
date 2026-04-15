@@ -3,6 +3,7 @@
   <ItemGroup>
     <PackageReference Include="WolverineFx" />
     <PackageReference Include="WolverineFx.Http" />
+    <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="WolverineFx.Polecat" />
     <PackageReference Include="Polecat" />

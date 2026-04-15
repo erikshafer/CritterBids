@@ -4,21 +4,18 @@ namespace CritterBids.Selling;
 
 /// <summary>
 /// Concrete implementation of <see cref="ISellerRegistrationService"/>.
-/// Opens a read-only <see cref="IQuerySession"/> per call from the Selling BC's named store.
+/// Opens a read-only <see cref="IQuerySession"/> per call from the primary Marten store.
 /// </summary>
 /// <remarks>
-/// DI lifetime: Transient — the service holds no shared state. <see cref="ISellingDocumentStore"/>
-/// is a singleton and is safe to inject into transient services. A new <see cref="IQuerySession"/>
+/// DI lifetime: Transient — the service holds no shared state. <see cref="IDocumentStore"/>
+/// is a singleton and safe to inject into transient services. A new <see cref="IQuerySession"/>
 /// is created and disposed on each call to <see cref="IsRegisteredAsync"/>.
-///
-/// <see cref="IDocumentStore"/> (the default store) is intentionally not registered in this
-/// process (see ADR 0002). <see cref="ISellingDocumentStore"/> must be used directly.
 /// </remarks>
 public sealed class SellerRegistrationService : ISellerRegistrationService
 {
-    private readonly ISellingDocumentStore _store;
+    private readonly IDocumentStore _store;
 
-    public SellerRegistrationService(ISellingDocumentStore store)
+    public SellerRegistrationService(IDocumentStore store)
     {
         _store = store;
     }

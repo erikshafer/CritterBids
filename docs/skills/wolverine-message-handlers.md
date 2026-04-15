@@ -19,7 +19,8 @@ Patterns and conventions for building message handlers and HTTP endpoints with W
 7. [Railway Programming](#railway-programming)
 8. [HTTP Endpoints](#http-endpoints)
 9. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-10. [File Organization and Naming](#file-organization-and-naming)
+10. [Debugging with the Wolverine Diagnostics CLI](#debugging-with-the-wolverine-diagnostics-cli)
+11. [File Organization and Naming](#file-organization-and-naming)
 
 ---
 
@@ -717,60 +718,45 @@ With this rule, the flow completes: `PublishAsync` → `PersistOrSendAsync` → 
 include `Program.cs` in the allowed-file set, or require the routing rule to be pre-configured in a
 scaffolding session. See `docs/skills/critter-stack-testing-patterns.md` for the corresponding test prerequisite note.
 
-### 15. ❌ Injecting `IDocumentSession` in a Named-Store-Only Handler ⚠️ CRITICAL
+---
 
-CritterBids uses named Marten stores only (ADR 0002) — there is no default `IDocumentStore`.
-Wolverine's `IDocumentSession` handler parameter injection is provided by `SessionVariableSource`,
-which is only registered when `AddMarten().IntegrateWithWolverine()` is called on the **main** store.
-That call never happens in CritterBids. Declaring `IDocumentSession` as a handler parameter
-causes a Wolverine code-gen error at startup.
+## Debugging with the Wolverine Diagnostics CLI
 
-```csharp
-// ❌ WRONG — IDocumentSession cannot be injected; throws code-gen error at startup.
-// Wolverine looks for a variable source for IDocumentSession and finds none —
-// SessionVariableSource is only registered by the main-store IntegrateWithWolverine() path.
-[MartenStore(typeof(ISellingDocumentStore))]
-public static class SellerRegistrationCompletedHandler
-{
-    public static async Task Handle(
-        SellerRegistrationCompleted message,
-        IDocumentSession session)   // ← no variable source → code-gen failure
-    {
-        session.Store(new RegisteredSeller { Id = message.ParticipantId });
-        await session.SaveChangesAsync();
-    }
-}
+Wolverine ships three CLI sub-commands specifically designed for diagnosing AI-assisted development
+issues. Run them from the project root with `dotnet run --project src/CritterBids.Api -- <command>`:
 
-// ✅ CORRECT — inject the named store interface, open a lightweight session explicitly.
-// SaveChangesAsync() must be called explicitly; AutoApplyTransactions() does not fire
-// because it hooks into IDocumentSession middleware, which is never generated here.
-[MartenStore(typeof(ISellingDocumentStore))]
-public static class SellerRegistrationCompletedHandler
-{
-    public static async Task Handle(
-        SellerRegistrationCompleted message,
-        ISellingDocumentStore store)
-    {
-        await using var session = store.LightweightSession();
-        session.Store(new RegisteredSeller { Id = message.ParticipantId });
-        await session.SaveChangesAsync();
-    }
-}
+```bash
+# Preview the generated C# handler code for any message type.
+# Use this first when IDocumentSession injection fails or a handler behaves unexpectedly.
+# Shows exactly what SessionVariableSource resolved, what middleware fired, and what
+# return-type interceptors were code-generated.
+dotnet run -- wolverine-diagnostics codegen-preview --message SellerRegistrationCompleted
+
+# Or preview by HTTP route:
+dotnet run -- wolverine-diagnostics codegen-preview --route "POST /api/listings"
+
+# List every configured routing rule — message type, transport, queue/exchange name.
+# Use this when tracked.Sent.MessagesOf<T>() returns 0 (see Anti-Pattern #14).
+# If a message type has no entry here, Wolverine calls NoRoutesFor() and drops the message.
+dotnet run -- wolverine-diagnostics describe-routing
+
+# Show all error handling and circuit breaker policies per handler.
+dotnet run -- wolverine-diagnostics describe-resiliency
 ```
 
-**Why `[MartenStore]` must be kept even though it no longer drives session injection:**
-`[MartenStore(typeof(ISellingDocumentStore))]` sets `chain.AncillaryStoreType` on the Wolverine
-handler chain. This ensures that durable inbox/outbox records are routed to this BC's named
-PostgreSQL schema. Without it, Wolverine silently uses the wrong schema for inbox tracking —
-no error at startup, wrong transactional atomicity at runtime.
+**When to reach for each command:**
 
-**Rule for all named-store BC handlers:**
-1. Annotate every handler class with `[MartenStore(typeof(IBcDocumentStore))]`
-2. Inject `IBcDocumentStore`, not `IDocumentSession`
-3. Open `LightweightSession()` manually and call `SaveChangesAsync()` explicitly
+| Symptom | First command to run |
+|---|---|
+| `IDocumentSession` not injectable / code-gen failure | `codegen-preview --message T` |
+| `[Entity]` or `[WriteAggregate]` not loading | `codegen-preview --route "VERB /path"` |
+| `tracked.Sent.MessagesOf<T>()` returns 0 | `describe-routing` |
+| Handler runs but wrong middleware applied | `codegen-preview` |
+| Retry/circuit breaker not triggering | `describe-resiliency` |
 
-See `docs/skills/marten-named-stores.md` for the full constraint reference and
-`src/CritterBids.Selling/SellerRegistrationCompletedHandler.cs` for the canonical example.
+`codegen-preview` is particularly valuable for diagnosing `SessionVariableSource`-related failures:
+if the generated code shows no session variable being resolved, it confirms that
+`IntegrateWithWolverine()` was not called on the store that handler belongs to.
 
 ---
 
@@ -802,4 +788,3 @@ Features/
 - [Wolverine + Polecat Aggregate Handler Workflow](https://wolverinefx.net/guide/durability/polecat/event-sourcing)
 - [Railway Programming with Wolverine](https://wolverinefx.net/tutorials/railway-programming.html)
 - [Functional Event Sourcing Decider](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
-- `docs/skills/marten-named-stores.md` — named-store constraints (Anti-Pattern #15)

@@ -17,10 +17,10 @@ Skills are living documents. When a new pattern is established or an existing on
 
 | Skill | File | Status | Source |
 |---|---|---|---|
-| Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply + M2 (named-store AP#15, routing rule AP#14) |
+| Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply + M2 (routing rule AP#14) |
 | Wolverine sagas | `wolverine-sagas.md` | ✅ Complete | Extracted from CritterSupply |
 | Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (named stores, perf settings) |
-| **Marten named stores** | **`marten-named-stores.md`** | **✅ Complete** | **New — authored M2-S2 from session failures + actual source** |
+| Marten named stores (archived) | `marten-named-stores.md` | ⚠️ Archived — superseded by ADR 0003 | Named/ancillary store API; not used in CritterBids |
 | Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids |
 | Marten querying | `marten-querying.md` | ✅ Complete | Authored from Marten docs + Jeremy Miller's blog |
 | Polecat event sourcing | `polecat-event-sourcing.md` | ✅ Complete | Filled in from M1 Participants BC |
@@ -50,7 +50,6 @@ Skills are living documents. When a new pattern is established or an existing on
 |---|---|---|
 | Wolverine command handler | `wolverine-message-handlers.md` | `csharp-coding-standards.md` |
 | Wolverine HTTP endpoint | `wolverine-message-handlers.md` | — |
-| **Named-store Marten handler** | **`marten-named-stores.md`** | **`wolverine-message-handlers.md`** |
 | Saga (multi-step workflow) | `wolverine-sagas.md` | `integration-messaging.md` |
 | Scheduled messages / timeouts | `wolverine-sagas.md` | — |
 | Event-sourced aggregate (Marten) | `marten-event-sourcing.md` | `csharp-coding-standards.md` |
@@ -71,8 +70,7 @@ Skills are living documents. When a new pattern is established or an existing on
 |---|---|---|
 | Integration test (Alba + Testcontainers) | `critter-stack-testing-patterns.md` | — |
 | Unit test (pure handler logic) | `critter-stack-testing-patterns.md` | — |
-| Marten BC test fixture | `critter-stack-testing-patterns.md` | `marten-named-stores.md` |
-| **Marten named-store test fixture** | **`marten-named-stores.md`** | **`critter-stack-testing-patterns.md`** |
+| Marten BC test fixture | `critter-stack-testing-patterns.md` | `adding-bc-module.md` |
 | **Cross-BC handler isolation** | **`critter-stack-testing-patterns.md`** | **`marten-named-stores.md`** |
 | Polecat BC test fixture | `critter-stack-testing-patterns.md` | — |
 | Saga test | `wolverine-sagas.md` | `critter-stack-testing-patterns.md` |
@@ -129,6 +127,6 @@ Skills marked "Extracted from CritterSupply" have direct equivalents in CritterS
 CritterBids also maintains a gap analysis against the public JasperFx AI skills repo at `docs/skills/jasper-fx-ai-skills-gap-analysis.md`. Consult it when the canonical Critter Stack patterns have changed or when a skill seems incomplete.
 
 The gap analysis was last reviewed 2026-04-14 as part of a post-M2-S2 skills pass that:
-- Added `marten-named-stores.md` (new — no upstream equivalent; named-store-only architecture is CritterBids-specific)
-- Added Anti-Pattern #15 to `wolverine-message-handlers.md` (`IDocumentSession` injection in named-store handlers)
-- Added cross-BC handler isolation section to `critter-stack-testing-patterns.md` (`IWolverineExtension` exclusion, stub local queue pattern, `ConfigureAppConfiguration` timing caveat)
+- `marten-named-stores.md` archived (superseded by ADR 0003 — shared primary store)
+- Removed Anti-Pattern #15 from `wolverine-message-handlers.md` (constraint no longer exists)
+- Updated cross-BC handler isolation section in `critter-stack-testing-patterns.md` (rationale updated: Marten not configured, not named store absent)

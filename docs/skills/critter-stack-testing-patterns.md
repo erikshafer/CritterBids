@@ -46,34 +46,41 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 
 ## Marten BC TestFixture Pattern
 
-CritterBids uses named Marten stores (one per BC via `AddMartenStore<IBcDocumentStore>()`). The test fixture overrides the named store's connection string with a Testcontainers-issued PostgreSQL connection. This re-registers the named store; the production connection string is replaced.
+CritterBids uses a single primary `IDocumentStore` registered in `Program.cs` (ADR 0003). Each Marten BC contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Test fixtures provision a PostgreSQL Testcontainers container and register both the primary Marten store AND the BC module directly in `ConfigureServices`.
 
-> **Key difference from Polecat:** Polecat fixtures use `services.ConfigurePolecat()`. Marten named-store fixtures call `services.AddMartenStore<IBcDocumentStore>()` in the `ConfigureServices` override — this re-registers the named store with the test connection string.
+> **Why ConfigureServices, not ConfigureAppConfiguration?** Program.cs reads connection strings inline via `builder.Configuration.GetConnectionString(...)` before `ConfigureAppConfiguration` callbacks are applied to the `WebApplicationBuilder`. As a result, `ConfigureAppConfiguration` does NOT work for triggering Program.cs null guards on connection strings. Always use `ConfigureServices` to register stores and modules directly.
+>
+> **Key difference from Polecat:** Polecat fixtures call `services.AddParticipantsModule(connectionString)` directly in `ConfigureServices`. Marten BC fixtures call `services.AddMarten(...)` plus `services.AddBcModule()` in `ConfigureServices`.
 
 ```csharp
+// Verified from CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs (ADR 0003)
 using Alba;
-using Marten;   // Required for CleanAllMartenDataAsync(), ResetAllMartenDataAsync()
-using Testcontainers.PostgreSql;
+using JasperFx.CommandLine;
+using JasperFx.Events;
+using Marten;
 using Wolverine;
+using Wolverine.Marten;
+using Wolverine.Tracking;
+using Testcontainers.PostgreSql;
 
-namespace CritterBids.Auctions.Tests.Fixtures;
+namespace CritterBids.Selling.Tests.Fixtures;
 
-public class AuctionsTestFixture : IAsyncLifetime
+public class SellingTestFixture : IAsyncLifetime
 {
-    // Pass image tag directly to constructor (Testcontainers 4.x pattern)
-    private readonly PostgreSqlContainer _postgres =
-        new PostgreSqlBuilder("postgres:17-alpine")
-            .WithDatabase("auctions_test")
-            .WithName($"auctions-postgres-{Guid.NewGuid():N}")
-            .WithCleanUp(true)
-            .Build();
+    // Only PostgreSQL is needed for the Selling BC.
+    // Program.cs null-guards AddParticipantsModule on the sqlserver connection string;
+    // without it, Polecat is never registered — no two-main-stores conflict.
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .WithName($"selling-postgres-test-{Guid.NewGuid():N}")
+        .WithCleanUp(true)
+        .Build();
 
     public IAlbaHost Host { get; private set; } = null!;
 
     public async Task InitializeAsync()
     {
         await _postgres.StartAsync();
-        var connectionString = _postgres.GetConnectionString();
+        var postgresConnectionString = _postgres.GetConnectionString();
 
         JasperFxEnvironment.AutoStartHost = true;
 
@@ -81,21 +88,28 @@ public class AuctionsTestFixture : IAsyncLifetime
         {
             builder.ConfigureServices(services =>
             {
-                // Re-register the named store with the Testcontainers connection string.
-                // This replaces the production registration — the schema name and all
-                // other StoreOptions are inherited or re-set here as needed.
-                services.AddMartenStore<IAuctionsDocumentStore>(opts =>
+                // Register the primary Marten store with the Testcontainers connection string.
+                // Program.cs's AddMarten() is null-guarded on the Aspire postgres connection
+                // string, which is absent in tests. ConfigureServices runs after Program.cs, so
+                // this registration is always present and wins for IDocumentStore resolution.
+                services.AddMarten(opts =>
                 {
-                    opts.Connection(connectionString);
-                    opts.DatabaseSchemaName = "auctions";
-                });
+                    opts.Connection(postgresConnectionString);
+                    opts.DatabaseSchemaName = "public";
+                    opts.Events.AppendMode = EventAppendMode.Quick;
+                    opts.Events.UseMandatoryStreamTypeDeclaration = true;
+                    opts.DisableNpgsqlLogging = true;
+                })
+                .UseLightweightSessions()
+                .ApplyAllDatabaseChangesOnStartup()
+                .IntegrateWithWolverine();
 
-                // Prevents advisory lock contention during test restarts — required
-                // alongside DisableAllExternalWolverineTransports().
+                // Register the BC module so its services (e.g. ISellerRegistrationService)
+                // and ConfigureMarten contributions are present. Program.cs null-guards this
+                // call inside the postgres block, which ConfigureServices bypasses.
+                services.AddSellingModule();
+
                 services.RunWolverineInSoloMode();
-
-                // Suppress RabbitMQ and all external Wolverine transports.
-                // Wolverine inbox/outbox (backed by PostgreSQL) remains active.
                 services.DisableAllExternalWolverineTransports();
             });
         });
@@ -119,47 +133,11 @@ public class AuctionsTestFixture : IAsyncLifetime
         await _postgres.DisposeAsync();
     }
 
-    // ─── Helpers ──────────────────────────────────────────────────────────────
+    public Task CleanAllMartenDataAsync() => Host.CleanAllMartenDataAsync();
+    public Task ResetAllMartenDataAsync() => Host.ResetAllMartenDataAsync();
 
-    /// <summary>
-    /// Returns a lightweight session for the Auctions BC's named store.
-    /// Use for seeding event streams, asserting state, and direct DB access in tests.
-    /// Never use GetRequiredService&lt;IDocumentSession&gt;() — IDocumentSession is not registered
-    /// (CritterBids uses named stores; there is no default IDocumentStore).
-    /// </summary>
-    public IDocumentSession GetDocumentSession() =>
-        Host.Services.GetRequiredService<IAuctionsDocumentStore>().LightweightSession();
-
-    /// <summary>
-    /// Returns the Auctions BC's named document store for advanced operations.
-    /// </summary>
-    public IAuctionsDocumentStore GetDocumentStore() =>
-        Host.Services.GetRequiredService<IAuctionsDocumentStore>();
-
-    /// <summary>
-    /// Deletes all Marten documents and event streams for the Auctions BC.
-    /// Call in InitializeAsync() of each test class for test isolation.
-    /// Extension method on IAlbaHost from the Marten namespace.
-    /// </summary>
-    public Task CleanAllMartenDataAsync() =>
-        Host.CleanAllMartenDataAsync();
-
-    /// <summary>
-    /// Disables all async projections/subscriptions, clears all data, then restarts them
-    /// from a fresh baseline. Use this instead of CleanAllMartenDataAsync() when async
-    /// projections are registered in this BC — prevents the daemon from processing stale
-    /// events after data wipe.
-    /// Extension method on IAlbaHost from the Marten namespace.
-    /// </summary>
-    public Task ResetAllMartenDataAsync() =>
-        Host.ResetAllMartenDataAsync();
-
-    /// <summary>
-    /// Wait for all async projections to process pending events.
-    /// Use after seeding event streams when tests verify async projection output.
-    /// </summary>
-    public Task WaitForNonStaleProjectionDataAsync(TimeSpan? timeout = null) =>
-        GetDocumentStore().WaitForNonStaleProjectionDataAsync(timeout ?? TimeSpan.FromSeconds(5));
+    public Marten.IDocumentSession GetDocumentSession() =>
+        Host.DocumentStore().LightweightSession();
 
     public async Task<ITrackedSession> ExecuteAndWaitAsync<T>(T message, int timeoutSeconds = 15)
         where T : class
@@ -190,15 +168,17 @@ public class AuctionsTestFixture : IAsyncLifetime
 | `Host.ResetAllMartenDataAsync()` | When async projections are registered — pauses daemon, clears data, restarts. Prevents daemon processing stale events. |
 | `store.WaitForNonStaleProjectionDataAsync(timeout)` | After seeding events, before asserting async projection state. |
 
-Both `CleanAllMartenDataAsync()` and `ResetAllMartenDataAsync()` are extension methods on `IAlbaHost` from the `Marten` namespace. Always add `using Marten;` at the top of the fixture file.
+Both `CleanAllMartenDataAsync()` and `ResetAllMartenDataAsync()` are extension methods on `IAlbaHost` from the `Marten` namespace (non-generic overloads — `IDocumentStore` is registered in every Marten BC fixture). Always add `using Marten;` at the top of the fixture file.
 
-### Named Store Fixture — Key Differences from Single-Store
+### Marten BC Fixture — Key Points (ADR 0003)
 
-| Concern | Single-Store | Named Store (CritterBids) |
-|---|---|---|
-| Connection override | `services.ConfigureMarten(opts => opts.Connection(...))` | `services.AddMartenStore<IBcDocumentStore>(opts => { ... })` |
-| Session access | `GetRequiredService<IDocumentStore>().LightweightSession()` | `GetRequiredService<IBcDocumentStore>().LightweightSession()` |
-| `IDocumentStore` available? | Yes — registered as singleton | **No** — intentionally absent (see ADR 0002) |
+| Concern | Pattern |
+|---|---|
+| Store registration | `services.AddMarten(...).UseLightweightSessions().ApplyAllDatabaseChangesOnStartup().IntegrateWithWolverine()` in `ConfigureServices` |
+| BC module registration | `services.AddBcModule()` in `ConfigureServices` — required even if Program.cs normally handles it (guards bypass ConfigureServices) |
+| Session access | `Host.DocumentStore().LightweightSession()` — `IDocumentStore` is always registered in Marten BC fixtures |
+| ConfigureAppConfiguration | Does NOT work for Program.cs inline connection string guards — use `ConfigureServices` instead |
+| Single-store-per-fixture rule | Each fixture provisions only its own storage backend — Marten-only or Polecat-only, never both |
 
 ---
 
@@ -450,6 +430,10 @@ public async Task PlaceBid_UpdatesListingHighBid()
 > `ISendingAgent` and `tracked.Sent` always returns 0 regardless of what was added to `OutgoingMessages`.
 > See **Anti-Pattern #14** in `docs/skills/wolverine-message-handlers.md` for the full root cause and
 > the `opts.Publish(...)` resolution. This is a host configuration requirement, not a fixture concern.
+>
+> **Diagnostic:** `dotnet run -- wolverine-diagnostics describe-routing` lists every configured routing
+> rule. If the message type is absent from the output, the `opts.Publish(...)` rule is missing from
+> `Program.cs`. See the Debugging section in `docs/skills/wolverine-message-handlers.md`.
 
 ```csharp
 [Fact]
@@ -638,13 +622,15 @@ tests/
 ## Key Principles
 
 1. **Standardized TestFixture across all BCs** — same helper methods, same patterns
-2. **Named store re-registration for connection override** — `AddMartenStore<IBcDocumentStore>()` in `ConfigureServices`, not `ConfigureMarten()`
-3. **`RunWolverineInSoloMode()` + `DisableAllExternalWolverineTransports()`** — both required in every Marten BC test fixture
-4. **`CleanAllMartenDataAsync()` in `InitializeAsync()`** — not `DisposeAsync()`; ensures clean state before each test class
-5. **Use `ResetAllMartenDataAsync()` when async projections are registered** — prevents daemon processing stale data
-6. **`ExecuteAndWaitAsync` over HTTP POST + GET** — eliminates race conditions in ES tests
-7. **Assert full integration message payloads** — not just that the type was published
-8. **Real infrastructure via Testcontainers** — real PostgreSQL/SQL Server, not SQLite or in-memory
+2. **Register stores AND BC modules in `ConfigureServices`** — `ConfigureAppConfiguration` does NOT propagate to Program.cs's inline `builder.Configuration.GetConnectionString(...)` calls. All store and module registrations must use `ConfigureServices` directly.
+3. **Single storage backend per fixture** — each fixture provisions either Marten (PostgreSQL) or Polecat (SQL Server), never both simultaneously. Running both registers two "main" Wolverine message stores and causes `InvalidWolverineStorageConfigurationException`.
+4. **`RunWolverineInSoloMode()` + `DisableAllExternalWolverineTransports()`** — both required in every Marten BC test fixture; `RunWolverineInSoloMode()` not required for Polecat BC fixtures
+5. **`CleanAllMartenDataAsync()` in `InitializeAsync()`** — not `DisposeAsync()`; ensures clean state before each test class
+6. **Use `ResetAllMartenDataAsync()` when async projections are registered** — prevents daemon processing stale data
+7. **`ExecuteAndWaitAsync` over HTTP POST + GET** — eliminates race conditions in ES tests
+8. **Assert full integration message payloads** — not just that the type was published
+9. **Real infrastructure via Testcontainers** — real PostgreSQL/SQL Server, not SQLite or in-memory
+10. **`IWolverineExtension` exclusion for cross-BC isolation** — when a fixture doesn't provision a BC's infrastructure, exclude that BC's handlers via `IWolverineExtension` to prevent Wolverine code-gen failures
 
 ---
 
@@ -678,11 +664,12 @@ public class ParticipantsTestFixture : IAsyncLifetime
         {
             builder.ConfigureServices(services =>
             {
-                // Use ConfigurePolecat (IOptions override), NOT AddPolecat (competing store registration).
-                services.ConfigurePolecat(opts =>
-                {
-                    opts.ConnectionString = connectionString;
-                });
+                // Register the Participants BC module directly with the Testcontainers connection.
+                // Program.cs's AddParticipantsModule() is null-guarded on the sqlserver connection
+                // string, which is absent in tests (ConfigureAppConfiguration does not propagate
+                // to Program.cs inline guards). ConfigureServices runs after Program.cs, so this
+                // is the only Polecat registration — no two-main-stores conflict.
+                services.AddParticipantsModule(connectionString);
 
                 services.DisableAllExternalWolverineTransports();
             });
@@ -749,7 +736,7 @@ public class ParticipantsTestFixture : IAsyncLifetime
 | Concern | Marten BC | Polecat BC |
 |---|---|---|
 | Container | `PostgreSqlBuilder("postgres:17-alpine")` | `MsSqlBuilder("mcr.microsoft.com/mssql/server:2025-CU1-ubuntu-24.04")` |
-| Connection override | `services.AddMartenStore<IBcDocumentStore>(opts => opts.Connection(...))` | `services.ConfigurePolecat(opts => { opts.ConnectionString = ...; })` |
+| Connection override | `services.AddMarten(opts => { opts.Connection(...); ... }).UseLightweightSessions()...` in `ConfigureServices` | `services.AddParticipantsModule(testConnectionString)` in `ConfigureServices` |
 | Solo mode | `services.RunWolverineInSoloMode()` required | Not required (Polecat doesn't use advisory locks the same way) |
 | `IDocumentStore` available? | No — use `GetRequiredService<IBcDocumentStore>()` | Yes via `Host.Services.DocumentStore()` extension |
 | Data cleanup | `Host.CleanAllMartenDataAsync()` | `Host.Services.CleanAllPolecatDataAsync()` |
@@ -781,8 +768,10 @@ When BC-A's test fixture starts, it loads BC-B's assembly (included via `Program
 `opts.Discovery.IncludeAssembly(...)`) but does not provision BC-B's infrastructure
 (no Testcontainers for BC-B's database). BC-B's handlers are discovered by Wolverine,
 and when a message matching a BC-B handler type is dispatched, Wolverine attempts to
-inject BC-B's `IBcDocumentStore` — which is absent from DI because BC-B's module returned
-early (no connection string). This causes a code-gen or runtime injection error.
+generate handler code that injects IDocumentSession. Because Program.cs's primary
+AddMarten() call is null-guarded on the postgres connection string, IDocumentStore is
+not registered in this fixture — SessionVariableSource is absent and Wolverine's code-gen
+fails. This causes a startup or runtime injection error.
 
 **Fix: register an `IWolverineExtension` singleton that excludes foreign-BC handlers.**
 
@@ -798,7 +787,7 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Selling BC inactive — exclude handlers (no postgres in Participants fixture)",
+                "Selling BC inactive — Marten not configured (no postgres in Participants fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
         });
     }
@@ -827,11 +816,11 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
 {
     public void Configure(WolverineOptions options)
     {
-        // Exclude the handler (no ISellingDocumentStore in DI)
+        // Exclude the handler (no IDocumentStore — postgres absent in Participants fixture)
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Selling BC inactive — exclude handlers (no postgres in Participants fixture)",
+                "Selling BC inactive — Marten not configured (no postgres in Participants fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
         });
 
@@ -854,45 +843,61 @@ Name the `IWolverineExtension` after the BC being excluded, not the fixture regi
 `SellingBcDiscoveryExclusion`, not `ParticipantsTestExclusion`. This makes the intent clear
 when multiple fixtures use the same exclusion class.
 
-### `ConfigureAppConfiguration` timing caveat
+### `ConfigureAppConfiguration` timing caveat ⚠️ DOES NOT WORK FOR PROGRAM.CS INLINE GUARDS
 
-`ConfigureAppConfiguration` in test fixtures runs during `WebApplication.CreateBuilder()` —
-before any module registration that reads `IConfiguration`. This is the correct hook for
-injecting connection strings that gate module registration via null-connection-string guards:
+`ConfigureAppConfiguration` in test fixtures does **NOT** propagate to inline
+`builder.Configuration.GetConnectionString(...)` reads in `Program.cs`. When Program.cs
+reads connection strings immediately during builder setup:
 
 ```csharp
-builder.ConfigureAppConfiguration((_, config) =>
+// In Program.cs — this runs BEFORE ConfigureAppConfiguration callbacks apply
+var postgresConnectionString = builder.Configuration.GetConnectionString("postgres");
+if (!string.IsNullOrEmpty(postgresConnectionString))
 {
-    config.AddInMemoryCollection(new Dictionary<string, string?>
-    {
-        ["ConnectionStrings:critterbids-postgres"] = postgresConnectionString
-    });
+    builder.Services.AddMarten(...); // never reached in test fixtures via ConfigureAppConfiguration
+}
+```
+
+...the value is evaluated from the initial `WebApplicationBuilder` configuration, not from the
+factory's injected configuration. The factory's `ConfigureAppConfiguration` callbacks run too
+late to affect these inline reads.
+
+**Correct approach:** Register stores and modules directly in `ConfigureServices`. This always
+runs after Program.cs and its registrations either add to or replace (last-wins) what Program.cs
+registered:
+
+```csharp
+builder.ConfigureServices(services =>
+{
+    // Always correct — runs after Program.cs
+    services.AddMarten(opts => { opts.Connection(testConnectionString); /* ... */ })
+        .UseLightweightSessions()
+        .ApplyAllDatabaseChangesOnStartup()
+        .IntegrateWithWolverine();
+
+    services.AddSellingModule(); // BC module must also be registered here
 });
 ```
 
-However, `ConfigureAppConfiguration` does **not** help when the fixture's goal is to suppress
-a BC's registration. If BC-B's module uses `if (string.IsNullOrEmpty(connectionString)) return;`
-and the fixture provides the production connection string via `ConfigureAppConfiguration`, BC-B
-will register fully — including its handlers. To suppress discovery, omit `ConfigureAppConfiguration`
-for BC-B's connection string and rely on the `IWolverineExtension` exclusion above.
+**To suppress a BC's registration** (exclude it entirely because infrastructure is absent):
+omit that BC's `ConfigureServices` registration and add an `IWolverineExtension` exclusion
+to prevent handler discovery from finding its handlers (see Problem 1 above).
 
-The canonical example of both patterns together is
-`tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` (provides postgres via
-`ConfigureAppConfiguration` to enable the Selling BC) and
-`tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` (omits postgres to
-suppress the Selling BC, then adds `SellingBcDiscoveryExclusion`).
+The canonical fixtures are `tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs`
+(Marten registered in ConfigureServices, no SQL Server) and
+`tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` (Polecat registered
+in ConfigureServices via `AddParticipantsModule`, no PostgreSQL, with `SellingBcDiscoveryExclusion`).
 
 ---
 
 ## References
 
 - `docs/skills/marten-event-sourcing.md` — event sourcing race conditions, projection behavior
-- `docs/skills/marten-named-stores.md` — named-store constraints, handler patterns, fixture override rules
-- `docs/skills/adding-bc-module.md` — BC module registration, named store patterns
+- `docs/skills/adding-bc-module.md` — BC module registration, ConfigureMarten pattern, fixture setup
 - `docs/skills/wolverine-sagas.md` — saga testing patterns
-- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior (see Anti-Patterns #14, #15)
-- `docs/decisions/0002-marten-bc-isolation.md` — named store ADR, test fixture override pattern
-- `tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` — canonical Marten fixture with cross-BC isolation
-- `tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` — canonical Polecat fixture with `IWolverineExtension` exclusion
+- `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior (see Anti-Pattern #14)
+- `docs/decisions/0003-shared-marten-store.md` — shared primary store ADR (current)
+- `tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` — canonical Marten BC fixture
+- `tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` — canonical Polecat BC fixture with `IWolverineExtension` exclusion
 - [Alba HTTP Testing](https://jasperfx.github.io/alba/)
 - [Testcontainers .NET](https://dotnet.testcontainers.org/)

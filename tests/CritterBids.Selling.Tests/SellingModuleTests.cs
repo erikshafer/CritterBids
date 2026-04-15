@@ -1,5 +1,5 @@
-using CritterBids.Selling;
 using CritterBids.Selling.Tests.Fixtures;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CritterBids.Selling.Tests;
@@ -20,10 +20,9 @@ public class SellingModuleTests
         // Verify the test host started without throwing — AlbaHost construction succeeded.
         _fixture.Host.ShouldNotBeNull();
 
-        // Verify ISellingDocumentStore is resolvable from the DI container.
-        // This confirms the named Marten store was correctly registered and
-        // is distinct from the default IDocumentStore (which is intentionally absent).
-        var store = _fixture.Host.Services.GetRequiredService<ISellingDocumentStore>();
+        // Verify the primary IDocumentStore is resolvable from the DI container.
+        // With ADR 0003, all Marten BCs share a single IDocumentStore registered in Program.cs.
+        var store = _fixture.Host.Services.GetRequiredService<IDocumentStore>();
         store.ShouldNotBeNull();
     }
 }

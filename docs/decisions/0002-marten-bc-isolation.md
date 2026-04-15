@@ -1,8 +1,18 @@
 # 0002 — Marten BC Isolation: Named Stores per Bounded Context
 
-**Status:** Accepted
-**Date:** 2026-04-14
+**Status:** Superseded by ADR 0003 — Shared Primary Marten Store  
+**Date:** 2026-04-14  
+**Superseded:** 2026-04-14  
 **Milestone:** M2-S1 — Marten BC isolation decision
+
+> **Why superseded:** The named-store approach (`AddMartenStore<T>()`) omits the
+> `SessionVariableSource`, `MartenPersistenceFrameProvider`, and `MartenOpPolicy`
+> registrations that the primary `AddMarten()` path provides. This made `IDocumentSession`
+> injection, `AutoApplyTransactions()`, `[Entity]`, and `IStorageAction<T>` unavailable in
+> all Marten-backed handlers — eliminating the core Critter Stack idioms CritterBids exists
+> to showcase. ADR 0003 supersedes this decision with a single primary `IDocumentStore` and
+> per-BC `ConfigureMarten()` contributions. The named-store API is a real Marten capability
+> but is appropriate for multi-server deployments, not a single-server modular monolith.
 
 ---
 
@@ -42,38 +52,15 @@ Option B is the only approach that provides true per-BC event-stream isolation w
 
 ## Decision
 
+*(Superseded — see ADR 0003)*
+
 CritterBids uses one named Marten store per Marten BC, registered via `AddMartenStore<IBcDocumentStore>()` inside each BC's `AddXyzModule()`, with `DatabaseSchemaName` set to the BC name in lowercase.
-
----
-
-## Consequences
-
-**Module registration pattern.**
-Each Marten BC follows a consistent shape inside its `AddXyzModule()` extension method: define a public marker interface inheriting from `IDocumentStore` scoped to the BC; call `AddMartenStore<IBcDocumentStore>()` configured with the connection string from `IConfiguration`, the BC's lowercase schema name set as `DatabaseSchemaName`, `opts.Policies.AutoApplyTransactions()`, and all event stream and projection registrations for that BC; chain `.ApplyAllDatabaseChangesOnStartup().IntegrateWithWolverine()` on the returned builder. The host-level Wolverine configuration in `Program.cs` sets the `MessageStorageSchemaName` durability option to a shared schema name so all named stores write envelope rows to the same table without duplication.
-
-**S2 working assumption corrected.**
-`M2-listings-pipeline.md` §5 shows a working assumption where each BC calls `AddMarten()` directly with `DatabaseSchemaName` set to the BC name. That assumption is incorrect for a multi-BC process: two `AddMarten()` calls register two competing `IDocumentStore` singletons in DI, and the container silently discards one BC's configuration. S2 (Selling BC scaffold) must use `AddMartenStore<ISellingDocumentStore>()` instead of `AddMarten()`. The builder chain shape — `.ApplyAllDatabaseChangesOnStartup().IntegrateWithWolverine()` — is unchanged; only the registration method and the introduction of the BC-scoped marker interface differ.
-
-**Wolverine handler injection.**
-All Wolverine handlers that operate on a Marten BC's store must carry the `[MartenStore(typeof(IBcDocumentStore))]` attribute to receive an injected session from the correct named store. This attribute is a hard requirement. Handlers that omit it will not resolve to the BC's store and will fail to compile or behave incorrectly at runtime.
-
-**Default `IDocumentStore` intentionally absent.**
-No BC in CritterBids registers a primary store via `AddMarten()`. The default `IDocumentStore` is intentionally not registered in the DI container. All session injection flows through the named BC-typed store interfaces. Any component that attempts to resolve `IDocumentStore` directly will fail at startup and must instead resolve the appropriate BC-typed interface.
-
-**Test fixture connection string override.**
-Test fixtures for a named-store BC override the Testcontainers-issued connection string by re-registering the named store in the `ConfigureServices` override of the test host builder. A call to `AddMartenStore<IBcDocumentStore>()` in the test host's `ConfigureServices` block with the Testcontainers connection string replaces the production registration. Because each BC's named store is registered independently, overriding one BC's store does not affect another BC's named store registration.
-
-**UUID v7 for Marten BC stream IDs.**
-Marten BC stream IDs use `Guid.CreateVersion7()` per the convention established in `docs/decisions/0001-uuid-strategy.md` (Proposed). Unlike Polecat BCs where UUID v5 determinism is load-bearing for idempotent stream creation from a natural business key, Marten BCs in CritterBids generate stream IDs at entity creation time with no cross-handler coordination requirement. UUID v7 provides insert locality via its Unix-ms timestamp prefix and requires no namespace constant per BC. This convention is confirmed for M2; `0001-uuid-strategy.md` remains Proposed pending Marten 8 capability verification and JasperFx team input, re-evaluated at M3.
-
-**Explicitly out of scope for this ADR.**
-Marten async daemon configuration (`AddAsyncDaemon()`, `DaemonMode`), EF Core projections, and Marten multi-tenancy (a distinct feature from multi-store — CritterBids does not use Marten multi-tenancy) are not addressed here and are deferred to later sessions. Named Polecat stores are also deferred; only one Polecat BC (Participants) exists through M2.
 
 ---
 
 ## References
 
+- ADR 0003 — Shared Primary Marten Store (supersedes this ADR)
 - ADR 003 — Polecat (SQL Server) for Operations, Settlement, and Participants BCs
-- `docs/decisions/0001-uuid-strategy.md` — UUID strategy (Proposed); Marten BC stream ID convention cross-referenced above
-- `docs/milestones/M2-listings-pipeline.md` §5 — working assumption corrected by this ADR
+- `docs/decisions/0001-uuid-strategy.md` — UUID strategy
 - `docs/vision/bounded-contexts.md` — BC storage assignments
