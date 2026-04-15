@@ -434,7 +434,7 @@ public static IEnumerable<object> Handle(CompleteCheckout cmd, [WriteAggregate] 
 
 **`[MartenStore]` attribute (named/ancillary stores only):**
 
-> **ADR 0003:** CritterBids uses a single primary `IDocumentStore`. `[MartenStore]` is **not** required
+> **ADR 009:** CritterBids uses a single primary `IDocumentStore`. `[MartenStore]` is **not** required
 > on any handler. `IDocumentSession` is injected directly by Wolverine's `SessionVariableSource`.
 
 If named or ancillary stores are ever introduced (e.g. multi-server deployments), every handler
@@ -515,7 +515,7 @@ opts.Events.Upcast<BidPlacedV1, BidPlaced>(v1 =>
 
 ## Marten Configuration
 
-### Standard BC Module Pattern (ADR 0003)
+### Standard BC Module Pattern (ADR 009)
 
 CritterBids uses a **single primary `IDocumentStore`** registered in `Program.cs`. Each Marten BC
 contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Never call
@@ -669,8 +669,8 @@ Silent data loss. Handler returns success, nothing persisted.
 
 ### 11. ❌ Missing `[MartenStore]` on Handlers
 
-> **ADR 0003 update:** CritterBids uses a shared primary store — `[MartenStore]` attributes are not
-> required on handlers. This anti-pattern applied under ADR 0002 (superseded). Retained here as
+> **ADR 009 update:** CritterBids uses a shared primary store — `[MartenStore]` attributes are not
+> required on handlers. This anti-pattern applied under ADR 008 (superseded). Retained here as
 > reference if named/ancillary stores are introduced for multi-server deployments.
 
 Named store handlers without `[MartenStore(typeof(IBcDocumentStore))]` do not route to the correct store.
@@ -682,7 +682,7 @@ or no session is injected.
 Two `AddMarten()` calls in the same process register competing `IDocumentStore` singletons — the second
 call silently discards the first BC's configuration. The fix is not `AddMartenStore<T>()` (which
 loses `IDocumentSession` injection and `AutoApplyTransactions`) but a single `AddMarten()` in `Program.cs`
-with each BC contributing via `services.ConfigureMarten()` inside its `AddXyzModule()`. See ADR 0003.
+with each BC contributing via `services.ConfigureMarten()` inside its `AddXyzModule()`. See ADR 009.
 
 ### 13. ❌ DCB Boundary State Missing `Guid Id` Property
 
@@ -706,7 +706,7 @@ Marten registers boundary state classes as documents. Without `public Guid Id { 
 
 **L7: Don't call `SaveChangesAsync()` in Wolverine handlers.** `AutoApplyTransactions()` handles commits.
 
-**L8: Under ADR 0003 (shared primary store), `[MartenStore]` is not required on handlers.** `IDocumentSession` is injected by `SessionVariableSource` from the primary store registered in `Program.cs` via `AddMarten().IntegrateWithWolverine()`. The named-store constraint (ADR 0002, superseded) required the attribute for inbox routing.
+**L8: Under ADR 009 (shared primary store), `[MartenStore]` is not required on handlers.** `IDocumentSession` is injected by `SessionVariableSource` from the primary store registered in `Program.cs` via `AddMarten().IntegrateWithWolverine()`. The named-store constraint (ADR 008, superseded) required the attribute for inbox routing.
 
 **L9: `MultipleHandlerBehavior.Separated` + `MessageIdentity.IdAndDestination` must both be set.** Without `Separated`, multiple BC handlers for the same message type combine into one queue — BC isolation is broken. Without `IdAndDestination`, fanout deduplication silently prevents some BC handlers from firing.
 
@@ -718,8 +718,8 @@ Marten registers boundary state classes as documents. Without `public Guid Id { 
 - [Marten Projections](https://martendb.io/events/projections/)
 - [Wolverine Marten Integration](https://wolverinefx.net/guide/durability/marten/)
 - [Decider Pattern](https://thinkbeforecoding.com/post/2021/12/17/functional-event-sourcing-decider)
-- `docs/decisions/0003-shared-marten-store.md` — shared primary store, ConfigureMarten() pattern (current)
-- `docs/decisions/0002-marten-bc-isolation.md` — named store ADR (superseded)
+- `docs/decisions/009-shared-marten-store.md` — shared primary store, ConfigureMarten() pattern (current)
+- `docs/decisions/008-marten-bc-isolation.md` — named store ADR (superseded)
 - `docs/skills/adding-bc-module.md` — canonical BC module registration pattern
 - `docs/skills/dynamic-consistency-boundary.md`
 - `docs/skills/wolverine-message-handlers.md`

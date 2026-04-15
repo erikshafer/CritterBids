@@ -1,6 +1,6 @@
-# 0002 — Marten BC Isolation: Named Stores per Bounded Context
+# ADR 008 — Marten BC Isolation: Named Stores per Bounded Context
 
-**Status:** Superseded by ADR 0003 — Shared Primary Marten Store  
+**Status:** Superseded by ADR 009 — Shared Primary Marten Store  
 **Date:** 2026-04-14  
 **Superseded:** 2026-04-14  
 **Milestone:** M2-S1 — Marten BC isolation decision
@@ -10,7 +10,7 @@
 > registrations that the primary `AddMarten()` path provides. This made `IDocumentSession`
 > injection, `AutoApplyTransactions()`, `[Entity]`, and `IStorageAction<T>` unavailable in
 > all Marten-backed handlers — eliminating the core Critter Stack idioms CritterBids exists
-> to showcase. ADR 0003 supersedes this decision with a single primary `IDocumentStore` and
+> to showcase. ADR 009 supersedes this decision with a single primary `IDocumentStore` and
 > per-BC `ConfigureMarten()` contributions. The named-store API is a real Marten capability
 > but is appropriate for multi-server deployments, not a single-server modular monolith.
 
@@ -52,7 +52,7 @@ Option B is the only approach that provides true per-BC event-stream isolation w
 
 ## Decision
 
-*(Superseded — see ADR 0003)*
+*(Superseded — see ADR 009)*
 
 CritterBids uses one named Marten store per Marten BC, registered via `AddMartenStore<IBcDocumentStore>()` inside each BC's `AddXyzModule()`, with `DatabaseSchemaName` set to the BC name in lowercase.
 
@@ -60,7 +60,7 @@ CritterBids uses one named Marten store per Marten BC, registered via `AddMarten
 
 ## References
 
-- ADR 0003 — Shared Primary Marten Store (supersedes this ADR)
+- ADR 009 — Shared Primary Marten Store (supersedes this ADR)
 - ADR 003 — Polecat (SQL Server) for Operations, Settlement, and Participants BCs
-- `docs/decisions/0001-uuid-strategy.md` — UUID strategy
+- `docs/decisions/007-uuid-strategy.md` — UUID strategy
 - `docs/vision/bounded-contexts.md` — BC storage assignments

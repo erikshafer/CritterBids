@@ -21,7 +21,7 @@ public class SellingModuleTests
         _fixture.Host.ShouldNotBeNull();
 
         // Verify the primary IDocumentStore is resolvable from the DI container.
-        // With ADR 0003, all Marten BCs share a single IDocumentStore registered in Program.cs.
+        // With ADR 009, all Marten BCs share a single IDocumentStore registered in Program.cs.
         var store = _fixture.Host.Services.GetRequiredService<IDocumentStore>();
         store.ShouldNotBeNull();
     }

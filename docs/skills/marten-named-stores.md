@@ -2,8 +2,8 @@
 
 > **⚠️ ARCHIVED — 2026-04-14**
 >
-> CritterBids no longer uses named/ancillary Marten stores. ADR 0002 was superseded by
-> ADR 0003, which establishes a single primary `IDocumentStore` registered in `Program.cs`
+> CritterBids no longer uses named/ancillary Marten stores. ADR 008 was superseded by
+> ADR 009, which establishes a single primary `IDocumentStore` registered in `Program.cs`
 > with per-BC `ConfigureMarten()` contributions. This file is retained as reference material
 > for the named-store API, which is a real Marten capability appropriate for multi-server
 > deployments where each BC must connect to a separate PostgreSQL instance.
@@ -16,7 +16,7 @@
 Patterns, constraints, and gotchas for the named-store-only architecture.
 
 > **Why this skill existed:** CritterBids originally had no default `IDocumentStore` — only named stores
-> registered via `AddMartenStore<T>()` (one per BC, per ADR 0002). That decision was superseded
+> registered via `AddMartenStore<T>()` (one per BC, per ADR 008). That decision was superseded
 > because it made `IDocumentSession` injection, `AutoApplyTransactions`, `[Entity]`, and
 > `IStorageAction<T>` unavailable in all Marten-backed handlers — eliminating the core Critter
 > Stack idioms CritterBids exists to showcase.
@@ -122,6 +122,6 @@ use `CleanAllMartenDataAsync<IBcDocumentStore>()` instead.
 
 ## References
 
-- `docs/decisions/0002-marten-bc-isolation.md` — original rationale (superseded)
-- `docs/decisions/0003-shared-marten-store.md` — superseding decision
+- `docs/decisions/008-marten-bc-isolation.md` — original rationale (superseded)
+- `docs/decisions/009-shared-marten-store.md` — superseding decision
 - Marten docs: [Multiple Document Stores](https://martendb.io/configuration/multiple-databases.html)

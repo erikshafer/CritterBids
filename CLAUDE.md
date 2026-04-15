@@ -25,6 +25,7 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
    - **[docs/vision/bounded-contexts.md](./docs/vision/bounded-contexts.md)** — BC map, ownership, integration topology
    - **[docs/vision/domain-events.md](./docs/vision/domain-events.md)** — canonical event vocabulary
    - **[docs/skills/README.md](./docs/skills/README.md)** — skill index, load before implementing
+   - **[docs/decisions/README.md](./docs/decisions/README.md)** — ADR index, naming convention, next available number
 
 4. **Before implementing anything:**
    - Check `docs/vision/bounded-contexts.md` for BC boundaries
@@ -46,6 +47,7 @@ docs/skills/*.md                         ← Implementation patterns (load on de
     ↑
 docs/personas/*.md                       ← Agent personas for workshops
     ↑
+docs/decisions/README.md                 ← ADR index, naming convention, next available number
 docs/decisions/*.md (ADRs)               ← Architectural decisions with rationale
     ↑
 docs/milestones/*.md                     ← Scope per milestone

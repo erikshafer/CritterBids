@@ -187,7 +187,7 @@ Integration handlers follow the same patterns as command handlers. See `wolverin
 
 ```csharp
 // Settlement BC handler — reacts to ListingSold from Auctions BC.
-// No [MartenStore] attribute needed — CritterBids uses a single primary IDocumentStore (ADR 0003).
+// No [MartenStore] attribute needed — CritterBids uses a single primary IDocumentStore (ADR 009).
 // IDocumentSession is injected by Wolverine's SessionVariableSource from the primary store.
 public static class ListingSoldHandler
 {
@@ -377,7 +377,7 @@ With the default `MessageIdentity.Id`, the durable inbox key is the message ID a
 3. **Build the consumer table** before finalizing payload (see L2 in Lessons Learned)
 4. **Declare the publisher** via `opts.PublishMessage<T>().ToRabbitQueue("...")` in publisher's `AddXyzModule()`
 5. **Declare the subscriber** via `opts.ListenToRabbitQueue("...")` in consumer's `AddXyzModule()`
-6. **Implement the handler** in the consumer BC — no `[MartenStore]` attribute required (ADR 0003: single primary store; `IDocumentSession` injected via `SessionVariableSource`)
+6. **Implement the handler** in the consumer BC — no `[MartenStore]` attribute required (ADR 009: single primary store; `IDocumentSession` injected via `SessionVariableSource`)
 7. **Verify queue name** matches exactly on both sides
 8. **Write a cross-BC smoke test** to verify the RabbitMQ pipeline end-to-end
 9. **When retiring a contract:** search codebase for every reference. Classify as active, dead-needs-migration, or dead-no-publisher. Never close a milestone with unresolved dead handlers.

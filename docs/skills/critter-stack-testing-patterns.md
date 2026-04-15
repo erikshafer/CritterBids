@@ -46,14 +46,14 @@ Patterns for testing Wolverine handlers, Marten aggregates, and Alba HTTP scenar
 
 ## Marten BC TestFixture Pattern
 
-CritterBids uses a single primary `IDocumentStore` registered in `Program.cs` (ADR 0003). Each Marten BC contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Test fixtures provision a PostgreSQL Testcontainers container and register both the primary Marten store AND the BC module directly in `ConfigureServices`.
+CritterBids uses a single primary `IDocumentStore` registered in `Program.cs` (ADR 009). Each Marten BC contributes its types via `services.ConfigureMarten()` inside its `AddXyzModule()`. Test fixtures provision a PostgreSQL Testcontainers container and register both the primary Marten store AND the BC module directly in `ConfigureServices`.
 
 > **Why ConfigureServices, not ConfigureAppConfiguration?** Program.cs reads connection strings inline via `builder.Configuration.GetConnectionString(...)` before `ConfigureAppConfiguration` callbacks are applied to the `WebApplicationBuilder`. As a result, `ConfigureAppConfiguration` does NOT work for triggering Program.cs null guards on connection strings. Always use `ConfigureServices` to register stores and modules directly.
 >
 > **Key difference from Polecat:** Polecat fixtures call `services.AddParticipantsModule(connectionString)` directly in `ConfigureServices`. Marten BC fixtures call `services.AddMarten(...)` plus `services.AddBcModule()` in `ConfigureServices`.
 
 ```csharp
-// Verified from CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs (ADR 0003)
+// Verified from CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs (ADR 009)
 using Alba;
 using JasperFx.CommandLine;
 using JasperFx.Events;
@@ -170,7 +170,7 @@ public class SellingTestFixture : IAsyncLifetime
 
 Both `CleanAllMartenDataAsync()` and `ResetAllMartenDataAsync()` are extension methods on `IAlbaHost` from the `Marten` namespace (non-generic overloads — `IDocumentStore` is registered in every Marten BC fixture). Always add `using Marten;` at the top of the fixture file.
 
-### Marten BC Fixture — Key Points (ADR 0003)
+### Marten BC Fixture — Key Points (ADR 009)
 
 | Concern | Pattern |
 |---|---|
@@ -896,7 +896,7 @@ in ConfigureServices via `AddParticipantsModule`, no PostgreSQL, with `SellingBc
 - `docs/skills/adding-bc-module.md` — BC module registration, ConfigureMarten pattern, fixture setup
 - `docs/skills/wolverine-sagas.md` — saga testing patterns
 - `docs/skills/wolverine-message-handlers.md` — handler patterns, ProblemDetails behavior (see Anti-Pattern #14)
-- `docs/decisions/0003-shared-marten-store.md` — shared primary store ADR (current)
+- `docs/decisions/009-shared-marten-store.md` — shared primary store ADR (current)
 - `tests/CritterBids.Selling.Tests/Fixtures/SellingTestFixture.cs` — canonical Marten BC fixture
 - `tests/CritterBids.Participants.Tests/Fixtures/ParticipantsTestFixture.cs` — canonical Polecat BC fixture with `IWolverineExtension` exclusion
 - [Alba HTTP Testing](https://jasperfx.github.io/alba/)

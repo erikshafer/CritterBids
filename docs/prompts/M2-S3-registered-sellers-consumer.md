@@ -90,7 +90,7 @@ Wolverine handler for `CritterBids.Contracts.Participants.SellerRegistrationComp
 
 This handler must carry `[MartenStore(typeof(ISellingDocumentStore))]`. Without this attribute,
 Wolverine does not route the injected session to the Selling BC's named store — the default
-`IDocumentStore` is not registered in this process (ADR 0002), so the handler will fail at
+`IDocumentStore` is not registered in this process (ADR 008), so the handler will fail at
 runtime with no compile-time warning. Verify the attribute is present before committing.
 
 The handler upserts a `RegisteredSeller` document. It must be naturally idempotent — processing

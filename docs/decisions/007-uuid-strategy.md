@@ -1,4 +1,4 @@
-# 0001 — UUID Strategy for Stream IDs and Event Row IDs
+# ADR 007 — UUID Strategy for Stream IDs and Event Row IDs
 
 **Status:** Proposed
 **Date:** 2026-04-13

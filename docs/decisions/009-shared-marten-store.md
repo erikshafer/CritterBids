@@ -1,16 +1,16 @@
-# 0003 — Shared Primary Marten Store
+# ADR 009 — Shared Primary Marten Store
 
 **Status:** Accepted  
 **Date:** 2026-04-14  
-**Supersedes:** ADR 0002 — Marten BC Isolation: Named Stores per Bounded Context
+**Supersedes:** ADR 008 — Marten BC Isolation: Named Stores per Bounded Context
 
 ---
 
 ## Context
 
-ADR 0002 established that each Marten-backed BC would register an independent named store via `AddMartenStore<IBcDocumentStore>()`. The intent was sound: each BC owns a distinct PostgreSQL schema and its event tables must not interleave with other BCs' streams.
+ADR 008 established that each Marten-backed BC would register an independent named store via `AddMartenStore<IBcDocumentStore>()`. The intent was sound: each BC owns a distinct PostgreSQL schema and its event tables must not interleave with other BCs' streams.
 
-The named-store approach was confirmed to work by Context7 research at the time of ADR 0002. What the research did not surface — and what only became apparent during M2-S2 implementation — is that `AddMartenStore<T>()` is an *ancillary* store API. It intentionally omits the registration of `SessionVariableSource`, `MartenPersistenceFrameProvider`, and `MartenOpPolicy` that the primary `AddMarten()` path provides. These registrations are what enable Wolverine's code-generated handler middleware to inject `IDocumentSession`, apply `AutoApplyTransactions()`, honour `[Entity]` attribute loading, and process `IStorageAction<T>` return types.
+The named-store approach was confirmed to work by Context7 research at the time of ADR 008. What the research did not surface — and what only became apparent during M2-S2 implementation — is that `AddMartenStore<T>()` is an *ancillary* store API. It intentionally omits the registration of `SessionVariableSource`, `MartenPersistenceFrameProvider`, and `MartenOpPolicy` that the primary `AddMarten()` path provides. These registrations are what enable Wolverine's code-generated handler middleware to inject `IDocumentSession`, apply `AutoApplyTransactions()`, honour `[Entity]` attribute loading, and process `IStorageAction<T>` return types.
 
 The practical result: every Marten-backed handler in CritterBids was forced to inject `ISellingDocumentStore` directly, open a `LightweightSession()` manually, call `SaveChangesAsync()` explicitly, and carry a `[MartenStore(typeof(ISellingDocumentStore))]` attribute on every class. `AutoApplyTransactions()` did not fire. `[Entity]` did not work. `IStorageAction<T>` / `MartenOps` did not work. `[WriteAggregate]` / `[ReadAggregate]` did not work.
 
@@ -18,7 +18,7 @@ CritterBids exists to demonstrate idiomatic Critter Stack development. A codebas
 
 ### Why named stores seemed necessary
 
-ADR 0002 correctly identified that two independent `AddMarten()` calls in the same `IServiceCollection` register competing `IDocumentStore` singletons — the second call's configuration replaces the first. If BC-A and BC-B each call `AddMarten()`, one BC's projections, document types, and event registrations are silently discarded.
+ADR 008 correctly identified that two independent `AddMarten()` calls in the same `IServiceCollection` register competing `IDocumentStore` singletons — the second call's configuration replaces the first. If BC-A and BC-B each call `AddMarten()`, one BC's projections, document types, and event registrations are silently discarded.
 
 ### Why the solution was wrong for this project
 
@@ -155,13 +155,13 @@ public static class SellerRegistrationCompletedHandler
 
 ## `docs/skills/marten-named-stores.md`
 
-The skill created alongside ADR 0002 is archived. It documents a real Marten capability (the ancillary store API), but one that is not appropriate for CritterBids' architecture. It is retained in the repository as reference material under a clearly marked archived status.
+The skill created alongside ADR 008 is archived. It documents a real Marten capability (the ancillary store API), but one that is not appropriate for CritterBids' architecture. It is retained in the repository as reference material under a clearly marked archived status.
 
 ---
 
 ## References
 
-- ADR 0002 — Marten BC Isolation: Named Stores per Bounded Context (superseded)
+- ADR 008 — Marten BC Isolation: Named Stores per Bounded Context (superseded)
 - ADR 001 — Modular Monolith Architecture
 - `src/CritterBids.Api/Program.cs` — primary `AddMarten()` registration
 - `src/CritterBids.Selling/SellingModule.cs` — canonical `ConfigureMarten()` BC contribution

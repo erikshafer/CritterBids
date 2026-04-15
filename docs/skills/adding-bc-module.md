@@ -69,7 +69,7 @@ Both new projects must be added to `CritterBids.sln` in the same PR that creates
 Marten BCs contribute their document types, aggregates, and projections to the **single primary
 `IDocumentStore`** registered in `Program.cs`. Each BC uses `services.ConfigureMarten()` inside
 its `AddXyzModule()` call — no named store, no separate connection string, no `IntegrateWithWolverine()`
-per BC. See ADR 0003.
+per BC. See ADR 009.
 
 ### Module Registration
 
@@ -405,7 +405,7 @@ to contribute to the existing store.
 Named/ancillary stores omit `SessionVariableSource`, `MartenPersistenceFrameProvider`, and
 `MartenOpPolicy`. This makes `IDocumentSession` injection, `AutoApplyTransactions`, `[Entity]`,
 and `IStorageAction<T>` unavailable in handlers — eliminating the core Critter Stack idioms.
-Use `ConfigureMarten()` instead. See ADR 0003.
+Use `ConfigureMarten()` instead. See ADR 009.
 
 ### ❌ Adding `[MartenStore]` to handlers
 
@@ -438,8 +438,8 @@ itself (`UseRabbitMq(...)`) is configured once in `Program.cs`.
 
 ## References
 
-- `docs/decisions/0003-shared-marten-store.md` — shared primary store ADR (current)
-- `docs/decisions/0002-marten-bc-isolation.md` — named store ADR (superseded)
+- `docs/decisions/009-shared-marten-store.md` — shared primary store ADR (current)
+- `docs/decisions/008-marten-bc-isolation.md` — named store ADR (superseded)
 - `docs/skills/marten-event-sourcing.md` — aggregate patterns, handler conventions
 - `docs/skills/critter-stack-testing-patterns.md` — Marten BC TestFixture Pattern, cross-BC isolation
 - `docs/skills/integration-messaging.md` — RabbitMQ routing, `MultipleHandlerBehavior.Separated`
