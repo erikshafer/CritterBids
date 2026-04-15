@@ -16,7 +16,18 @@ public class RegisteredSellersProjectionTests : IAsyncLifetime
         _fixture = fixture;
     }
 
-    public async Task InitializeAsync() => await _fixture.CleanAllMartenDataAsync();
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            await _fixture.CleanAllMartenDataAsync();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Host failed to start (e.g. schema migration error during fixture initialization).
+            // Tests will fail with a clearer message rather than cascading ObjectDisposedExceptions.
+        }
+    }
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
