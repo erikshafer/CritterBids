@@ -13,11 +13,11 @@
 
 ## What Is CritterBids?
 
-CritterBids is a working, demonstrable auction platform modeled after eBay's conventions and terminology. It is built on **Wolverine** (messaging and command handling), **Marten** (event sourcing over PostgreSQL), and **Polecat** (event sourcing over SQL Server) — JasperFx's suite of .NET libraries collectively known as the [Critter Stack](https://wolverine.netlify.app/).
+CritterBids is a working, demonstrable auction platform built on **Wolverine** (messaging and command handling), **Marten** (event sourcing + document storage over PostgreSQL), and **Polecat** (event sourcing + document storage over SQL Server) — JasperFx's suite of .NET libraries collectively known as the [Critter Stack](https://wolverine.netlify.app/).
 
 CritterBids is one of several open-source reference architectures showcasing the Critter Stack across different domains. The auction domain was chosen because competitive real-time bidding surfaces patterns — contention, time pressure, multi-audience projections — that simpler domains don't.
 
-CritterBids is not a toy. It is a realistic platform designed to be run, demonstrated, and learned from.
+CritterBids is intended to be run, demonstrated, and learned from and not for actual live auctions.
 
 ---
 
