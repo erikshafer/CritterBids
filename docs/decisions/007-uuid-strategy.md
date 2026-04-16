@@ -1,6 +1,6 @@
 # ADR 007 — UUID Strategy for Stream IDs and Event Row IDs
 
-**Status:** Proposed
+**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (🟡 Proposed, Gates 1 and 4 remain open)
 **Date:** 2026-04-13
 **Milestone:** M1-S5 — Slice 0.2: StartParticipantSession
 
@@ -71,10 +71,36 @@ The acceptance gates below must be satisfied before this moves to Accepted.
       Marten event rows.
 - [ ] **Gate 2:** Verify that Polecat 2 exposes the same. Polecat's `pc_events` table structure and
       any identity column constraints must support custom ID assignment.
+
+  > **Gate 2 — Closed (no longer applicable).** ADR 011 eliminates Polecat/SQL Server from CritterBids
+  > entirely. All BCs use Marten/PostgreSQL. There is no Polecat 2 event table to verify. Gate 2 is moot.
 - [ ] **Gate 3:** Confirm v7 support: `Guid.CreateVersion7()` (.NET 9+ built-in) is available in the
       CritterBids target framework (net10.0). **Confirmed** — .NET 10 includes `Guid.CreateVersion7()`.
 - [ ] **Gate 4:** JasperFx team input on recommended strategy at the application layer for Auctions-
       scale write workloads. Re-surfaces naturally at M3 (Auctions BC planning).
+
+---
+
+## Stream ID Decision — Accepted
+
+All Marten BC stream IDs in CritterBids use UUID v7 (`Guid.CreateVersion7()`). This is the
+established and implemented convention as of M2 close.
+
+| BC | Aggregate | Strategy | Notes |
+|---|---|---|---|
+| Participants | `Participant` | UUID v7 | No natural business key — M1-S5 |
+| Selling | `SellerListing` | UUID v7 | Generated at draft creation — M2-S5 |
+| Auctions (M3) | `Session`, Listing states | UUID v7 (expected) | Confirm at M3 |
+
+UUID v5 with a BC-specific namespace constant remains available for use cases where a natural
+business key enables deterministic, idempotent stream creation (e.g., QR-code session tokens
+for Participants — see `001-scenarios.md` §0.2 deferred note). No current BC has this condition.
+
+Gate 3 is confirmed: `Guid.CreateVersion7()` is available in .NET 10 (`net10.0` target framework).
+
+The event row ID question (Gates 1 and 4) remains open. Gate 4 resurfaces naturally at M3
+(Auctions BC — the highest-write BC in the system and the primary motivation for v7 insert
+locality in event rows).
 
 ---
 
