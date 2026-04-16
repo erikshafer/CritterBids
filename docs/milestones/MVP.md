@@ -40,8 +40,9 @@ MVP is complete when:
 - Dispute workflow (basic — open, resolve, close)
 - Relay BC — SignalR push for in-session notifications
 - Operations dashboard — live board, demo controls
-- PostgreSQL (Marten) for Auctions, Selling, Listings, Obligations, Relay BCs
-- SQL Server (Polecat) for Participants, Settlement, Operations BCs
+- PostgreSQL (Marten) for all eight BCs — All-Marten pivot per ADR 011; the original Polecat/SQL
+  Server rationale for Participants, Settlement, and Operations is preserved as a post-MVP stretch
+  goal (see ADR 003 and ADR 011)
 - RabbitMQ for inter-BC messaging
 - React frontends for both participant and ops surfaces
 - Docker Compose deployment
