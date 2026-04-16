@@ -1,4 +1,5 @@
 using CritterBids.Contracts;
+using CritterBids.Listings;
 using CritterBids.Participants;
 using CritterBids.Selling;
 using JasperFx;
@@ -23,6 +24,7 @@ builder.UseWolverine(opts =>
     // BC handler/endpoint discovery
     opts.Discovery.IncludeAssembly(typeof(Participant).Assembly);
     opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(CatalogListingView).Assembly);
 
     // RabbitMQ transport — guarded so fixtures using DisableAllExternalWolverineTransports() are unaffected
     var rabbitMqUri = builder.Configuration.GetConnectionString("rabbitmq");
@@ -38,6 +40,7 @@ builder.UseWolverine(opts =>
 
         opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
             .ToRabbitQueue("listings-selling-events");
+        opts.ListenToRabbitQueue("listings-selling-events");
     }
 
     opts.Policies.AutoApplyTransactions();
@@ -69,6 +72,7 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     // Adding a new BC = add its AddXyzModule() call here.
     builder.Services.AddParticipantsModule();
     builder.Services.AddSellingModule();
+    builder.Services.AddListingsModule();
 }
 
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────
