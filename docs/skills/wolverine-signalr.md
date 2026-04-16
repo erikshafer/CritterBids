@@ -527,7 +527,7 @@ For the Hetzner single-VPS conference deployment, a backplane is not needed. Des
 
 **Don't hand-roll a broadcaster.** Before `opts.UseSignalR()`, CritterSupply had a 70-line `EventBroadcaster` with `ConcurrentDictionary`, cleanup logic, and thread-safety bookkeeping. Two lines replace it entirely. Never build this.
 
-**Build with SignalR from the start.** Starting with SSE (Server-Sent Events) and migrating later cost a full cycle in CritterSupply. CritterBids is real-time from day one — no SSE.
+**Build with SignalR from the start.** Starting with SSE (Server-Sent Events) and migrating later cost a full rework in CritterSupply. CritterBids is real-time from day one — no SSE.
 
 **Use role-based groups instead of iterating users.** Sending to a role group (`ops:staff`) is a single Wolverine call. Querying all staff user IDs and looping is fragile, slow, and scales poorly.
 
