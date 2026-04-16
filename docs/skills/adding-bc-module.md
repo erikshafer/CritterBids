@@ -357,6 +357,18 @@ public class SellingTestFixture : IAsyncLifetime
 }
 ```
 
+> **`IAlbaHost.GetAsJson<T>()` does not exist in Alba 8.5.2.** Use the Scenario pattern instead:
+> ```csharp
+> var result = await Host.Scenario(s =>
+> {
+>     s.Get.Url("/api/some-endpoint");
+>     s.StatusCodeShouldBe(200);
+> });
+> var response = await result.ReadAsJsonAsync<T>();
+> ```
+> This is the only correct read pattern for JSON responses in Alba 8.x. Prompts and docs must
+> not reference `GetAsJson`.
+
 See `critter-stack-testing-patterns.md` for the full fixture code and cross-BC handler isolation
 patterns (needed when a fixture hosts BCs whose infrastructure is not provisioned).
 
@@ -416,6 +428,7 @@ opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
 
 ### Integration
 - [ ] `Program.cs` calls `services.AddBcModule()` — no IConfiguration parameter needed
+- [ ] `CritterBids.Api.csproj` — add `<ProjectReference Include="..\..\src\CritterBids.{BcName}\CritterBids.{BcName}.csproj" />` alongside the existing BC references
 - [ ] If first integration event: `CritterBids.Contracts/{BcName}/` directory and record authored
 - [ ] `dotnet build` succeeds with 0 errors
 - [ ] `dotnet test` reports expected test count passing
