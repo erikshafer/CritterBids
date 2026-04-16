@@ -31,7 +31,7 @@ public static class SubmitListingHandler
     /// </exception>
     public static (Events, OutgoingMessages) Handle(
         SubmitListing cmd,
-        [WriteAggregate] SellerListing listing)
+        [WriteAggregate(nameof(SubmitListing.ListingId))] SellerListing listing)
     {
         if (listing.Status != ListingStatus.Draft && listing.Status != ListingStatus.Rejected)
             throw new InvalidListingStateException(
