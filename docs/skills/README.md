@@ -33,7 +33,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
 | Adding a BC module | `adding-bc-module.md` | ✅ Complete | New — authored M2 pre-S2 from ADR 008 + JasperFx ai-skills |
 | React frontend | `react-frontend.md` | 🔴 Not yet written | New |
-| Domain event conventions | `domain-event-conventions.md` | 🔴 Not yet written | New — write in M2-S7 |
+| Domain event conventions | `domain-event-conventions.md` | ✅ Complete | New — authored M2-S8 from S5–S6 patterns |
 
 **Status key:**
 - ✅ Complete and ready to use
