@@ -60,7 +60,37 @@ tests/
       {TestClass}.cs
 ```
 
-Both new projects must be added to `CritterBids.sln` in the same PR that creates them.
+Both new projects must be added to `CritterBids.slnx` in the same PR that creates them.
+
+### Solution file format — `.slnx`, not `.sln`
+
+CritterBids uses the **Visual Studio XML solution format** (`.slnx`), not the legacy line-based `.sln` format used by older .NET projects. The two formats are not interchangeable.
+
+**`CritterBids.slnx` structure:**
+
+```xml
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/CritterBids.AppHost/CritterBids.AppHost.csproj" />
+    <Project Path="src/CritterBids.Api/CritterBids.Api.csproj" />
+    <!-- one <Project> element per production project -->
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj" />
+    <!-- one <Project> element per test project -->
+  </Folder>
+</Solution>
+```
+
+To register a new BC:
+
+1. Add a `<Project Path="src/CritterBids.{BcName}/CritterBids.{BcName}.csproj" />` entry inside the `/src/` folder — keep entries alphabetical by BC name.
+2. Add a `<Project Path="tests/CritterBids.{BcName}.Tests/CritterBids.{BcName}.Tests.csproj" />` entry inside the `/tests/` folder.
+
+**Common pitfalls:**
+- `Glob("*.sln")` will **not** match `CritterBids.slnx` — search for `*.slnx` or the exact filename.
+- `dotnet sln` CLI commands target `.sln` files and will not work here; edit `CritterBids.slnx` directly as XML.
+- The `<Project>` entries use forward slashes in `Path` regardless of OS — do not use backslashes.
 
 ---
 
@@ -354,8 +384,8 @@ opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
 ## Checklist
 
 ### New project setup
-- [ ] `src/CritterBids.{BcName}/` class library created, added to `CritterBids.sln`
-- [ ] `tests/CritterBids.{BcName}.Tests/` test project created, added to `CritterBids.sln`
+- [ ] `src/CritterBids.{BcName}/` class library created, added to `CritterBids.slnx`
+- [ ] `tests/CritterBids.{BcName}.Tests/` test project created, added to `CritterBids.slnx`
 - [ ] `WolverineFx.Marten` (or `WolverineFx.Http.Marten`) pinned in `Directory.Packages.props`
 - [ ] `Testcontainers.PostgreSql` pinned in `Directory.Packages.props` (Marten BCs)
 
