@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- WolverineFx.Http.Marten transitively includes WolverineFx.Http, WolverineFx.Marten,
+         and Marten — no additional Wolverine or Marten package references needed. -->
+    <PackageReference Include="WolverineFx.Http.Marten" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Contracts project provides CritterBids.Contracts.Selling.ListingPublished (consumed here)
+         and future Listings BC integration contracts. No BC project references allowed. -->
+    <ProjectReference Include="..\..\src\CritterBids.Contracts\CritterBids.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>
