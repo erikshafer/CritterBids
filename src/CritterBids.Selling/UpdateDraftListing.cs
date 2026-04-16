@@ -33,7 +33,9 @@ public sealed class ListingValidationException : Exception
 /// </summary>
 public static class UpdateDraftListingHandler
 {
-    public static Events Handle(UpdateDraftListing cmd, [WriteAggregate] SellerListing listing)
+    public static Events Handle(
+        UpdateDraftListing cmd,
+        [WriteAggregate(nameof(UpdateDraftListing.ListingId))] SellerListing listing)
     {
         if (listing.Status != ListingStatus.Draft)
             throw new InvalidListingStateException("Cannot update draft on non-draft listing");
