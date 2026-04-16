@@ -24,7 +24,7 @@ No BC references another BC's internals directly. The only shared dependency is 
 - Display names are generated (e.g. "SwiftFerret42") — fun, anonymous, legible on the ops dashboard.
 - Bidder IDs are the participant's identifier across all BCs. Formatted as "Bidder 42" or similar in UI contexts.
 
-**Storage:** SQL Server via Polecat — participant standing, seller verification status, and activity history are staff-relevant data appropriate for BI tooling.
+**Storage:** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for BI tooling access; migrated to Marten in M2-S5 to eliminate the Wolverine dual-store conflict (ADR 010) and align with the idiomatic Critter Stack bootstrap pattern. The BI tooling rationale is preserved as a stretch goal in ADR 003.
 
 **Integration out:** `ParticipantSessionStarted`, `SellerRegistrationCompleted`, `ParticipantSessionEnded`
 
@@ -128,7 +128,7 @@ Draft → Submitted → Approved → Published
 - The reserve check lives in Settlement, not Auctions. Auctions publishes `ReserveMet` as a signal based on threshold crossing, but the binding comparison is done by Settlement using the confidential reserve value it received from `ListingPublished`.
 - No real payment processor in MVP. Credit ceilings are virtual. The settlement flow is structurally real — the seam for Stripe, Square, or similar is clean.
 
-**Storage:** SQL Server via Polecat — financial event streams are appropriate for BI tooling and audit reporting.
+**Storage:** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for financial audit reporting; migrated to Marten to unify the storage layer. The financial reporting rationale is preserved as a stretch goal in ADR 003.
 
 **Integration in:** `ListingSold`, `BuyItNowPurchased` (Auctions); `ListingPublished` (Selling, for reserve value)
 
@@ -203,7 +203,7 @@ Draft → Submitted → Approved → Published
 - The demo reset mechanism lives here. In MVP, resetting between conference sessions is handled by Docker volume removal. A more graceful `DemoResetInitiated` command that cascades through BCs is a post-MVP milestone.
 - The ops dashboard and participant-facing app are separate React SPAs pointing at the same API host. Two browser windows on the same projector tells the audience the story without narration.
 
-**Storage:** SQL Server via Polecat — operations data is reporting-adjacent and appropriate for Power BI, SSRS, or other BI tooling that organizations typically run against SQL Server.
+**Storage:** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for BI tooling and live reporting; migrated to Marten to unify the storage layer. The BI rationale is preserved as a stretch goal in ADR 003.
 
 **Integration in:** Integration events from all BCs.
 
@@ -263,14 +263,14 @@ Listings ─── LotWatchAdded, LotWatchRemoved ──────────
 
 | BC | Database | Engine | Rationale |
 |---|---|---|---|
-| Participants | SQL Server | Polecat | Staff-relevant data, BI-friendly |
+| Participants | PostgreSQL | Marten | All-Marten pivot (ADR 011) — migrated from Polecat/SQL Server |
 | Selling | PostgreSQL | Marten | Event-sourced aggregate, standard Critter Stack path |
 | Auctions | PostgreSQL | Marten | Highest-throughput BC, DCB APIs require Marten |
 | Listings | PostgreSQL | Marten | Multi-stream projections, full-text search |
-| Settlement | SQL Server | Polecat | Financial event streams, audit reporting |
+| Settlement | PostgreSQL | Marten | All-Marten pivot (ADR 011) — migrated from Polecat/SQL Server |
 | Obligations | PostgreSQL | Marten | Saga with cancellable scheduled messages |
 | Relay | PostgreSQL | Marten | Notification history projection |
-| Operations | SQL Server | Polecat | Cross-BC reporting, BI tooling |
+| Operations | PostgreSQL | Marten | All-Marten pivot (ADR 011) — migrated from Polecat/SQL Server |
 
 ---
 
