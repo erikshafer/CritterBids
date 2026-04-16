@@ -190,6 +190,34 @@ public static class CloseBiddingHandler
 2. Command property with `[Identity]` attribute
 3. HTTP route parameter (e.g., `/listings/{listingId}`)
 
+### Explicit stream-ID property override
+
+When the command carries the stream ID on a property that doesn't follow the `{AggregateName}Id`
+convention, pass the property name as a positional constructor argument on `[WriteAggregate]`:
+
+```csharp
+public sealed record SubmitListing(Guid ListingId, Guid SellerId);
+
+public static (Events, OutgoingMessages) Handle(
+    SubmitListing cmd,
+    [WriteAggregate(nameof(SubmitListing.ListingId))] SellerListing listing)
+{
+    // ...
+}
+```
+
+Without the override, Wolverine would look for `SellerListingId` on the command (the aggregate is
+`SellerListing`) and fail at handler code-gen time with
+`InvalidOperationException: Unable to determine an aggregate id for the parameter 'listing'` —
+the exception surfaces during `WolverineRuntime.findInvoker()` the first time the message type is
+dispatched, not at host startup. The 30 direct-call Selling unit tests in `SubmitListingTests`
+never exercised this because they bypass dispatch entirely. Verified via dispatch through
+`IMessageBus.InvokeAsync()` in `SubmitListingDispatchTests`.
+
+The attribute is `[WriteAggregate(string routeOrParameterName)]` — a positional string
+constructor argument, not a named `AggregateIdMember` property. `nameof()` keeps the reference
+refactor-safe.
+
 ### `[ReadAggregate]`
 
 Use when you need aggregate state but won't modify it:
