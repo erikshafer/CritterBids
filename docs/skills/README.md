@@ -70,7 +70,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Integration test (Alba + Testcontainers) | `critter-stack-testing-patterns.md` | — |
 | Unit test (pure handler logic) | `critter-stack-testing-patterns.md` | — |
 | Marten BC test fixture | `critter-stack-testing-patterns.md` | `adding-bc-module.md` |
-| **Cross-BC handler isolation** | **`critter-stack-testing-patterns.md`** | **`marten-named-stores.md`** |
+| **Cross-BC handler isolation** | **`critter-stack-testing-patterns.md`** | — |
 | Polecat BC test fixture | `critter-stack-testing-patterns.md` | — |
 | Saga test | `wolverine-sagas.md` | `critter-stack-testing-patterns.md` |
 | EF Core projection test | `marten-projections.md` | `critter-stack-testing-patterns.md` |

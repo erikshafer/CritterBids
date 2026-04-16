@@ -99,10 +99,14 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 - Handlers return events/messages — never call `session.Store()` directly
 - All saga terminal paths must call `MarkCompleted()`
 - `opts.Policies.AutoApplyTransactions()` in `UseWolverine()` in `Program.cs` — not inside BC `ConfigureMarten()` calls
-- `[Authorize]` on all non-auth endpoints from first commit
+- `[AllowAnonymous]` on all endpoints through M6 — real authentication is deferred to M6; this is
+  the intentional project stance, not a temporary override. The `[Authorize]` convention resumes at M6.
 - Integration events published via `OutgoingMessages` — never `IMessageBus` directly
 - `bus.ScheduleAsync()` is the only justified use of `IMessageBus` in handlers
-- UUID v5 stream IDs with BC-specific namespace prefixes
+- UUID v7 stream IDs (`Guid.CreateVersion7()`) for all Marten BCs — no natural business key exists
+  in most contexts; UUID v7 provides insert locality via its Unix-ms prefix (ADR 007). UUID v5 with
+  a BC-specific namespace constant remains available when a natural business key enables deterministic
+  stream creation.
 - No "Event" suffix on domain event type names — ever
 - No direct references to "paddle" — participants are identified by `BidderId`
 
@@ -125,7 +129,7 @@ exactly one `AddMarten()` call.
 
 | BC | Project | Storage | Key Patterns |
 |---|---|---|---|
-| Participants | `CritterBids.Participants` | PostgreSQL / Marten *(migration pending — ADR 011)* | Event-sourced aggregate |
+| Participants | `CritterBids.Participants` | PostgreSQL / Marten | Event-sourced aggregate |
 | Selling | `CritterBids.Selling` | PostgreSQL / Marten | Event-sourced aggregate, state machine |
 | Auctions | `CritterBids.Auctions` | PostgreSQL / Marten | DCB, Auction Closing saga, Proxy Bid saga |
 | Listings | `CritterBids.Listings` | PostgreSQL / Marten | Multi-stream projections, full-text search |
