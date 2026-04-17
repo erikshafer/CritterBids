@@ -1,8 +1,8 @@
 # ADR 007 — UUID Strategy for Stream IDs and Event Row IDs
 
-**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (🟡 Proposed, Gates 1 and 4 remain open)
-**Date:** 2026-04-13
-**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession
+**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (⏸ Deferred — Gate 1 unconfirmed, Gate 4 awaiting JasperFx input, re-evaluate before M3-S4)
+**Date:** 2026-04-13 (original) · 2026-04-16 (M3-S1 Gate 4 deferral)
+**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession (original) · M3-S1 — Auctions Foundation Decisions (Gate 4 deferral)
 
 ---
 
@@ -79,6 +79,11 @@ The acceptance gates below must be satisfied before this moves to Accepted.
 - [ ] **Gate 4:** JasperFx team input on recommended strategy at the application layer for Auctions-
       scale write workloads. Re-surfaces naturally at M3 (Auctions BC planning).
 
+  > **Gate 4 — Deferred (M3-S1, 2026-04-16).** JasperFx guidance had not been received at the
+  > time of the M3-S1 foundation-decisions session. Formally deferred per the Event Row ID
+  > Decision section below. Re-evaluation trigger set before the M3-S4 DCB authoring session
+  > or on JasperFx response, whichever comes first.
+
 ---
 
 ## Stream ID Decision — Accepted
@@ -98,9 +103,53 @@ for Participants — see `001-scenarios.md` §0.2 deferred note). No current BC 
 
 Gate 3 is confirmed: `Guid.CreateVersion7()` is available in .NET 10 (`net10.0` target framework).
 
-The event row ID question (Gates 1 and 4) remains open. Gate 4 resurfaces naturally at M3
-(Auctions BC — the highest-write BC in the system and the primary motivation for v7 insert
-locality in event rows).
+The event row ID question (Gates 1 and 4) remained open at the time of the stream-ID decision.
+Gate 4 resurfaced at M3 (Auctions BC — the highest-write BC in the system and the primary
+motivation for v7 insert locality in event rows) and was formally deferred in M3-S1 per the
+Event Row ID Decision section below.
+
+---
+
+## Event Row ID Decision — Deferred (M3-S1, 2026-04-16)
+
+**Status:** ⏸ Formally deferred; re-evaluation trigger set.
+
+**Blocker:** JasperFx team input on recommended event row ID generation strategy for Auctions-
+scale write workloads had not been received as of 2026-04-16 (session M3-S1, the scheduled Gate 4
+closing session). Gate 1 (Marten 8 exposing an application-level event row ID generation seam)
+also remains unconfirmed; without a documented seam, application-layer UUID v7 assignment to
+event rows is not possible at all, independent of JasperFx guidance on whether it would be
+beneficial.
+
+**Default in effect until re-evaluation:** Marten's engine-assigned event row IDs. No application-
+layer assignment is performed for event rows in any BC. Stream IDs remain UUID v7 per the
+accepted Stream ID Decision section above — stream-ID and event-row-ID are independent
+decisions and the stream-ID answer is already in force.
+
+**Re-evaluation trigger:** Revisit before the M3-S4 prompt is drafted (DCB `PlaceBid` / `BuyNow`
+authoring — the first high-write DCB use in the codebase and the first session whose write
+profile would benefit from insert locality on event rows), OR on receipt of JasperFx guidance,
+whichever comes first. If neither trigger fires before the M3-S4 prompt is drafted, the accepted
+outcome is to ship M3 on the Marten engine default for Auctions event row IDs and record the
+"trade-off accepted" rationale as an additional amendment to this ADR (not a new ADR).
+
+**Rationale for deferral over guessing:**
+- The insert-locality benefit of UUID v7 on event rows is real but not load-bearing for M3
+  functional correctness. The DCB `EventTagQuery` correctness test (M3-S4) does not depend on
+  event row ID strategy.
+- Guessing at a UUID v7 row-ID strategy without confirming Gate 1 risks producing code that
+  compiles but silently does nothing (Marten assigning its own IDs regardless of the application-
+  layer attempt), producing a false-positive "done" state.
+- Deferring with a named trigger (M3-S4 prompt draft) and a documented default (engine-assigned)
+  keeps the work unblocked while preserving the option to adopt v7 for row IDs if either gate
+  opens within M3.
+
+| Gate | Status as of 2026-04-16 |
+|---|---|
+| Gate 1 — Marten 8 exposes event row ID generation seam | 🟡 Unconfirmed |
+| Gate 2 — Polecat 2 exposes the same | ✅ Closed (N/A per ADR 011) |
+| Gate 3 — `Guid.CreateVersion7()` in net10.0 | ✅ Confirmed (M1-S5) |
+| Gate 4 — JasperFx guidance for Auctions-scale write workloads | ⏸ Deferred — awaiting input |
 
 ---
 
