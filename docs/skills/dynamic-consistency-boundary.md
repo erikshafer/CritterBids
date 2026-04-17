@@ -263,6 +263,53 @@ The `BidConsistencyState` boundary model (shown above) projects the relevant fac
 - **Settlement BC** — sequential saga steps; not a single-decision boundary
 - Any scenario requiring cross-BC coordination, external calls, or delayed completion → saga, not DCB
 
+### `BidRejected` Stream Placement (Auctions BC)
+
+Decision recorded in M3-S1 (W002-7 resolution). Applied uniformly from M3-S4 `PlaceBid` /
+`BuyNow` authoring onward.
+
+**Rule:** `BidRejected` events go to a **dedicated Marten stream type per listing, tagged with
+`ListingId`** — never to the listing's primary bidding stream, and not to a single global audit
+stream.
+
+**Shape:**
+
+- One stream type (e.g., `BidRejectionAudit` — exact name finalized at S4 authoring time),
+  one stream per listing, tagged with the existing `ListingStreamId` tag value.
+- The DCB `EventTagQuery` for `PlaceBid` narrows its `AndEventsOfType<...>()` set to the
+  accepted-bid event family only: `BiddingOpened`, `BidPlaced`, `BuyItNowOptionRemoved`,
+  `BiddingClosed`, `ExtendedBiddingTriggered`. `BidRejected` is excluded by type, not by stream.
+- The `BidConsistencyState` boundary model has no `Apply(BidRejected)` method — rejected bids
+  are invisible to the acceptance-decision model by construction.
+
+**Why dedicated per-listing streams, not the listing's primary stream:**
+
+- The primary stream feeds the DCB boundary model. Mixing rejected events in would either
+  corrupt `CurrentHighBid` / `BidCount` state or force every `Apply()` method to filter on
+  acceptance. Either option is fragile under schema evolution and would surface as a silent
+  bug if a new `Apply()` overload is added without the filter.
+
+**Why dedicated per-listing streams, not a global audit stream:**
+
+- Per-listing audit queries (ops tooling, support investigations into a disputed rejection)
+  start from a listing ID, not a time range. Per-listing tagging matches the access pattern
+  without full-table scans.
+- Global audit streams are the correct pattern for "diagnostic firehose" cases. `BidRejected`
+  is not diagnostic — it is a first-class audit trail scoped to a listing's lifecycle.
+- Marten's `RegisterTagType<ListingStreamId>("listing").ForAggregate<Listing>()` pattern
+  already gives the per-listing tag for free; extending it to a second stream type is a
+  one-line registration, not new infrastructure.
+
+**Why excluded from the DCB tag query by type-filter rather than by a separate stream-filter
+predicate:**
+
+- The `EventTagQuery` API takes `AndEventsOfType<T1, T2, ...>()`. Narrowing that type list is
+  the idiomatic exclusion path. Additional stream-filter predicates are neither needed nor
+  supported by the current API.
+- Single source of truth: the list of accepted-bid event types that contribute to
+  `BidConsistencyState` lives in exactly one place (the `EventTagQuery.For(...)` call in
+  `PlaceBidHandler.Load`).
+
 ---
 
 ## References

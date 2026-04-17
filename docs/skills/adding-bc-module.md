@@ -9,7 +9,7 @@ Canonical pattern for registering a new bounded context in CritterBids. Every BC
 1. [Overview](#overview)
 2. [Project Structure](#project-structure)
 3. [Marten BC Module Registration](#marten-bc-module-registration)
-4. [Polecat BC Module Registration](#polecat-bc-module-registration)
+4. [Polecat BC Module Registration (Historical)](#polecat-bc-module-registration-historical)
 5. [Host-Level Wolverine and Marten Settings](#host-level-wolverine-and-marten-settings)
 6. [Contracts Project](#contracts-project)
 7. [Test Fixture for Marten BCs](#test-fixture-for-marten-bcs)
@@ -28,12 +28,17 @@ CritterBids is a modular monolith. All BCs run in one process but are structural
 - Each BC registers itself via `AddXyzModule()` on `IServiceCollection`
 - Each BC owns its own document schema within the shared Marten store
 
-There are two BC flavors based on storage engine:
+Per ADR 011 (All-Marten Pivot), every BC uses PostgreSQL via Marten. There is one BC flavor
+in the current system:
 
 | Flavor | BCs | Storage | Module pattern |
 |---|---|---|---|
-| Marten BC | Selling, Listings, Auctions, Obligations, Relay | PostgreSQL | `services.ConfigureMarten()` |
-| Polecat BC | Participants, Settlement, Operations | SQL Server | `AddPolecat()` + `ConfigurePolecat()` |
+| Marten BC | Participants, Selling, Auctions, Listings, Settlement, Obligations, Relay, Operations | PostgreSQL | `services.ConfigureMarten()` |
+
+The earlier two-flavor (Marten + Polecat) arrangement documented in ADR 003 was superseded
+by ADR 011. The former Polecat registration pattern is retained below as a historical reference
+for anyone reading archival CritterBids source or Polecat-based sibling projects, and is not
+applied to any current CritterBids BC.
 
 ---
 
@@ -176,10 +181,16 @@ For BCs with HTTP endpoints:
 
 ---
 
-## Polecat BC Module Registration
+## Polecat BC Module Registration (Historical)
+
+> **Historical — not applied to any current CritterBids BC.** Per ADR 011 (All-Marten Pivot),
+> every CritterBids BC runs on Marten/PostgreSQL. The pattern below is preserved for reference
+> against Polecat-based sibling projects and the CritterStackSamples archive. For the full
+> Polecat pattern including aggregate snapshots and test fixtures, see the archived
+> `polecat-event-sourcing.md` skill.
 
 ```csharp
-// src/CritterBids.Participants/ParticipantsModule.cs
+// Historical Polecat module pattern (no longer used in CritterBids post-ADR 011)
 using Wolverine.Polecat;
 
 namespace CritterBids.Participants;
@@ -423,7 +434,6 @@ opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
 - [ ] `CleanAllMartenDataAsync()` uses non-generic `Host.CleanAllMartenDataAsync()`
 - [ ] `GetDocumentSession()` uses `Host.DocumentStore().LightweightSession()`
 - [ ] Collection fixture defined for sequential test execution
-- [ ] If fixture co-hosts Polecat BCs: `services.ConfigurePolecat(...)` override present
 - [ ] If fixture lacks another BC's infrastructure: `IWolverineExtension` exclusion registered
 
 ### Integration
