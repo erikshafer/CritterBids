@@ -339,7 +339,7 @@ public sealed class LiveListingViewProjection : SingleStreamProjection<LiveListi
 }
 ```
 
-`RaiseSideEffects` runs *after* projection state is committed — the message reflects confirmed, persisted state.
+`RaiseSideEffects` runs inside the same transaction that commits projection state — the message is outboxed atomically with the commit, so consumers only ever observe messages whose backing state has persisted.
 
 Use this pipeline for: live bid feed updates, listing countdown timer corrections, ops dashboard live state.
 
@@ -539,7 +539,7 @@ For the Hetzner single-VPS conference deployment, a backplane is not needed. Des
 
 ## References
 
-- [Wolverine SignalR Transport Docs](https://wolverinefx.io/guide/messaging/transports/signalr.html)
+- [Wolverine SignalR Transport Docs](https://wolverinefx.net/guide/messaging/transports/signalr.html)
 - [WolverineChat Sample App](https://github.com/JasperFx/wolverine/tree/main/src/Samples/WolverineChat)
 - [CloudEvents Specification](https://cloudevents.io/)
 - [ASP.NET Core SignalR Authentication](https://learn.microsoft.com/en-us/aspnet/core/signalr/authn-and-authz)
