@@ -2,7 +2,7 @@
 
 Cross-workshop tracker for questions raised during Event Modeling sessions. Open questions at the top; resolved questions below with the resolving workshop noted.
 
-**Last updated:** 2026-04-10
+**Last updated:** 2026-04-16
 **Workshops covered:** W001 (Flash Session Demo-Day Journey), W002 (Auctions BC), W003 (Settlement BC), W004 (Selling BC)
 
 IDs are stable: `W00X-N` where N is the question number within the workshop where it was originally raised.
@@ -21,9 +21,7 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W001-12 | "Closing..." UI state between timer-zero and outcome? | W001 Ph3 | Frontend / Auctions | Frontend workshop. |
 | W001-13 | How does seller provide tracking? Dedicated screen or inline? | W001 Ph3 | Frontend / Obligations | Frontend workshop. |
 | W001-15 | Frontend milestone: one or split participant/ops? | W001 Ph4 | Milestone scoping | Resolve at M6 planning. |
-| W002-7 | `BidRejected` stream: dedicated Marten type or general audit pattern? | W002 Ph3 | Auctions BC | Resolve during M3 coding. |
-| W002-8 | Two-proxy bidding war: worth a specific integration test? | W002 Ph3 | Auctions BC | Likely yes — scenario 4.10 covers it. Confirm at test time. |
-| W002-9 | `BiddingOpened` payload: carry full config or saga loads from stream? | W002 Ph3 | Auctions BC | Current design carries full config. Validate at M3. |
+| W002-8 | Two-proxy bidding war: worth a specific integration test? | W002 Ph3 | Auctions BC (M4) | Proxy Bid Manager saga deferred to M4 per `M3-auctions-bc.md` non-goals. Moves with the saga — confirm at M4 test time. Likely yes; scenario 4.10 covers it. |
 | W003-1 | What happens if `SellerPayoutIssued` fails (infrastructure issue)? | W003 Ph1 | Settlement / Ops | Wolverine retries for transient. Permanent failures need operator tooling. Ops workshop. |
 | W003-2 | Post-MVP compensation when real payment processor is wired in? | W003 Ph1 | Settlement BC | Refund-winner step before terminating. Parked until payment integration. |
 | W003-3 | Second chance offer fallback if winner's payment fails? | W003 Ph1 | Settlement BC | Post-MVP. |
@@ -36,7 +34,7 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W004-P2-8 | Publish notification via Relay or HTTP 200 sufficient? | W004 Ph2 | Relay BC | Relay workshop. |
 | W004-P2-9 | Is `RegisteredSellers` the only Selling projection? | W004 Ph2 | Selling BC | Likely yes; confirm during M2 coding. |
 
-**Open count: 22** — 6 frontend, 5 implementation-detail, 4 Settlement/Ops post-MVP, 3 infrastructure/config, 2 Relay, 2 milestone/test-time.
+**Open count: 20** — 6 frontend, 3 implementation-detail, 4 Settlement/Ops post-MVP, 3 infrastructure/config, 2 Relay, 2 milestone/test-time.
 
 ---
 
@@ -57,6 +55,8 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W002-P1-4 | `ListingWithdrawn` saga interaction | W002 Ph1 | W002 Ph2 | Terminates both Auction Closing and all Proxy Bid Manager sagas. No reserve check, no sold/passed. |
 | W002-P1-5 | Proxy bid rejection handling | W002 Ph1 | W002 Ph2 | Proxy stores `BidderCreditCeiling` at registration. Caps auto-bid at `min(next, max, ceiling)`. |
 | W002-P1-6 | `MaxDuration` ownership | W002 Ph1 | W002 Ph2 | Platform default for MVP (2x original). Not seller-configurable until post-MVP. |
+| W002-7 | `BidRejected` stream: dedicated Marten type or general audit pattern? | W002 Ph3 | M3-S1 | Dedicated Marten stream type per listing, tagged with `ListingId`. Excluded from DCB `EventTagQuery` by type-filter (narrowing `AndEventsOfType<...>`), not a separate stream-filter predicate. Rationale and rule live in `docs/skills/dynamic-consistency-boundary.md` under the "CritterBids Usage" section — S4 loads that skill before authoring the PlaceBid handler. |
+| W002-9 | `BiddingOpened` payload: carry full config or saga loads from stream? | W002 Ph3 | M3-S1 | Carry full extended-bidding configuration on the contract (enabled flag, trigger window, extension duration, MaxDuration). Auction Closing saga is self-contained from `BiddingOpened` alone, no event-store lookup needed on saga reactions. Decision recorded inline in `src/CritterBids.Contracts/Auctions/BiddingOpened.cs` XML docstring. |
 | W003-P1-1 | How does Settlement get the reserve value? | W003 Ph1 | W003 Ph1 | `PendingSettlement` projection built from `ListingPublished`, stored in Polecat. |
 | W003-P1-2 | Projection race condition (`ListingSold` before projection catches up)? | W003 Ph1 | W003 Ph1 | Wolverine retry policy. Workflow retries if `PendingSettlement` not found. |
 | W003-P1-3 | Wolverine Saga vs Process Manager? | W003 Ph1 | W003 Ph1 | Design around decider semantics. Hosting choice deferred to M5. **`ProcessManager<TState>` is Erik's JasperFx proposal, not shipping. Saga is the only currently-viable host.** |
@@ -71,7 +71,7 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W004-P1-5 | Relist fee — carry over or fresh? | W004 Ph1 | W004 Ph2 | Fresh config. New agreement at current rates. |
 | W004-P1-6 | Mid-session listing revision | W004 Ph1 | W004 Ph2 | Selling accepts. Listings BC catalog projection filters during active sessions. |
 
-**Resolved count: 26**
+**Resolved count: 28**
 
 ---
 
