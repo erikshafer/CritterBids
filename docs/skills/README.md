@@ -28,6 +28,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Dynamic Consistency Boundary | `dynamic-consistency-boundary.md` | ✅ Complete | Extracted from CritterSupply |
 | Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (Aspire RabbitMQ, Separated mode) |
 | SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply |
+| Projection side effects for broadcast live views | `projection-side-effects-for-broadcast-live-views.md` | ✅ Complete | New — authored M2 from vision doc + Jeremy clarification |
 | Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (named store fixtures, cross-BC isolation) |
 | C# coding standards | `csharp-coding-standards.md` | ✅ Complete | Extracted from CritterSupply |
 | Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
@@ -61,6 +62,8 @@ Skills are living documents. When a new pattern is established or an existing on
 | DCB boundary model | `dynamic-consistency-boundary.md` | `marten-event-sourcing.md` |
 | Integration event (cross-BC) | `integration-messaging.md` | `domain-event-conventions.md` |
 | SignalR hub + real-time push | `wolverine-signalr.md` | — |
+| Broadcast live view via projection side effect | `projection-side-effects-for-broadcast-live-views.md` | `wolverine-signalr.md` |
+| Derived domain event from projection state | `projection-side-effects-for-broadcast-live-views.md` | `marten-event-sourcing.md` |
 | New BC module registration | `adding-bc-module.md` | `marten-event-sourcing.md` |
 
 ### Testing
@@ -76,6 +79,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | EF Core projection test | `marten-projections.md` | `critter-stack-testing-patterns.md` |
 | Compiled query correctness | `marten-querying.md` | `critter-stack-testing-patterns.md` |
 | SignalR integration test | `wolverine-signalr.md` | `critter-stack-testing-patterns.md` |
+| Projection side-effect integration test | `projection-side-effects-for-broadcast-live-views.md` | `critter-stack-testing-patterns.md` |
 
 ### Frontend
 
@@ -92,6 +96,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Event Modeling workshop | `event-modeling/SKILL.md` |
 | Naming domain events | `domain-event-conventions.md` |
 | Personas for workshop | `../personas/README.md` |
+| Reactive / live-view architecture | `../vision/live-queries-and-streaming.md` |
 
 ---
 
