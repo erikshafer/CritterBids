@@ -6,9 +6,15 @@ on:
   pull_request:
     branches: [ "main" ]
 
+env:
+  DOTNET_VERSION: '10.0.x'
+  CONFIGURATION: Release
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
 jobs:
   build:
-    name: Build & Test
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
@@ -18,13 +24,140 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Restore dependencies
         run: dotnet restore CritterBids.slnx
 
       - name: Build
-        run: dotnet build CritterBids.slnx --no-restore --configuration Release
+        run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
 
-      - name: Test
-        run: dotnet test CritterBids.slnx --no-build --configuration Release --verbosity normal
+      - name: Publish API
+        run: dotnet publish src/CritterBids.Api/CritterBids.Api.csproj --no-build --configuration ${{ env.CONFIGURATION }} --output ./publish
+
+      - name: Upload API artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: critterbids-api
+          path: ./publish
+          retention-days: 5
+
+  unit-tests:
+    name: Unit Tests
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore CritterBids.slnx
+
+      - name: Build
+        run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
+
+      - name: Run unit tests
+        run: |
+          dotnet test tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=api-tests.trx" \
+            --results-directory ./test-results
+
+          dotnet test tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=contracts-tests.trx" \
+            --results-directory ./test-results
+
+      - name: Upload unit test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: ./test-results
+          retention-days: 5
+
+  integration-tests:
+    name: Integration Tests
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore dependencies
+        run: dotnet restore CritterBids.slnx
+
+      - name: Build
+        run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
+
+      - name: Run integration tests
+        run: |
+          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=participants-tests.trx" \
+            --results-directory ./test-results
+
+          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=selling-tests.trx" \
+            --results-directory ./test-results
+
+          dotnet test tests/CritterBids.Auctions.Tests/CritterBids.Auctions.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=auctions-tests.trx" \
+            --results-directory ./test-results
+
+          dotnet test tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj \
+            --no-build --configuration ${{ env.CONFIGURATION }} \
+            --verbosity normal \
+            --logger "trx;LogFileName=listings-tests.trx" \
+            --results-directory ./test-results
+
+      - name: Upload integration test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: ./test-results
+          retention-days: 5
