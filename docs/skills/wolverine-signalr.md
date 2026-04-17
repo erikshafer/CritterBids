@@ -2,6 +2,8 @@
 
 Guide for using Wolverine's native SignalR transport in CritterBids — covering hub design, server configuration, marker interfaces, group management, authentication, the Marten projection side effects pipeline, React client integration, and integration testing.
 
+> **Note:** A source review of `WolverineFx.SignalR` surfaced two open design questions about the pattern documented below (automatic group targeting, and `WolverineHub` vs plain `Hub`). See `docs/vision/live-queries-and-streaming.md` → "Open Design Questions for SignalR Implementation" before wiring the first reactive surface.
+
 ---
 
 ## Table of Contents
@@ -316,7 +318,7 @@ One of the most powerful Wolverine + SignalR patterns: Marten projection side ef
 
 ```csharp
 // Domain Event → Marten projection → side effect message → Wolverine → SignalR → Client
-public sealed class LiveListingViewProjection : SingleStreamProjection<LiveListingView>
+public sealed class LiveListingViewProjection : SingleStreamProjection<LiveListingView, Guid>
 {
     // ... Apply methods ...
 

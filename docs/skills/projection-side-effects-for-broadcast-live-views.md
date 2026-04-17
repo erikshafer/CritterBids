@@ -256,6 +256,8 @@ An example where inline makes sense: an admin override that closes an auction im
 
 Default to async. Make the inline opt-in a deliberate, documented decision.
 
+**Inline excludes `slice.AppendEvent`.** On the inline path, attempting to append events from a side effect throws `InvalidOperationException("Events cannot be appended in projection side effects from Inline projections")` — verified in `JasperFxSingleStreamProjectionBase.ApplyAsync`. The [derived-events technique](#derived-events-technique) is async-daemon-only. If a scenario needs both inline-latency broadcasting AND derived domain events from the same state transition, the derived events must come from a different mechanism: a command handler that appends them alongside the triggering event, a process manager, or an event-forwarding subscription. Inline side effects are limited to `slice.PublishMessage(...)` and direct `operations.Store/Delete` calls.
+
 ---
 
 ## Rebuild Safety
@@ -465,6 +467,7 @@ This is both useful testing and a nice illustration of why derived events belong
 |---|---|---|
 | Missing `IntegrateWithWolverine()` | `slice.PublishMessage` called but no outbound message ever delivered | Add `.IntegrateWithWolverine()` after `AddMarten(...)` in bootstrap |
 | Testing with `ProjectionLifecycle.Inline` and not opting in | Side effect doesn't fire in test | Either register projection as `Async` + use `AddAsyncDaemon(DaemonMode.Solo)`, OR set `opts.Events.EnableSideEffectsOnInlineProjections = true` |
+| Calling `slice.AppendEvent(...)` under `EnableSideEffectsOnInlineProjections = true` | Runtime `InvalidOperationException: "Events cannot be appended in projection side effects from Inline projections"` | Derived events and inline are mutually exclusive. Either use the async daemon path, or append events from a command handler / process manager instead |
 | Relying on side effect for a correctness-essential message | Message missing after projection rebuild; hard-to-diagnose bug weeks later | Use a command handler or Wolverine event subscription for correctness-essential publishing. Side effects are for broadcast enrichment only |
 | Leaking per-viewer data in broadcast payload | Max-bid amounts or owner-only fields visible to all watchers | Either broadcast only the public-safe subset and serve private data via `StreamAsync` / authenticated query, or strip the sensitive fields in the Wolverine handler before SignalR fan-out |
 | Multiple `PublishMessage` calls per slice | N redundant broadcasts per projection update | Publish once at the end of `RaiseSideEffects` with the final snapshot. Let downstream conflation happen at the transport if needed |

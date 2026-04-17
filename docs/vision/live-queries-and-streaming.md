@@ -638,6 +638,126 @@ MVP reactive path is now **available today** through the side-effect model.
    A second ADR may follow when `StreamAsync` lands and we adopt it for
    the first per-viewer surface.
 
+## Open Design Questions for SignalR Implementation
+
+Surfaced by a source-code review of `WolverineFx.SignalR` in April 2026
+against the CritterSupply-derived `docs/skills/wolverine-signalr.md` skill.
+Two gaps need resolution before or during the first SignalR reactive surface
+(M3 or M4). The skill documents a pattern extracted from CritterSupply; the
+review suggests that pattern may predate the current Wolverine 5.0 SignalR
+transport shape. Flagging here because an implementing session will load
+this doc for architectural context and needs to see the open questions up
+front rather than rediscover them at wiring time.
+
+### 1. Group targeting is not automatic from marker-interface properties
+
+`SignalRTransport.SendAsync(envelope)`
+(`src/Transports/SignalR/Wolverine.SignalR/Internals/SignalRTransport.cs`
+lines 167–186) calls `WebSocketRouting.DetermineLocator(envelope)`, which
+picks exactly one of three locators: `Connection(id)`, `Group(name)`, or
+`All`. `All` is the default when `envelope.RoutingInformation` is not set
+and `envelope.SagaId` is not a parseable `"Group=..."` / `"Connection=..."`
+string.
+
+There is no convention in `WolverineFx.SignalR` that reads marker-interface
+properties (like `IBiddingHubMessage.ListingId`) to derive a group name. To
+target a specific group from a projection side effect, the message must be
+wrapped in `.ToWebSocketGroup(...)`:
+
+```csharp
+slice.PublishMessage(new LiveListingStateUpdate(...)
+    .ToWebSocketGroup($"listing:{slice.Snapshot.ListingId}"));
+```
+
+`ToWebSocketGroup<T>(...)` returns `SignalRMessage<T> : ISendMyself`, which
+re-publishes with `DeliveryOptions.RoutingInformation` set to the locator.
+Whether this composes cleanly through `slice.PublishMessage(object)` inside
+the async daemon's outbox path is **unverified** — the `SignalRMessage<T>`
+envelope's `ISendMyself` contract expects to execute through a message
+context, and the outbox flush happens in a different execution context.
+Confirm by integration test during first implementation.
+
+**Docs affected once resolved:**
+- `wolverine-signalr.md` side-effect example (around line 330 — the
+  published message currently has no group target).
+- `projection-side-effects-for-broadcast-live-views.md` canonical example
+  (same issue; the closing narrative overstates automatic routing).
+- This doc's worked flow (step 6 currently claims "Wolverine handler
+  pushes to `IHubContext` Group" — accurate in outcome, vague on
+  mechanism).
+
+### 2. `WolverineHub` vs plain `Hub`: the transport targets only `WolverineHub`
+
+`SignalRTransport` (line 74) resolves `IHubContext<HubType>` where
+`HubType = typeof(WolverineHub)` by default. `UseSignalR<THub>()` accepts a
+subclass but has a constraint `where THub : WolverineHub`. Any class that
+does not extend `WolverineHub` cannot be the target of the Wolverine SignalR
+transport.
+
+The pattern currently documented in `wolverine-signalr.md` shows:
+
+- `public sealed class BiddingHub : Hub` (plain, not `WolverineHub`)
+- `opts.UseSignalR()` with no type argument → defaults to `WolverineHub`
+- `app.MapHub<BiddingHub>("/hub/bidding")` (separate hub instance)
+
+In this setup, messages routed via `x.MessagesImplementing<IBiddingHubMessage>().ToSignalR()`
+land in `IHubContext<WolverineHub>`, not `IHubContext<BiddingHub>`. Clients
+connected at `/hub/bidding` are on a different hub and never receive those
+broadcasts. The pattern as documented does not connect end-to-end against
+current `WolverineFx.SignalR` — most likely because it was extracted from a
+CritterSupply pattern that predates the Wolverine 5.0 SignalR transport.
+
+Three paths to resolution:
+
+**(a) Extend `WolverineHub`.** `BiddingHub : WolverineHub` and
+`opts.UseSignalR<BiddingHub>()`. Tightest integration with the transport.
+Constraint: the transport manages one hub at a time — `OperationsHub` needs
+a separate story (a second named transport if supported, a separate
+Wolverine instance, or fall back to option (b) for the ops side).
+
+**(b) Skip the Wolverine transport entirely for broadcast.** Keep plain
+`Hub` subclasses. Drive them from Wolverine message handlers that inject
+`IHubContext<BiddingHub>` and call `SendAsync` directly. This is the pattern
+the current `wolverine-signalr.md` Lessons Learned explicitly warns against
+("Don't inject `IHubContext<T>` and call `SendAsync` manually. Return an
+object implementing your marker interface and let the transport handle
+delivery.") Adopting (b) means revising that lesson.
+
+**(c) Some multi-hub configuration** we have not researched. Worth a look
+before committing to (a) or (b).
+
+**Docs affected once resolved:**
+- `wolverine-signalr.md` Server Configuration section.
+- `wolverine-signalr.md` Lessons Learned entry on `IHubContext` (may need
+  revising depending on path chosen).
+- `projection-side-effects-for-broadcast-live-views.md` Registration
+  section.
+- The worked flow in this doc.
+
+### How to resolve
+
+When the first reactive surface is being built (likely `AuctionSnapshot`
+broadcast in M3 or M4):
+
+1. Set up the minimal end-to-end: projection with side effect, Wolverine
+   routing, SignalR hub, React client.
+2. Test both hub configurations — try the existing documented pattern
+   first, observe the failure mode, then try `WolverineHub` extension,
+   then direct `IHubContext` injection. The fastest-to-working variant
+   wins.
+3. Confirm whether `slice.PublishMessage(foo.ToWebSocketGroup("..."))`
+   actually delivers to the right group through the async daemon outbox.
+   If not, fall back to a Wolverine handler that consumes the side-effect
+   message and applies the group target manually.
+4. Update all affected docs (this one, `wolverine-signalr.md`,
+   `projection-side-effects-for-broadcast-live-views.md`) with the
+   confirmed pattern.
+5. Spawn an ADR documenting the reactive-broadcast architecture decision.
+
+Time budget for this: probably one focused session, most of which is
+spent running small spike tests rather than writing code. Not a blocker
+for earlier M-level work.
+
 ## References
 
 - Marten docs on projection side effects:
@@ -658,4 +778,4 @@ MVP reactive path is now **available today** through the side-effect model.
 - Skill: `docs/skills/wolverine-signalr.md`
 - Skill: `docs/skills/wolverine-message-handlers.md`
 - Skill: `docs/skills/marten-projections.md`
-- Skill (to be authored): `docs/skills/projection-side-effects-for-broadcast-live-views.md`
+- Skill: `docs/skills/projection-side-effects-for-broadcast-live-views.md`
