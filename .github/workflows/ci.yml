@@ -6,6 +6,9 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 env:
   DOTNET_VERSION: '10.0.x'
   CONFIGURATION: Release
@@ -52,7 +55,6 @@ jobs:
 
   unit-tests:
     name: Unit Tests
-    needs: build
     runs-on: ubuntu-latest
 
     steps:
@@ -78,19 +80,21 @@ jobs:
       - name: Build
         run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
 
-      - name: Run unit tests
-        run: |
-          dotnet test tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=api-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Api.Tests
+        run: >
+          dotnet test tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=api-tests.trx"
+          --results-directory ./test-results
 
-          dotnet test tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=contracts-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Contracts.Tests
+        run: >
+          dotnet test tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=contracts-tests.trx"
+          --results-directory ./test-results
 
       - name: Upload unit test results
         uses: actions/upload-artifact@v4
@@ -102,7 +106,6 @@ jobs:
 
   integration-tests:
     name: Integration Tests
-    needs: build
     runs-on: ubuntu-latest
 
     steps:
@@ -128,31 +131,37 @@ jobs:
       - name: Build
         run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
 
-      - name: Run integration tests
-        run: |
-          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=participants-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Participants.Tests
+        run: >
+          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=participants-tests.trx"
+          --results-directory ./test-results
 
-          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=selling-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Selling.Tests
+        run: >
+          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=selling-tests.trx"
+          --results-directory ./test-results
 
-          dotnet test tests/CritterBids.Auctions.Tests/CritterBids.Auctions.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=auctions-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Auctions.Tests
+        run: >
+          dotnet test tests/CritterBids.Auctions.Tests/CritterBids.Auctions.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=auctions-tests.trx"
+          --results-directory ./test-results
 
-          dotnet test tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj \
-            --no-build --configuration ${{ env.CONFIGURATION }} \
-            --verbosity normal \
-            --logger "trx;LogFileName=listings-tests.trx" \
-            --results-directory ./test-results
+      - name: Test — CritterBids.Listings.Tests
+        run: >
+          dotnet test tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --logger "trx;LogFileName=listings-tests.trx"
+          --results-directory ./test-results
 
       - name: Upload integration test results
         uses: actions/upload-artifact@v4
