@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- WolverineFx.Http.Marten transitively includes WolverineFx.Http, WolverineFx.Marten,
+         and Marten — matches the package choice of sibling BCs (Selling, Listings). Auctions
+         has no HTTP endpoints in S2; they arrive with the PlaceBid/BuyNow slice in M3-S4. -->
+    <PackageReference Include="WolverineFx.Http.Marten" />
+  </ItemGroup>
+
+  <!-- No ProjectReference to CritterBids.Contracts yet — M3-S3 adds it when the
+       ListingPublished consumer needs CritterBids.Contracts.Selling.ListingPublished
+       and produces CritterBids.Contracts.Auctions.BiddingOpened. -->
+
+</Project>
