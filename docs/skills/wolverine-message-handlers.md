@@ -185,10 +185,21 @@ public static class CloseBiddingHandler
 }
 ```
 
-**How Wolverine resolves aggregate ID:**
-1. Command property named `{AggregateName}Id` (e.g., `ListingId` for `Listing`)
-2. Command property with `[Identity]` attribute
-3. HTTP route parameter (e.g., `/listings/{listingId}`)
+**How Wolverine resolves aggregate ID for `[WriteAggregate]`:**
+
+1. Positional constructor argument on the attribute (`[WriteAggregate(nameof(Cmd.SomeProperty))]`) —
+   the explicit override, always wins.
+2. Command property named `{camelCaseParameterName}Id` (from the handler parameter, e.g. `listing` →
+   `listingId`) or, failing that, a property named `id`.
+3. HTTP route parameter on the enclosing endpoint (e.g. `/listings/{listingId}`) — handled by
+   Wolverine.Http during endpoint chain assembly.
+4. Strong-typed ID fallback — a property whose type derives from `IStronglyTypedId` whose
+   underlying value matches the aggregate's stream type.
+
+Source: `WriteAggregateAttribute.FindIdentity()` in
+`C:\Code\JasperFx\wolverine\src\Persistence\Wolverine.Marten\WriteAggregateAttribute.cs` (lines
+164–215). Note the resolver walks command properties by name — it does **not** inspect
+`[Identity]` attributes (see "Two resolution paths" below).
 
 ### Explicit stream-ID property override
 
@@ -218,6 +229,48 @@ The attribute is `[WriteAggregate(string routeOrParameterName)]` — a positiona
 constructor argument, not a named `AggregateIdMember` property. `nameof()` keeps the reference
 refactor-safe.
 
+### Two resolution paths — `[WriteAggregate]` vs `[AggregateHandler]`
+
+Wolverine has **two separate code paths** for figuring out the stream ID, and they look at
+different things on your command. Knowing which is in play prevents a whole category of "why
+isn't this working" confusion.
+
+| Path | Used by | Resolver | Honours `[Identity]`? |
+|---|---|---|---|
+| Parameter-level | `[WriteAggregate]` (primary), `[ReadAggregate]` | `WriteAggregateAttribute.FindIdentity()` | **No** |
+| Class-level | `[AggregateHandler]` | `AggregateHandling.DetermineAggregateIdMember()` | **Yes** |
+
+`AggregateHandling.DetermineAggregateIdMember()` (in
+`C:\Code\JasperFx\wolverine\src\Persistence\Wolverine.Marten\AggregateHandling.cs`, lines 191–212)
+checks the Marten `[Identity]` attribute *first*, then falls back to the `{AggregateName}Id`/`Id`
+convention, then strong-typed IDs. `WriteAggregateAttribute.FindIdentity()` does **not** check
+`[Identity]` at all.
+
+**Practical consequence:** `[Identity]` annotations on a command property are only load-bearing if
+the handler uses the class-level `[AggregateHandler]` attribute. On a `[WriteAggregate]` handler,
+`[Identity]` is a no-op — the override has to come from the positional `nameof(...)` argument on
+the attribute itself. CritterBids standardises on `[WriteAggregate]` (per the "Three Attributes"
+table above), so `[Identity]` is not part of our aggregate-handler toolkit.
+
+### Custom identity sources (Wolverine 5.25+)
+
+For HTTP handlers where the identity does not come from the command body or route, Wolverine 5.25
+introduced four attributes that plug custom identity resolution into both `[WriteAggregate]` and
+`[ReadAggregate]`:
+
+| Attribute | Identity source |
+|---|---|
+| `[FromHeader("X-Tenant-Id")]` | Named HTTP header |
+| `[FromClaim(ClaimTypes.NameIdentifier)]` | Named claim on `HttpContext.User` |
+| `[FromRoute("tenantId")]` | Named route segment (explicit — useful when the default name-match doesn't apply) |
+| `[FromMethod(typeof(TenantResolver), nameof(TenantResolver.Resolve))]` | Static method — receives `HttpContext`, returns `Guid`/`string`/strongly-typed ID |
+
+These let aggregate identity flow from authentication context (e.g. seller ID from a JWT claim)
+without polluting the command record with a property the client doesn't set. CritterBids does not
+use these yet — `[AllowAnonymous]` is the project stance through M6 — but the option is on the
+table once M6 introduces real authentication. Source: Wolverine docs at
+`C:\Code\JasperFx\wolverine\docs\guide\http\marten.md` under "Custom Aggregate Identity".
+
 ### `[ReadAggregate]`
 
 Use when you need aggregate state but won't modify it:
@@ -238,6 +291,27 @@ public sealed record PlaceBid(Guid ListingId, Guid BidId, Guid BidderId, decimal
 ```
 
 Wolverine calls `FetchForWriting<Listing>(cmd.ListingId, cmd.Version)`. Mismatch → `ConcurrencyException`. Always include `Version` where concurrent writes matter.
+
+**Overriding the version property name.** By default Wolverine looks for a command property named
+`Version`. When the command uses a different name — for instance an `ETag` surfaced through an
+`If-Match` header, or a separate `ExpectedVersion` field — set `VersionSource` on the attribute:
+
+```csharp
+public sealed record UpdateReserve(Guid ListingId, decimal NewReserve, long ExpectedVersion);
+
+public static Events Handle(
+    UpdateReserve cmd,
+    [WriteAggregate(nameof(UpdateReserve.ListingId), VersionSource = nameof(UpdateReserve.ExpectedVersion))]
+    SellerListing listing)
+{
+    // ...
+}
+```
+
+`VersionSource` is a named property (unlike the positional `routeOrParameterName` argument), so
+keep the positional argument first and the named property after. `nameof()` keeps both refactor-
+safe. Source: `WriteAggregateAttribute.VersionSource` in
+`C:\Code\JasperFx\wolverine\src\Persistence\Wolverine.Marten\WriteAggregateAttribute.cs:68`.
 
 ### When NOT to Use `[WriteAggregate]`
 
@@ -356,7 +430,33 @@ has a single responsibility and the handler itself is a pure business decision f
 | `(IResult, Events, OutgoingMessages)` | HTTP response + append events + publish messages |
 | `IStartStream` | Start a new event stream |
 | `(CreationResponse, IStartStream)` | HTTP 201 + start stream |
+| `UpdatedAggregate` (marker type) | Re-aggregate the stream after appends and write the rebuilt state to the HTTP response body |
 | `void` | No events, no messages |
+
+### `UpdatedAggregate` — return rebuilt aggregate state
+
+On a `[WriteAggregate]` HTTP endpoint, returning `UpdatedAggregate` (alongside `Events`) tells
+Wolverine to re-aggregate the stream after the new events are applied and serialise the rebuilt
+aggregate to the response body. The alternative — hand-building the post-update state in the
+handler — duplicates the `Apply()` logic the aggregate already owns and drifts over time.
+
+```csharp
+[WolverinePut("/api/listings/{listingId}/draft")]
+public static (UpdatedAggregate, Events) Handle(
+    UpdateDraftListing cmd,
+    [WriteAggregate(nameof(UpdateDraftListing.ListingId))] SellerListing listing)
+{
+    // business checks, then:
+    return (new UpdatedAggregate(),
+            [new DraftListingUpdated(listing.Id, cmd.Title, cmd.ReservePrice, cmd.BuyItNowPrice, DateTimeOffset.UtcNow)]);
+}
+```
+
+The client receives the post-update `SellerListing` document without any round-trip rebuild in
+the handler. CritterBids has no HTTP endpoint using this yet — `UpdateDraftListing` is dispatched
+via `IMessageBus` and has no endpoint through M2.5 — but this is the idiomatic shape when the
+endpoint arrives. Source: `C:\Code\JasperFx\wolverine\docs\guide\http\marten.md` under
+"Returning Updated Aggregate".
 
 ### Start New Stream
 
