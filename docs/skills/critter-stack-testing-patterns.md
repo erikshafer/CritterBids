@@ -907,12 +907,20 @@ public async Task InitializeAsync()
 
 ## Debugging Integration Tests
 
+> **Full CLI reference:** this section covers the test-debugging subset. For the complete CLI
+> and programmatic-diagnostic surface — `describe`, schema commands, storage/resource reset,
+> `check-env`, `capabilities`, `DescribeHandlerMatch`, `PreviewSubscriptions` — see
+> `docs/skills/diagnostics.md`.
+
 ### `wolverine-diagnostics codegen-preview`
 
 When a test fails unexpectedly — wrong status code, entity not loaded, event not appended, middleware not firing — the CLI's codegen preview shows the exact generated handler code:
 
 ```bash
 dotnet run -- wolverine-diagnostics codegen-preview --route "POST /api/listings/{listingId}/bids"
+
+# Or by handler — --handler accepts full message type, short class name, or handler class name.
+dotnet run -- wolverine-diagnostics codegen-preview --handler PlaceBid
 ```
 
 The preview reveals:
@@ -933,20 +941,24 @@ Common issues visible in the preview:
 When `tracked.Sent.MessagesOf<T>()` returns 0 unexpectedly:
 
 ```bash
-dotnet run -- wolverine-diagnostics describe-routing
+# Full routing topology
+dotnet run -- wolverine-diagnostics describe-routing --all
+
+# Routing for a specific message type (accepts full name, short name, or alias)
+dotnet run -- wolverine-diagnostics describe-routing "CritterBids.Contracts.Selling.ListingPublished"
 ```
 
-Lists every configured routing rule in the host. If your integration message type is absent from the output, the `opts.Publish(...)` rule is missing from `Program.cs` (Anti-Pattern #14 in `wolverine-message-handlers.md`) or the BC-specific exclusion in the fixture is filtering it out.
+If your integration message type is absent from the output, the `opts.Publish(...)` rule is missing from `Program.cs` (Anti-Pattern #14 in `wolverine-message-handlers.md`) or the BC-specific exclusion in the fixture is filtering it out.
 
-### `describe-resiliency`
+### `describe` (Error Handling section)
 
-For retry-policy and circuit-breaker debugging:
+For retry-policy and circuit-breaker debugging, use the full `describe` output — its **Error Handling** section lists global failure rules and per-message-chain policies:
 
 ```bash
-dotnet run -- wolverine-diagnostics describe-resiliency
+dotnet run -- describe
 ```
 
-Shows retry policies, circuit breakers, and DLQ configuration for every handler. Useful when a test expects a retry to fire but the handler fails immediately.
+(There is no `describe-resiliency` sub-command — older CritterBids docs and ai-skills incorrectly referenced one. Use `describe` and read the Error Handling section. See `docs/skills/diagnostics.md` §11.)
 
 ---
 

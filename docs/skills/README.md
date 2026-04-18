@@ -36,6 +36,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | React frontend | `react-frontend.md` | 🔴 Not yet written | New |
 | Domain event conventions | `domain-event-conventions.md` | ✅ Complete | New — authored M2-S8 from S5–S6 patterns |
 | Observability (OTEL + Prometheus + Grafana) | `observability.md` | 🟡 Placeholder — scaffold for pre-production observability work | New 2026-04-18 — scaffold drawn from JasperFx ai-skills `wolverine/observability/` (three files absorbed: OpenTelemetry setup, metrics & auditing, Grafana templates). Extend on first Hetzner deploy. |
+| Diagnostics (CLI + programmatic) | `diagnostics.md` | ✅ Complete — source-verified against Wolverine repo | New 2026-04-18 — consolidates CLI diagnostic coverage scattered across `wolverine-message-handlers.md` §11 and `critter-stack-testing-patterns.md` §20, plus schema/storage/resource commands and programmatic APIs not previously covered. Corrects two ai-skills errors (`--message` → `--handler`; non-existent `describe-resiliency`). See JasperFx open question #3. |
 
 **Status key:**
 - ✅ Complete and ready to use
@@ -78,6 +79,14 @@ Skills are living documents. When a new pattern is established or an existing on
 | Choosing which messages to tag with `[Audit]` | `observability.md` | `wolverine-message-handlers.md` |
 | Suppressing telemetry on health checks / keep-alives | `observability.md` | `wolverine-message-handlers.md` |
 | Starter Grafana queries for Wolverine + Marten | `observability.md` | — |
+| Inspecting full app configuration | `diagnostics.md` | — |
+| Debugging "why is my handler not firing?" | `diagnostics.md` | `wolverine-message-handlers.md` |
+| Debugging "why is `tracked.Sent.MessagesOf<T>()` zero?" | `diagnostics.md` | `wolverine-message-handlers.md` (AP#14) |
+| Inspecting retry / circuit-breaker policies | `diagnostics.md` | — |
+| Schema drift check for CI | `diagnostics.md` | — |
+| Pre-deploy infrastructure verification | `diagnostics.md` | `aspire.md` |
+| Post-crash node ownership release | `diagnostics.md` | — |
+| Config drift detection between environments | `diagnostics.md` | — |
 
 ### Testing
 

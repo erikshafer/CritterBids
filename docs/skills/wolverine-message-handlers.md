@@ -946,7 +946,7 @@ public static void Handle(PlaceBid cmd, IDocumentSession session, ILogger<PlaceB
 
 ```bash
 # Preview generated adapter code. Look for IServiceScopeFactory usage — that's service location.
-dotnet run --project src/CritterBids.Api -- wolverine-diagnostics codegen-preview --message PlaceBid
+dotnet run --project src/CritterBids.Api -- wolverine-diagnostics codegen-preview --handler PlaceBid
 
 # Full diagnostic report
 dotnet run --project src/CritterBids.Api -- describe
@@ -1288,37 +1288,48 @@ public static (IResult, ParticipantRegistered, OutgoingMessages) Register(Regist
 
 ## Debugging with the Wolverine Diagnostics CLI
 
-Wolverine ships three CLI sub-commands specifically designed for diagnosing AI-assisted development
+> **Full CLI reference:** this section covers the handler-authoring subset. For the complete
+> command surface — `describe`, schema commands (`db-assert` / `db-apply` / `db-dump`),
+> `storage` / `resources`, `check-env`, `capabilities`, and the programmatic equivalents
+> (`DescribeHandlerMatch`, `PreviewSubscriptions`) — see `docs/skills/diagnostics.md`.
+
+Wolverine ships CLI sub-commands specifically designed for diagnosing AI-assisted development
 issues. Run them from the project root with `dotnet run --project src/CritterBids.Api -- <command>`:
 
 ```bash
-# Preview the generated C# handler code for any message type.
+# Preview the generated C# handler code for a message type or HTTP endpoint.
 # Use this first when IDocumentSession injection fails or a handler behaves unexpectedly.
 # Shows exactly what SessionVariableSource resolved, what middleware fired, and what
 # return-type interceptors were code-generated.
-dotnet run -- wolverine-diagnostics codegen-preview --message SellerRegistrationCompleted
+#
+# --handler accepts: full message type name, short message class name, or handler class name.
+dotnet run -- wolverine-diagnostics codegen-preview --handler SellerRegistrationCompleted
 
 # Or preview by HTTP route:
 dotnet run -- wolverine-diagnostics codegen-preview --route "POST /api/listings"
 
-# List every configured routing rule — message type, transport, queue/exchange name.
+# List every configured routing rule (use --all for the full table; omit for a usage error
+# with hint). Supply a message type name to see routing for just that type.
 # Use this when tracked.Sent.MessagesOf<T>() returns 0 (see Anti-Pattern #14).
 # If a message type has no entry here, Wolverine calls NoRoutesFor() and drops the message.
-dotnet run -- wolverine-diagnostics describe-routing
+dotnet run -- wolverine-diagnostics describe-routing --all
+dotnet run -- wolverine-diagnostics describe-routing "CritterBids.Contracts.Selling.ListingPublished"
 
-# Show all error handling and circuit breaker policies per handler.
-dotnet run -- wolverine-diagnostics describe-resiliency
+# Full app-config dump including the Error Handling section — the canonical place
+# to inspect retry / circuit-breaker policies for every handler.
+dotnet run -- describe
 ```
 
 **When to reach for each command:**
 
 | Symptom | First command to run |
 |---|---|
-| `IDocumentSession` not injectable / code-gen failure | `codegen-preview --message T` |
+| `IDocumentSession` not injectable / code-gen failure | `codegen-preview --handler T` |
 | `[Entity]` or `[WriteAggregate]` not loading | `codegen-preview --route "VERB /path"` |
-| `tracked.Sent.MessagesOf<T>()` returns 0 | `describe-routing` |
-| Handler runs but wrong middleware applied | `codegen-preview` |
-| Retry/circuit breaker not triggering | `describe-resiliency` |
+| `tracked.Sent.MessagesOf<T>()` returns 0 | `describe-routing "<Type>"` or `describe-routing --all` |
+| Handler runs but wrong middleware applied | `codegen-preview --handler T` |
+| Retry / circuit breaker not triggering | `describe` (Error Handling section) |
+| "Something is broken, don't know where" | `describe` |
 
 `codegen-preview` is particularly valuable for diagnosing `SessionVariableSource`-related failures:
 if the generated code shows no session variable being resolved, it confirms that

@@ -91,6 +91,89 @@ CritterBids' `docs/skills/dynamic-consistency-boundary.md` documents DCB as work
 
 ---
 
+### 3. [Docs][Wolverine] ai-skills `command-line-diagnostics.md` contains two source-unverified claims
+
+**Raised:** 2026-04-18
+**Context:** Consolidating CritterBids' scattered CLI-diagnostics coverage into a new `docs/skills/diagnostics.md` against `ai-skills/wolverine/observability/command-line-diagnostics.md`. Source verification against the Wolverine repo turned up two errors in the ai-skills doc. Both had also propagated into CritterBids' own pre-2026-04-18 docs (`wolverine-message-handlers.md` §11, `critter-stack-testing-patterns.md` §20) because those sections were authored against the ai-skills doc rather than against source.
+
+**Claim A — `codegen-preview --message <Type>` is a valid flag.**
+
+ai-skills text:
+
+> ```bash
+> # Preview by handler type (full namespace-qualified name)
+> dotnet run -- wolverine-diagnostics codegen-preview --handler "MyApp.Orders.CreateOrderHandler"
+> ```
+
+The ai-skills doc itself uses `--handler`, but the *decision guidance* table at the bottom of the same file shows:
+
+> | "Inspect generated code for one handler" | `dotnet run wolverine-diagnostics codegen-preview --handler "MyApp.MyHandler"` |
+
+...which is consistent with `--handler`. The issue is that **CritterBids' ai-skills-derived docs — and, I suspect, other downstream readers — drifted to `--message` instead.** Verifying against source to settle it:
+
+- `C:\Code\JasperFx\wolverine\src\Wolverine\Diagnostics\WolverineDiagnosticsCommand.cs:27`
+    ```csharp
+    [FlagAlias("handler", 'h')]
+    [Description(
+        "For codegen-preview: preview generated code for a specific message handler. " +
+        "Accepts a fully-qualified message type name (e.g. MyApp.Orders.CreateOrder), " +
+        "a short class name (e.g. CreateOrder), or a handler class name (e.g. CreateOrderHandler).")]
+    public string HandlerFlag { get; set; } = string.Empty;
+    ```
+
+Only one alias is declared: `handler` / `h`. There is no `--message` alias. `--handler` accepts message type names as input, which is what makes the alias confusingly named but technically unambiguous.
+
+**Claim B — `describe-resiliency` exists as a `wolverine-diagnostics` sub-command.**
+
+The ai-skills doc documents:
+
+> ```bash
+> # Show all resiliency policies for a named endpoint
+> dotnet run -- wolverine-diagnostics describe-resiliency orders-queue
+>
+> # Show policies that apply to a specific message type
+> dotnet run -- wolverine-diagnostics describe-resiliency --message "MyApp.Commands.ProcessPayment"
+>
+> # Show all endpoints and their resiliency configuration
+> dotnet run -- wolverine-diagnostics describe-resiliency --all
+> ```
+
+with extensive example output.
+
+**Source contradicts this directly.** The same `WolverineDiagnosticsCommand.cs` file defines the sub-command dispatcher:
+
+```csharp
+case "codegen-preview":
+    return await RunCodegenPreviewAsync(input);
+
+case "describe-routing":
+    return await RunDescribeRoutingAsync(input);
+
+default:
+    AnsiConsole.MarkupLine(
+        $"[red]Unknown sub-command '{input.Action}'. Valid sub-commands: codegen-preview, describe-routing[/]");
+    return false;
+```
+
+Only `codegen-preview` and `describe-routing` are implemented. Searching `C:\Code\JasperFx\wolverine`, `\marten`, and `\polecat` for `describe-resiliency` returns zero hits. The ai-skills example output appears to be describing a hypothetical future command, not an existing one.
+
+The canonical path for the capability the ai-skills doc attributes to `describe-resiliency` is the **Error Handling** section of `dotnet run describe`, emitted by `WolverineSystemPart.WriteErrorHandling()` at `C:\Code\JasperFx\wolverine\src\Wolverine\WolverineSystemPart.cs:180`. That section includes global failure rules plus per-message-chain policy trees — functionally equivalent to what the ai-skills example output depicts.
+
+**The question(s):**
+
+1. **Should the ai-skills `command-line-diagnostics.md` file be updated?** The `describe-resiliency` claim is the larger issue — a reader who copies the command gets "Unknown sub-command" and has no obvious recovery path. Either (a) ship the sub-command to match the doc, (b) remove the documentation of it, or (c) reframe it as forward-looking / roadmap material.
+2. **Is `describe-resiliency` on the Wolverine roadmap?** If it is, CritterBids would benefit from the dedicated view (the `describe` Error Handling section mixes all error policies into one tree and is harder to scan for a specific endpoint or message type).
+3. **Should `codegen-preview` add an explicit `--message` alias?** Readers conflating the input type with the flag name is a repeated pattern in CritterBids' own drifted docs. A second alias (`message` as an alternate for `handler`) would make the doc-drift harmless. Alternatively, the flag could be renamed `--target` or `--for` to disambiguate.
+
+**Tentative CritterBids position while unresolved:**
+
+- `docs/skills/diagnostics.md` uses `--handler` and substitutes `dotnet run describe` (Error Handling section) for the retry-policy inspection use case. A dedicated §11 in that file documents both discrepancies inline so future cross-references don't re-introduce the confusion.
+- `wolverine-message-handlers.md` §11 and `critter-stack-testing-patterns.md` §20 were corrected in the 2026-04-18 consolidation: `--message` replaced with `--handler` (8 occurrences total), `describe-resiliency` sub-command references replaced with `dotnet run describe` plus a one-line callout explaining the prior error.
+
+**Severity:** Medium. Downstream impact on LLM agents is real — an agent reading ai-skills and trying to run `describe-resiliency` gets a runtime error and may propose nonexistent troubleshooting paths. The `--message` vs `--handler` discrepancy is milder because Wolverine's error message is specific enough to recover from.
+
+---
+
 ## Resolved Questions
 
 *(empty)*
@@ -109,4 +192,6 @@ CritterBids' `docs/skills/dynamic-consistency-boundary.md` documents DCB as work
 - `C:\Code\JasperFx\marten\src\Marten\Events\Dcb\EventBoundary.cs` — Marten boundary implementation (verified 2026-04-18)
 - `C:\Code\JasperFx\polecat\src\Polecat\Events\Dcb\EventBoundary.cs` — Polecat boundary implementation (verified 2026-04-18)
 - `C:\Code\JasperFx\wolverine\src\Persistence\MartenTests\Dcb\boundary_model_workflow_tests.cs` — Marten DCB workflow test coverage (verified 2026-04-18)
-- JasperFx ai-skills: `marten/advanced/ancillary-stores.md`, `marten/advanced/dynamic-consistency-boundary.md`, `marten/advanced/cross-stream-operations.md`, `marten/aggregate-handler-workflow.md`, `polecat/polecat-setup-and-decision-guide.md`
+- `C:\Code\JasperFx\wolverine\src\Wolverine\Diagnostics\WolverineDiagnosticsCommand.cs` — diagnostics CLI source, shows only `codegen-preview` and `describe-routing` sub-commands (verified 2026-04-18)
+- `C:\Code\JasperFx\wolverine\src\Wolverine\WolverineSystemPart.cs` — `describe` command output including the Error Handling section (verified 2026-04-18)
+- JasperFx ai-skills: `marten/advanced/ancillary-stores.md`, `marten/advanced/dynamic-consistency-boundary.md`, `marten/advanced/cross-stream-operations.md`, `marten/aggregate-handler-workflow.md`, `polecat/polecat-setup-and-decision-guide.md`, `wolverine/observability/command-line-diagnostics.md`
