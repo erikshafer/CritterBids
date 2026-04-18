@@ -35,6 +35,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Adding a BC module | `adding-bc-module.md` | ✅ Complete | New — authored M2 pre-S2 from ADR 008 + JasperFx ai-skills |
 | React frontend | `react-frontend.md` | 🔴 Not yet written | New |
 | Domain event conventions | `domain-event-conventions.md` | ✅ Complete | New — authored M2-S8 from S5–S6 patterns |
+| Observability (OTEL + Prometheus + Grafana) | `observability.md` | 🟡 Placeholder — scaffold for pre-production observability work | New 2026-04-18 — scaffold drawn from JasperFx ai-skills `wolverine/observability/` (three files absorbed: OpenTelemetry setup, metrics & auditing, Grafana templates). Extend on first Hetzner deploy. |
 
 **Status key:**
 - ✅ Complete and ready to use
@@ -67,6 +68,16 @@ Skills are living documents. When a new pattern is established or an existing on
 | Broadcast live view via projection side effect | `projection-side-effects-for-broadcast-live-views.md` | `wolverine-signalr.md` |
 | Derived domain event from projection state | `projection-side-effects-for-broadcast-live-views.md` | `marten-event-sourcing.md` |
 | New BC module registration | `adding-bc-module.md` | `marten-event-sourcing.md` |
+
+### Operations
+
+| Task | Primary Skill | Secondary Skill |
+|---|---|---|
+| Wiring OpenTelemetry traces and metrics | `observability.md` | `aspire.md` |
+| Prometheus scrape endpoint for production | `observability.md` | — |
+| Choosing which messages to tag with `[Audit]` | `observability.md` | `wolverine-message-handlers.md` |
+| Suppressing telemetry on health checks / keep-alives | `observability.md` | `wolverine-message-handlers.md` |
+| Starter Grafana queries for Wolverine + Marten | `observability.md` | — |
 
 ### Testing
 
