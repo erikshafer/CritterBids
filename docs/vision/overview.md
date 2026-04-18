@@ -22,7 +22,7 @@ More specifically, CritterBids was chosen because it creates meaningful opportun
 - **Sagas and process managers** — the auction closing saga, the proxy bid manager, the post-sale obligations chain, and the extended bidding anti-snipe mechanic are all distinct saga shapes with different lifecycles.
 - **Projections by audience** — a seller, a bidder, an ops staff member, and a finance team all need radically different views of the same underlying event streams.
 - **Real-time transport** — SignalR is load-bearing in CritterBids, not a demo flourish. The live bid feed is the participant experience.
-- **Multiple databases** — PostgreSQL via Marten for auction-core BCs, SQL Server via Polecat for operations, settlement, and participant management. Both in the same solution, same programming model.
+- **Storage agnosticism** — CritterBids runs all eight BCs on PostgreSQL via Marten for a uniform bootstrap across the solution. The Critter Stack's programming model is storage-agnostic by design — the same patterns work against Marten on PostgreSQL or Polecat on SQL Server — preserved as a future demo opportunity.
 - **Transport agnosticism** — CritterBids starts with RabbitMQ and is designed to swap to Azure Service Bus as a milestone demonstration of Wolverine's transport-agnostic design.
 
 ---

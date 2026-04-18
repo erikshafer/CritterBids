@@ -186,7 +186,7 @@ CritterBids/
 
 | Document | Purpose |
 |---|---|
-| [`docs/vision/overview.md`](docs/vision/overview.md) | Full project vision, eBay model, architecture summary |
+| [`docs/vision/README.md`](docs/vision/README.md) | Vision index — project overview, BC map, domain event vocabulary, reactive architecture notes |
 | [`docs/skills/README.md`](docs/skills/README.md) | Skills index — load before implementing any feature |
 | [`docs/decisions/`](docs/decisions/) | Architecture Decision Records |
 | [`docs/milestones/MVP.md`](docs/milestones/MVP.md) | MVP definition of done and demo scenario |
