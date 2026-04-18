@@ -153,9 +153,9 @@ public static class SellerRegistrationCompletedHandler
 
 ---
 
-## `docs/skills/marten-named-stores.md`
+## `docs/skills/critter-stack-ancillary-stores.md`
 
-The skill created alongside ADR 008 is archived. It documents a real Marten capability (the ancillary store API), but one that is not appropriate for CritterBids' architecture. It is retained in the repository as reference material under a clearly marked archived status.
+The skill created alongside ADR 008 (`docs/skills/marten-named-stores.md`) was renamed and rewritten on 2026-04-17 as `docs/skills/critter-stack-ancillary-stores.md`. The new file covers the current ancillary-store capability on top of a primary store — which is materially different from the ADR 008 constraint set captured in the original skill — and is marked 📚 Reference (not currently used in CritterBids). It documents a real Marten and Polecat capability that is appropriate for future scenarios (separate physical databases per BC, per-module async daemons, per-tenant databases with a shared control plane), but is not a recommended path for CritterBids under the current architecture.
 
 ---
 
@@ -166,4 +166,5 @@ The skill created alongside ADR 008 is archived. It documents a real Marten capa
 - `src/CritterBids.Api/Program.cs` — primary `AddMarten()` registration
 - `src/CritterBids.Selling/SellingModule.cs` — canonical `ConfigureMarten()` BC contribution
 - `docs/skills/critter-stack-testing-patterns.md` — cross-BC handler isolation in fixtures
+- `docs/skills/critter-stack-ancillary-stores.md` — current ancillary-store capability as reference (rewritten 2026-04-17; replaces the archived `marten-named-stores.md` referenced throughout this ADR's body)
 - Marten docs: [ConfigureMarten](https://martendb.io/configuration/index.html#addmarten-and-configure-marten)

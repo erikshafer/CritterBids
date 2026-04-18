@@ -12,13 +12,14 @@ Guide for using Marten's projection side-effect model to broadcast aggregate sta
 2. [Mechanical Recipe](#mechanical-recipe)
 3. [Canonical Example: AuctionSnapshot Live View](#canonical-example-auctionsnapshot-live-view)
 4. [Derived Events Technique](#derived-events-technique)
-5. [Async vs Inline Opt-In](#async-vs-inline-opt-in)
-6. [Rebuild Safety](#rebuild-safety)
-7. [Registration](#registration)
-8. [Testing](#testing)
-9. [Pitfalls](#pitfalls)
-10. [Lessons Learned](#lessons-learned)
-11. [References](#references)
+5. [Writing Auxiliary Documents](#writing-auxiliary-documents)
+6. [Async vs Inline Opt-In](#async-vs-inline-opt-in)
+7. [Rebuild Safety](#rebuild-safety)
+8. [Registration](#registration)
+9. [Testing](#testing)
+10. [Pitfalls](#pitfalls)
+11. [Lessons Learned](#lessons-learned)
+12. [References](#references)
 
 ---
 
@@ -73,6 +74,17 @@ slice.PublishMessage(new AuctionSnapshotUpdated(slice.Snapshot));
 operations.Store(new SomeOtherDocument { ... });
 operations.Delete<SomeOtherDocument>(id);
 ```
+
+### `slice` / `operations` API reference
+
+| Member | Purpose |
+|---|---|
+| `slice.Snapshot` | The projected aggregate after applying every event in this slice. **May be null** on a newly created stream where `Create` hasn't returned a non-null value yet, or where the projection chose not to create a document for the events seen. Always null-check before dereferencing. |
+| `slice.Events()` | The events processed in this batch for this aggregate. Enumerate to inspect individual `IEvent<T>` wrappers (metadata: timestamp, version, stream ID). |
+| `slice.PublishMessage(msg)` | Enqueue a message into Wolverine's outbox — delivered atomically with the projection commit. Requires `IntegrateWithWolverine()` on the store. |
+| `slice.AppendEvent(evt)` | Append a new event to the same stream, atomically. Async daemon only — throws `InvalidOperationException` under `EnableSideEffectsOnInlineProjections = true`. |
+| `slice.AppendEvent(streamId, evt)` | Append to a **different** stream. Same atomicity + inline-projection restriction as the single-argument form. |
+| `operations.Store(doc)` / `operations.Delete<T>(id)` / `operations.LoadAsync<T>(id)` | Arbitrary Marten document operations on any document type. Same transaction as the projection commit. Useful for maintaining auxiliary read models — see [Writing Auxiliary Documents](#writing-auxiliary-documents). |
 
 ### Critical properties
 
@@ -233,6 +245,49 @@ In the projection, the policy lives where the state already is. The command hand
 
 ---
 
+## Writing Auxiliary Documents
+
+The `IDocumentOperations operations` parameter lets the side-effect hook write to **other** document types — not just the aggregate being projected. This is useful for maintaining denormalised rollups atomically with the projection commit, without needing a separate projection just for the counter.
+
+**Example — daily auction activity rollup.** Every time an auction closes, increment a daily totals document. The rollup lands in the same transaction as the `AuctionSnapshot` update.
+
+```csharp
+public override async ValueTask RaiseSideEffects(
+    IDocumentOperations operations,
+    IEventSlice<AuctionSnapshot> slice)
+{
+    if (slice.Snapshot is null) return;
+
+    foreach (var @event in slice.Events())
+    {
+        if (@event.Data is AuctionClosed closed)
+        {
+            var day = DateOnly.FromDateTime(closed.ClosedAt.UtcDateTime);
+            var rollup = await operations.LoadAsync<DailyAuctionRollup>(day)
+                         ?? new DailyAuctionRollup { Id = day };
+
+            rollup.ClosedCount++;
+            rollup.SoldRevenue += slice.Snapshot.HammerPrice ?? 0m;
+
+            operations.Store(rollup);
+        }
+    }
+
+    // Broadcast as usual
+    slice.PublishMessage(new AuctionSnapshotUpdated(/* ... */));
+}
+```
+
+**When this fits:** simple rollups where the counter update logic is a direct function of the events in the slice. One round-trip per slice (the `LoadAsync`) is acceptable.
+
+**When to reach for a dedicated projection instead:** if the rollup logic gets complex (joins across streams, custom grouping keys, rebuild requirements), promote it to its own `MultiStreamProjection<TRollup, TKey>`. Mixing projection concerns inside `RaiseSideEffects` is convenient for small cases and painful at scale — the rollup becomes invisible to projection rebuilds because it rides along with the primary projection's commit.
+
+**Atomicity guarantee:** `operations.Store(rollup)` commits in the same PostgreSQL transaction as the `AuctionSnapshot` update and the `AuctionSnapshotUpdated` outbox enqueue. All three succeed or none do.
+
+**Rebuild-safety caveat.** Like `PublishMessage`, auxiliary-document writes via `operations` are suppressed during projection rebuilds. If the rollup is load-bearing for correctness (not just a cache), a dedicated projection is the right tool — it will replay from events and reconstruct correctly on rebuild. Use `operations` for convenience, not correctness.
+
+---
+
 ## Async vs Inline Opt-In
 
 By default, side effects run only during async daemon execution. This is the default CritterBids should use.
@@ -329,7 +384,7 @@ The projection does not know about SignalR. It publishes a message. The Relay BC
 
 ## Testing
 
-Three layers worth testing separately.
+Four layers worth testing separately, ordered fastest to slowest.
 
 ### 1. Unit test the projection's Apply logic
 
@@ -362,7 +417,59 @@ public void Apply_BidPlaced_updates_high_bid_and_increments_count()
 
 Fast, deterministic, no infrastructure. Covers the majority of projection logic.
 
-### 2. Integration test the full side-effect flow
+### 2. Unit test `RaiseSideEffects` logic with a stub slice
+
+`IEventSlice<T>` is an interface. For side-effect logic that doesn't need a real async daemon — straightforward publish-on-event rules, counter increments, guard-clause appends — a test double for the slice gives millisecond-feedback coverage without Testcontainers.
+
+Marten does not ship a test stub, so build a minimal one. Roughly:
+
+```csharp
+internal sealed class StubEventSlice<T>(T? snapshot, IEnumerable<IEvent> events) : IEventSlice<T>
+{
+    public T? Snapshot => snapshot;
+    public List<object> PublishedMessages { get; } = [];
+    public List<object> AppendedEvents { get; } = [];
+
+    public IEnumerable<IEvent> Events() => events;
+    public void PublishMessage(object msg) => PublishedMessages.Add(msg);
+    public void AppendEvent(object evt) => AppendedEvents.Add(evt);
+    public void AppendEvent(Guid streamId, object evt) => AppendedEvents.Add(evt);
+    // Fill remaining IEventSlice<T> members with throwing NotImplementedException stubs
+    // until a test needs them — keeps the double focused.
+}
+
+[Fact]
+public async Task publishes_snapshot_updated_when_bid_placed()
+{
+    var snapshot = new AuctionSnapshot
+    {
+        Id = Guid.NewGuid(),
+        ListingId = Guid.NewGuid(),
+        Status = AuctionStatus.Running,
+        CurrentHighBid = 50m,
+        BidCount = 2,
+        EndsAt = DateTimeOffset.UtcNow.AddMinutes(5)
+    };
+    var bidEvent = BuildTestEvent(new BidPlaced(snapshot.ListingId, Guid.NewGuid(), 50m));
+    var slice = new StubEventSlice<AuctionSnapshot>(snapshot, [bidEvent]);
+
+    var projection = new AuctionSnapshotProjection();
+    await projection.RaiseSideEffects(operations: null!, slice);
+
+    slice.PublishedMessages
+        .ShouldHaveSingleItem()
+        .ShouldBeOfType<AuctionSnapshotUpdated>()
+        .CurrentHighBid.ShouldBe(50m);
+}
+```
+
+**When this layer is valuable:** validating branching logic ("publish on close but not on open"), asserting specific message shapes, unit-testing derived-event guards for off-by-one threshold mistakes. Fast enough to run on every save.
+
+**When this layer is not enough:** anything touching `operations.LoadAsync`, `operations.Store`, or atomicity guarantees. Those need the integration test in layer 3 — stubs can't model the transactional semantics the hook depends on.
+
+**Caveat:** the stub hides schema and serialization concerns. The projection might pass its stub-based tests and still fail at the daemon layer if event types aren't registered on the store, or if the snapshot can't round-trip through Marten's JSON. Always back stub-tests with at least one layer-3 integration test per projection.
+
+### 3. Integration test the full side-effect flow
 
 Verify the daemon runs the projection, commits, and publishes the expected message. Pattern uses Wolverine's tracked session on the host.
 
@@ -421,7 +528,7 @@ public async Task BidPlaced_triggers_AuctionSnapshotUpdated_broadcast()
 
 See `docs/skills/critter-stack-testing-patterns.md` for shared fixture patterns (Testcontainers PostgreSQL, schema-per-test isolation).
 
-### 3. End-to-end test through the HTTP surface
+### 4. End-to-end test through the HTTP surface
 
 Combines tracked sessions with real HTTP calls via Alba or similar. Covers the command handler → projection → side effect → SignalR routing chain.
 
@@ -476,6 +583,9 @@ This is both useful testing and a nice illustration of why derived events belong
 | Assertion against `tracked.Sent` before daemon catches up | Flaky test — message sometimes present, sometimes not | Use `SaveInMartenAndWaitForOutgoingMessagesAsync` AND `WaitForNonStaleProjectionDataAsync` together |
 | `ValueTask` not returned from async work in hook | Compile fails; or silent swallowed exception if patched | `RaiseSideEffects` returns `ValueTask`. If no async work, `return ValueTask.CompletedTask;`. If async data access, `async`-ify the method |
 | Side effect hook holds DB cursors or leaks operations | Transaction bloat, connection pool pressure | Keep the hook short. The `IDocumentOperations` parameter is for simple Store/Delete operations; long-running data access belongs in enrichment, not side effects |
+| Null-dereference on `slice.Snapshot` for new streams | `NullReferenceException` in the daemon; projection retries/parks | Always `if (slice.Snapshot is null) return ValueTask.CompletedTask;` at the top of the hook. `Snapshot` is null when the stream is brand-new and the projection's `Create` has not yet returned a non-null document, or when the projection chose to delete the document |
+| External HTTP / IO calls inside `RaiseSideEffects` | Daemon shard blocks on network latency; projection lag; cascading timeouts during outages | Publish a message (`slice.PublishMessage(new CallExternalService(...))`) and let a Wolverine handler make the external call. The side-effect hook must stay short and synchronous against in-process / same-DB resources |
+| Infinite `AppendEvent` loop | Daemon spins forever; stream grows unbounded; eventually disk/CPU saturation | `AppendEvent` produces an event that the **same projection** will see on its next slice — if the condition that triggered the append is still true for the new slice, the append fires again. Always include a terminating predicate (e.g. `!account.IsOverdrafted && balance < 0` — once the append flips `IsOverdrafted`, the next slice skips) |
 
 ---
 
@@ -505,3 +615,5 @@ Expected topics once we have real experience:
 - `docs/skills/wolverine-message-handlers.md` — command handler patterns
 - `docs/skills/critter-stack-testing-patterns.md` — `TrackedHttpCall`, fixture patterns, Testcontainers setup
 - `docs/skills/dynamic-consistency-boundary.md` — when DCB changes how projections compose
+- `docs/skills/critter-stack-ancillary-stores.md` — `RaiseSideEffects` and `PublishMessage` work in ancillary stores too, with `IntegrateWithWolverine()` on each store
+- JasperFx ai-skills: `marten/projections/raise-side-effects.md`

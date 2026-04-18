@@ -18,9 +18,10 @@ Patterns and conventions for building message handlers and HTTP endpoints with W
 6. [Handler Return Patterns](#handler-return-patterns)
 7. [Railway Programming](#railway-programming)
 8. [HTTP Endpoints](#http-endpoints)
-9. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
-10. [Debugging with the Wolverine Diagnostics CLI](#debugging-with-the-wolverine-diagnostics-cli)
-11. [File Organization and Naming](#file-organization-and-naming)
+9. [IoC and Service Optimization](#ioc-and-service-optimization)
+10. [Anti-Patterns to Avoid](#anti-patterns-to-avoid)
+11. [Debugging with the Wolverine Diagnostics CLI](#debugging-with-the-wolverine-diagnostics-cli)
+12. [File Organization and Naming](#file-organization-and-naming)
 
 ---
 
@@ -90,6 +91,7 @@ Wolverine executes handler methods in this order:
 | Handler | `Handle`, `HandleAsync` | Business logic (pure function) |
 | After Handler | `After`, `AfterAsync`, `PostProcess`, `PostProcessAsync` | Side effects, notifications |
 | Finally | `Finally`, `FinallyAsync` | Cleanup (runs even on failure) |
+| Exception | `OnException`, `OnExceptionAsync` | Inline exception handling (see below) |
 
 **Key points:**
 - Wolverine discovers these by convention — no interfaces required
@@ -100,6 +102,99 @@ Wolverine executes handler methods in this order:
 **⚠️ CRITICAL: Tuple Order Matters**
 
 Wolverine wires dependencies **by position in the tuple**, not by parameter name. If `Load()` returns `(Listing, Bidder)` but `Handle()` expects `(Bidder bidder, Listing listing)`, Wolverine passes `Listing` as the first parameter — causing runtime errors. Always match tuple order to parameter order across methods.
+
+### `OnException` / `OnExceptionAsync` Convention
+
+Define an `OnException` or `OnExceptionAsync` method on the handler class to catch exceptions inline. The first parameter is the exception type; additional parameters inject the triggering message and any other services. Wolverine generates a `try`/`catch` around the handler invocation that dispatches to the matching method by exception specificity (most derived first).
+
+**The exception is swallowed after `OnException` returns** — no re-throw. This is by design: `OnException` is a *recovery* hook, not a logging hook. If you want the framework's retry/DLQ pipeline to see the exception, don't define `OnException` for that type; let it propagate.
+
+**For compensation patterns** — the canonical CritterBids use case is payment-failure compensation in the Settlement saga, or obligation handling when external calls throw. Return `OutgoingMessages` to publish compensating events as part of the recovery:
+
+```csharp
+public static class ProcessPaymentHandler
+{
+    public static (Events, OutgoingMessages) Handle(
+        ProcessPayment cmd,
+        [WriteAggregate] SettlementSaga saga,
+        IPaymentGateway gateway)
+    {
+        // may throw PaymentGatewayException
+        var result = gateway.Charge(cmd.Amount, cmd.PaymentMethodId);
+
+        var events = new Events();
+        events.Add(new PaymentSucceeded(saga.Id, result.TransactionId));
+
+        var outgoing = new OutgoingMessages();
+        outgoing.Add(new Contracts.Settlement.PaymentConfirmed(saga.ListingId, cmd.Amount));
+
+        return (events, outgoing);
+    }
+
+    // Catches PaymentGatewayException inline, emits compensation, swallows the exception.
+    // Note: no rethrow — the saga stays alive to handle PaymentFailed next.
+    public static OutgoingMessages OnException(
+        PaymentGatewayException ex,
+        ProcessPayment cmd)
+    {
+        var outgoing = new OutgoingMessages();
+        outgoing.Add(new Contracts.Settlement.PaymentFailed(cmd.SagaId, ex.Message));
+        return outgoing;
+    }
+}
+```
+
+**Supported return types** mirror handler returns: `void`, `ProblemDetails` / `IResult` (HTTP), `HandlerContinuation`, `OutgoingMessages`. For HTTP endpoints, returning `ProblemDetails` from `OnException` yields a structured error response without touching middleware retry policies.
+
+**Multiple `OnException` methods** for different exception types are supported — Wolverine orders them by specificity. A `catch (Exception ex)` overload at the bottom of the class acts as a default handler.
+
+**Versus framework retry policies:** `OnException` is the right tool when the handler itself can **decide** what compensating action to take. For transient retry-then-fail patterns (e.g., `SqlException` → retry 3x — DLQ), keep using `opts.OnException<T>()` global policies or `[RetryNow]`/`[MaximumAttempts]` attributes. See `wolverine-sagas.md` and the Critter Stack resiliency patterns.
+
+### MiddlewareScoping — HTTP-only vs Messaging-only Lifecycle Methods
+
+When a single handler class serves **both** an HTTP endpoint and a message-bus invocation (the "hybrid handler" pattern), some lifecycle methods should only run in one context. Use `[WolverineBefore(MiddlewareScoping.HttpEndpoints)]` or `[WolverineBefore(MiddlewareScoping.MessageHandlers)]` (and the same for `After` / `Finally` variants) to scope a method to one path.
+
+```csharp
+public static class ProcessOrderHandler
+{
+    [WolverineBefore(MiddlewareScoping.HttpEndpoints)]
+    public static void SetTenantFromHeader(HttpContext context, Envelope envelope)
+    {
+        envelope.TenantId = context.Request.Headers["X-Tenant-Id"].ToString();
+    }
+
+    [WolverineBefore(MiddlewareScoping.MessageHandlers)]
+    public static void CheckEnvelopeMetadata(Envelope envelope)
+    {
+        // Message-bus-only concern — HttpContext is not available here
+    }
+
+    [WolverinePost("/api/orders/process")]
+    public static OrderProcessed Handle(ProcessOrder cmd) { /* ... */ }
+}
+```
+
+**Two CritterBids-relevant footguns:**
+
+1. **`HttpContext` in a hybrid handler's `Before`/`Load` without scoping** throws `NullReferenceException` when invoked via `IMessageBus.InvokeAsync(...)`. Always scope HTTP-only concerns with `MiddlewareScoping.HttpEndpoints`.
+2. **Classes suffixed `Endpoint` / `Endpoints` are HTTP-only** by Wolverine's discovery convention. A class suffixed `Handler` can serve both paths. If a hybrid pattern is intended, name the class `Handler`, not `Endpoint`.
+
+CritterBids has no hybrid handlers through M2.5. The pattern becomes relevant when a single command surface needs to accept both direct `InvokeAsync` from other BCs (via the integration bus) and external HTTP traffic (e.g. a public API for `SubmitListing` once seller tooling lands).
+
+### Applying Middleware Globally and Per-Handler
+
+Middleware — custom `Before`/`After`/`Finally`/`OnException` logic defined on a separate class — can be applied in several scopes:
+
+| Scope | Mechanism | When to use |
+|---|---|---|
+| Per-handler class | `[Middleware(typeof(MyMiddleware))]` on the handler class or method | Narrow cross-cutting concern for a specific handler |
+| By message interface | `opts.Policies.ForMessagesOfType<IMyInterface>().AddMiddleware(typeof(MyMiddleware))` | All handlers for messages implementing a marker interface |
+| Filtered global | `opts.Policies.AddMiddleware<MyMiddleware>(chain => chain.MessageType.IsInNamespace("..."))` | Cross-cutting concern for a namespace or subset |
+| Unconditional global | `opts.Policies.AddMiddleware<MyMiddleware>()` | True cross-cutting concern (e.g., audit logging for every handler) |
+| Per-handler customization | `public static void Configure(HandlerChain chain)` method on the handler class | Per-handler error policies, timeouts, audited members — full chain access |
+| Custom policy | `IHandlerPolicy` / `IHttpPolicy` implementations registered via `opts.Policies.Add<MyPolicy>()` | Cross-cutting policy with complex conditional application |
+
+CritterBids currently uses none of these. The conventional `Before`/`Validate`/`Load`/`Handle`/`After` methods on the handler class itself cover every pattern through M2.5. The table exists so that when a cross-cutting need arises (bid-throttling, flash-session rate limits, audit trails for regulated operations), the available options are clear and we can choose the narrowest scope that fits.
 
 ---
 
@@ -576,6 +671,59 @@ public static class RegisterBidderEndpoint
 
 **Rule:** `Handle()` is always the happy path — never return `ProblemDetails` from `Handle()`.
 
+### Inline String Validation — Lightweight Alternative to `ProblemDetails`
+
+For simple error-string validation that doesn't need HTTP status-code control, return `IEnumerable<string>` from a `Validate` method. Any yielded strings abort the handler pipeline; an empty enumeration allows execution to proceed.
+
+```csharp
+public static class PlaceBidHandler
+{
+    public static IEnumerable<string> Validate(PlaceBid cmd, Listing? listing)
+    {
+        if (listing is null)
+            yield return "Listing not found";
+        else if (!listing.IsOpen)
+            yield return "Listing is not open for bidding";
+
+        if (cmd.Amount <= 0)
+            yield return "Bid amount must be positive";
+    }
+
+    public static (Events, OutgoingMessages) Handle(PlaceBid cmd, [WriteAggregate] Listing listing)
+    {
+        // happy path — only reached when Validate yielded nothing
+    }
+}
+```
+
+**Behaviour split by context:**
+- **Message handlers:** yielded strings are logged as warnings; the handler is skipped. No response flows back to a synchronous caller.
+- **HTTP endpoints:** Wolverine synthesises a `ProblemDetails` with status 400 containing the error strings in the `errors` dictionary, and writes it as the response body.
+
+**When to prefer over `ProblemDetails`:**
+- The error is informational and status 400 is fine — no need for custom status codes
+- You want to collect multiple errors per invocation (a `Validate` returning `ProblemDetails` typically short-circuits on first failure)
+- The handler is a message handler where `ProblemDetails` would be wasted (there's no HTTP response to attach it to)
+
+**When to stick with `ProblemDetails`:**
+- HTTP endpoints that need specific status codes (`404`, `409`, `412`) — string validation always yields 400
+- Endpoints that need a structured error payload beyond a string list
+
+For M3+ bid validation in CritterBids, string validation is a clean fit for `Validate`-level checks where the errors are informational. Reserve `ProblemDetails` for endpoints where the HTTP status code carries semantic meaning (Listing not found → 404; Listing already closed → 409).
+
+### `WolverineContinue.NoProblems` Is Reference-Equality
+
+Wolverine's code generation checks the result of a `Validate` method with `ReferenceEquals(result, WolverineContinue.NoProblems)`, not value equality. Always return the static `WolverineContinue.NoProblems` singleton to signal "continue" — do not construct a new empty `ProblemDetails` with the thought that it's equivalent. A new instance is **not** the same reference, so the pipeline short-circuits on your empty problem-details as though validation failed.
+
+```csharp
+// ❌ WRONG — new instance, not the NoProblems singleton
+public static ProblemDetails Validate(PlaceBid cmd) =>
+    new ProblemDetails();   // pipeline aborts with status-0 ProblemDetails
+
+// ✅ CORRECT
+public static ProblemDetails Validate(PlaceBid cmd) => WolverineContinue.NoProblems;
+```
+
 ---
 
 ## HTTP Endpoints
@@ -620,6 +768,191 @@ public static async Task<IResult> Handle(
 ### Publishing Integration Messages from HTTP Endpoints
 
 Always use `OutgoingMessages` — never `bus.PublishAsync()` in HTTP endpoints. See Anti-Pattern #11.
+
+### `[EmptyResponse]` vs `Results.NoContent()` — The Aggregate Endpoint Footgun
+
+This is the single most consequential HTTP-endpoint mistake on aggregate handlers. It is silent — the endpoint appears to work, returns `200 OK`, and no events are persisted.
+
+**The failure mode:**
+
+```csharp
+// ❌ FAILS SILENTLY — event is serialized as HTTP response body, NOT appended to stream
+[WolverinePost("/api/listings/{listingId}/close")]
+public static BiddingClosed Close([WriteAggregate] Listing listing)
+{
+    return new BiddingClosed(listing.Id, listing.CurrentHighBid, listing.HighBidderId);
+}
+```
+
+On an aggregate-handler endpoint, a single return value is treated as the **HTTP response body**. The `BiddingClosed` event is written to the response (as JSON), **never appended to the event stream**. No exception, no warning. The next `FetchForWriting<Listing>` shows the pre-close state.
+
+**Two correct shapes:**
+
+**Shape 1 — `[EmptyResponse]` attribute.** Suppresses the HTTP body; the returned event is appended to the stream. Response is `204 No Content`.
+
+```csharp
+[WolverinePost("/api/listings/{listingId}/close"), EmptyResponse]
+public static BiddingClosed Close([WriteAggregate] Listing listing) =>
+    new BiddingClosed(listing.Id, listing.CurrentHighBid, listing.HighBidderId);
+```
+
+**Shape 2 — explicit tuple with `Results.NoContent()`.** The first element is the HTTP response, subsequent elements are events/messages. Preferred when you also want to return `OutgoingMessages`.
+
+```csharp
+[WolverinePost("/api/listings/{listingId}/close")]
+public static (IResult, Events, OutgoingMessages) Close(
+    [WriteAggregate] Listing listing)
+{
+    var closed = new BiddingClosed(listing.Id, listing.CurrentHighBid, listing.HighBidderId);
+    var outgoing = new OutgoingMessages();
+    outgoing.Add(new Contracts.Auctions.ListingSold(listing.Id, listing.SellerId, listing.HighBidderId!.Value, listing.CurrentHighBid, DateTimeOffset.UtcNow));
+    return (Results.NoContent(), new Events(closed), outgoing);
+}
+```
+
+**When to pick which:**
+
+| Returning | Use |
+|---|---|
+| Just an event to append, 204 response | `[EmptyResponse]` — minimal ceremony |
+| Event(s) + `OutgoingMessages` | Explicit tuple with `Results.NoContent()` first |
+| Updated aggregate state in the HTTP body | `(UpdatedAggregate, Events)` tuple — see Handler Return Patterns section |
+| A proper creation response (`201 Created`) | `(CreationResponse<T>, IStartStream)` — see Handler Return Patterns section |
+
+**CritterBids rule:** never return a bare event type from an aggregate-handler HTTP endpoint. Always one of: `[EmptyResponse]` + event, tuple with explicit HTTP result first, or `UpdatedAggregate` + events when state is needed.
+
+This is a different failure from Anti-Pattern #3 (wrong tuple order) and Anti-Pattern #9 (direct `session.Events.StartStream()` instead of `IStartStream` return). It is specific to bare single-value returns on aggregate-handler HTTP endpoints, where Wolverine's default "return value is the HTTP body" rule collides with the aggregate-handler "return value is the event to append" expectation.
+
+### Prefer Concrete Return Types Over `IResult`
+
+`IResult` is opaque to Wolverine's OpenAPI metadata generation. When an endpoint returns a concrete type (`Listing`, `BidPlaced`, `CreationResponse<Guid>`, `ProblemDetails`), Wolverine infers the status code, response schema, and content type automatically — OpenAPI docs and generated clients get accurate information with zero boilerplate.
+
+```csharp
+// ❌ OPAQUE — OpenAPI shows no response schema; requires manual [ProducesResponseType]
+[WolverineGet("/api/listings/{listingId}")]
+public static IResult Get(Guid listingId, IDocumentSession session) =>
+    /* ... */ Results.Ok(listing);
+
+// ✅ CONCRETE — OpenAPI infers 200 + Listing schema automatically
+[WolverineGet("/api/listings/{listingId}")]
+public static Task<Listing?> Get(Guid listingId, IDocumentSession session) =>
+    session.LoadAsync<Listing>(listingId);   // nullable → 200 or 404 automatically
+```
+
+**Reserve `IResult` for:**
+- Endpoints that genuinely have runtime-variable response shapes (e.g. conditional redirects, content negotiation)
+- The `Results.NoContent()` first element of tuple returns on aggregate handlers (covered above)
+
+**Return type → OpenAPI mapping cheat-sheet:**
+
+| Return type | Inferred status codes | Body |
+|---|---|---|
+| `T` (concrete) | 200 | JSON of `T` |
+| `T?` (nullable) | 200 or 404 | JSON of `T`, or empty on 404 |
+| `void` / `Task` | 200 | empty |
+| `CreationResponse<T>` | 201 | JSON of `T`, `Location` header |
+| `AcceptResponse` | 202 | empty, `Location` header |
+| A `Validate` returning `ProblemDetails` | 400 added automatically | `application/problem+json` on failure |
+| `IResult` | opaque | manual `[ProducesResponseType]` required |
+
+Let Wolverine do the OpenAPI work whenever the endpoint's response shape is known at compile time.
+
+---
+
+## IoC and Service Optimization
+
+Wolverine's handler pipeline bypasses the IoC container at runtime wherever it can. Understanding the mechanics is rarely important day-to-day, but becomes critical when diagnosing slow cold starts, service-location warnings, or "service not resolved" failures in production.
+
+### The principle: the fastest IoC is no IoC
+
+At startup Wolverine inspects every service registration and generates adapter code per handler that calls constructors directly rather than resolving through `IServiceProvider`. Singletons are captured once and inlined on the adapter class. Scoped and transient services with public constructors get `new` calls generated into the handler pipeline. Disposable services get `using` / `await using` statements generated automatically.
+
+**Practical consequence:** a handler with `IDocumentSession` and `ILogger` parameters produces generated C# that looks roughly like `new LightweightSession(...)` and a captured `ILogger` field on the adapter — no `serviceProvider.GetRequiredService<T>()` call at runtime. Allocation pressure is minimal, and generated stack traces on exceptions stay short and readable.
+
+### Prefer concrete-type registrations over lambda factories
+
+The registration shape determines whether Wolverine can generate a direct constructor call or has to fall back to runtime service location via `IServiceScopeFactory`. Runtime service location is always a performance regression.
+
+```csharp
+// ✅ GOOD — Wolverine generates a direct `new OrderRepository(...)` call
+services.AddScoped<IOrderRepository, OrderRepository>();
+
+// ❌ FORCES SERVICE LOCATION — Wolverine cannot see through the lambda
+services.AddScoped<IOrderRepository>(sp =>
+    new OrderRepository(sp.GetRequiredService<IDocumentSession>()));
+```
+
+The lambda form is sometimes unavoidable (Refit proxies, `IHttpClientFactory`-backed clients, factory-only third-party registrations). For those, see the escape hatch below.
+
+### `ServiceLocationPolicy` — three modes
+
+Control how Wolverine treats service-location fallbacks:
+
+```csharp
+opts.ServiceLocationPolicy = ServiceLocationPolicy.AllowedButWarn;   // default — log warning
+opts.ServiceLocationPolicy = ServiceLocationPolicy.AlwaysAllowed;    // silent fallback
+opts.ServiceLocationPolicy = ServiceLocationPolicy.NotAllowed;       // throws at host startup
+```
+
+**CritterBids recommendation:** keep the default `AllowedButWarn` in development (fallbacks visible in the log but don't block startup), and consider `NotAllowed` in CI to catch regressions before deploy. Production posture is a judgment call — `NotAllowed` fails hard but gives you maximum information if a reg regresses.
+
+### Opt-in escape hatch for unavoidable service location
+
+When a specific service cannot be registered as a concrete type (Refit proxy, dynamic decorator, factory-only registration), allow-list it so the warning stops firing but the policy remains active for other services:
+
+```csharp
+opts.CodeGeneration.AlwaysUseServiceLocationFor<IRefitClient>();
+```
+
+This is the correct escape hatch — don't suppress the warning by flipping the policy to `AlwaysAllowed` globally.
+
+### Pre-generate code for production
+
+By default Wolverine generates handler adapter code at host startup (`TypeLoadMode.Dynamic`). That's fine for development but adds startup latency in production proportional to the handler count. Pre-generate for production:
+
+```csharp
+// In Program.cs, before UseWolverine(...)
+opts.Services.CritterStackDefaults(x =>
+{
+    x.Development.GeneratedCodeMode = TypeLoadMode.Dynamic;
+    x.Production.GeneratedCodeMode = TypeLoadMode.Static;
+    x.Production.AssertAllPreGeneratedTypesExist = true;   // fail fast if a type is missing at startup
+});
+```
+
+Write the generated code to disk as part of the build:
+
+```bash
+dotnet run --project src/CritterBids.Api -- codegen write
+```
+
+The generated files land in `src/CritterBids.Api/Internal/Generated/WolverineHandlers/`. Commit them to source control, or — better — regenerate them in CI before the Docker build step, since they're dependent on the current handler set and drift silently when handlers change.
+
+**`AssertAllPreGeneratedTypesExist = true` is the safety net:** if a handler shipped without its generated adapter on disk, host startup fails immediately rather than falling back to dynamic generation and masking the problem.
+
+### `ILogger` over `ILogger<T>`
+
+Inject `ILogger` (not `ILogger<T>`) in Wolverine handlers. Wolverine already tags log output with the handler type context, so the generic variant is redundant noise.
+
+```csharp
+// ✅ GOOD
+public static void Handle(PlaceBid cmd, IDocumentSession session, ILogger logger)
+
+// ❌ Redundant — Wolverine has already captured the handler type
+public static void Handle(PlaceBid cmd, IDocumentSession session, ILogger<PlaceBidHandler> logger)
+```
+
+### Diagnosing service-location fallbacks
+
+```bash
+# Preview generated adapter code. Look for IServiceScopeFactory usage — that's service location.
+dotnet run --project src/CritterBids.Api -- wolverine-diagnostics codegen-preview --message PlaceBid
+
+# Full diagnostic report
+dotnet run --project src/CritterBids.Api -- describe
+```
+
+If the generated code for a handler shows `IServiceScopeFactory` where you expected a direct constructor call, check the registration — it's almost always a lambda factory or an internal type that Wolverine couldn't see through.
 
 ---
 
@@ -893,6 +1226,63 @@ With this rule, the flow completes: `PublishAsync` → `PersistOrSendAsync` → 
 `Program.cs`, not in the test fixture. Future slice prompts that introduce a new integration event type must
 include `Program.cs` in the allowed-file set, or require the routing rule to be pre-configured in a
 scaffolding session. See `docs/skills/critter-stack-testing-patterns.md` for the corresponding test prerequisite note.
+
+### 15. ❌ Lambda Factory Registrations When a Concrete Type Would Work
+
+The registration shape determines whether Wolverine's code generation can emit a direct constructor call or must fall back to runtime service location. Lambda factories force service location, which allocates a scoped container per message and prevents pipeline optimisation.
+
+```csharp
+// ❌ WRONG — opaque to codegen; forces IServiceScopeFactory at runtime
+services.AddScoped<IOrderRepository>(sp =>
+    new OrderRepository(sp.GetRequiredService<IDocumentSession>()));
+
+// ✅ CORRECT — Wolverine generates a direct `new OrderRepository(...)` call
+services.AddScoped<IOrderRepository, OrderRepository>();
+```
+
+**When the lambda form is unavoidable** (Refit proxies, `IHttpClientFactory`-backed clients, decorators), allow-list the specific type:
+
+```csharp
+opts.CodeGeneration.AlwaysUseServiceLocationFor<IRefitClient>();
+```
+
+Do not suppress the warning globally by flipping `ServiceLocationPolicy` to `AlwaysAllowed` — that hides future regressions. See `IoC and Service Optimization` above.
+
+### 16. ❌ `bus.InvokeAsync()` for Fire-and-Forget Work
+
+`InvokeAsync` executes a handler **synchronously** and blocks the caller until completion. It's for request/reply and local in-process command dispatch. Using it for fire-and-forget work ("publish the event, don't wait") blocks an HTTP or handler thread on work that belongs on a queue.
+
+```csharp
+// ❌ WRONG — HTTP thread blocks until SendWelcomeEmail handler completes
+[WolverinePost("/api/participants/register")]
+public static async Task<IResult> Register(RegisterBidder cmd, IMessageBus bus)
+{
+    // ... create participant ...
+    await bus.InvokeAsync(new SendWelcomeEmail(cmd.BidderId));   // sync wait on email send
+    return Results.Ok();
+}
+
+// ✅ CORRECT — cascading return value, enrolled in outbox, non-blocking
+[WolverinePost("/api/participants/register")]
+public static (IResult, ParticipantRegistered, OutgoingMessages) Register(RegisterBidder cmd, ...)
+{
+    // ... create participant ...
+    var outgoing = new OutgoingMessages();
+    outgoing.Add(new SendWelcomeEmail(cmd.BidderId));   // queued, not awaited
+    return (Results.Ok(), new ParticipantRegistered(cmd.BidderId), outgoing);
+}
+```
+
+**Quick reference:**
+
+| Caller intent | Use |
+|---|---|
+| Caller needs the handler's result | `InvokeAsync<T>` — request/reply, synchronous |
+| Caller needs to know the handler succeeded | `InvokeAsync` (no generic) — sync, no return |
+| Caller publishes and moves on | Cascading return value OR `bus.PublishAsync` — async, outboxed |
+| Caller is inside an HTTP endpoint | Always prefer the cascading return value (participates in the transactional outbox) |
+
+`bus.ScheduleAsync` remains the correct tool for delayed delivery — it is neither sync nor outbox-bypassing in the problematic way. See `wolverine-sagas.md` for scheduling patterns.
 
 ---
 

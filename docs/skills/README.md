@@ -20,7 +20,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Wolverine message handlers | `wolverine-message-handlers.md` | ✅ Complete | Extracted from CritterSupply + M2 (routing rule AP#14) |
 | Wolverine sagas | `wolverine-sagas.md` | ✅ Complete | Extracted from CritterSupply |
 | Marten event sourcing | `marten-event-sourcing.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (named stores, perf settings) |
-| Marten named stores (archived) | `marten-named-stores.md` | ⚠️ Archived — superseded by ADR 009 | Named/ancillary store API; not used in CritterBids |
+| Critter Stack ancillary stores | `critter-stack-ancillary-stores.md` | 📚 Reference — not currently used | Rewritten 2026-04-17 from JasperFx ai-skills `marten/advanced/ancillary-stores.md` (replaces archived `marten-named-stores.md`) |
 | Marten projections (EF Core) | `marten-projections.md` | ✅ Complete | New — authored for CritterBids |
 | Marten querying | `marten-querying.md` | ✅ Complete | Authored from Marten docs + Jeremy Miller's blog |
 | Polecat event sourcing (archived) | `polecat-event-sourcing.md` | ⚠️ Archived — inactive (ADR 011) | All BCs migrated to Marten/PostgreSQL; Polecat patterns remain valid reference for future Polecat-showcase work |
@@ -38,8 +38,10 @@ Skills are living documents. When a new pattern is established or an existing on
 
 **Status key:**
 - ✅ Complete and ready to use
+- 📚 Reference — documents a capability CritterBids does not currently use; consult when the capability becomes relevant
 - 🟡 Placeholder — useful stub exists, fill in during first real use
 - 🔴 Not yet written — create when first needed
+- ⚠️ Archived — superseded; retained only if historical context matters (prefer deletion + rename)
 
 ---
 
@@ -134,3 +136,10 @@ The gap analysis was last reviewed 2026-04-14 as part of a post-M2-S2 skills pas
 - `marten-named-stores.md` archived (superseded by ADR 009 — shared primary store)
 - Removed Anti-Pattern #15 from `wolverine-message-handlers.md` (constraint no longer exists)
 - Updated cross-BC handler isolation section in `critter-stack-testing-patterns.md` (rationale updated: Marten not configured, not named store absent)
+
+A subsequent refresh on 2026-04-17 (Wave 1 of a multi-wave cross-reference against the JasperFx ai-skills repo) applied:
+- **Renamed and rewrote** the archived `marten-named-stores.md` as `critter-stack-ancillary-stores.md` (status: 📚 Reference). The new file covers current ancillary-store capability on top of a primary store (Marten + Polecat), reflects API capability added since ADR 008 (handlers can use `[MartenStore]` + `IDocumentSession` injection + `AutoApplyTransactions` when a primary store is registered), and preserves the ADR 008 → ADR 009 historical framing.
+- Extended `projection-side-effects-for-broadcast-live-views.md` with: a `slice`/`operations` API reference table, a "Writing Auxiliary Documents" section with `ops.LoadAsync` + `ops.Store` example, a fourth testing layer using a `StubEventSlice<T>` test double for fast-feedback coverage, and three new pitfalls (null-dereference on `Snapshot`, external I/O in the hook, infinite `AppendEvent` loop).
+- Deleted the archived `marten-named-stores.md` (rename-by-delete).
+
+Waves 2–6 are pending and will cover: handler surface expansion (`wolverine-message-handlers.md`), modular monolith + messaging + SignalR refresh, event sourcing deep material (including DCB), testing-skills refactor (split from omnibus file), and a refreshed gap analysis dated 2026-04-17.
