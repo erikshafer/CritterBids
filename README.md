@@ -13,7 +13,7 @@
 
 ## What Is CritterBids?
 
-CritterBids is a working, demonstrable auction platform built on **Wolverine** (messaging and command handling), **Marten** (event sourcing + document storage over PostgreSQL), and **Polecat** (event sourcing + document storage over SQL Server) — JasperFx's suite of .NET libraries collectively known as the [Critter Stack](https://wolverine.netlify.app/).
+CritterBids is a working, demonstrable auction platform built on the [Critter Stack](https://wolverine.netlify.app/) — JasperFx's suite of .NET libraries including **Wolverine** (messaging and command handling), **Marten** (event sourcing + document storage over PostgreSQL), and **Polecat** (the equivalent over SQL Server). MVP runs on PostgreSQL via Marten across all eight BCs; a post-MVP swap demonstrates the Critter Stack's storage-agnostic programming model (ADR 011).
 
 CritterBids is one of several open-source reference architectures showcasing the Critter Stack across different domains. The auction domain was chosen because competitive real-time bidding surfaces patterns — contention, time pressure, multi-audience projections — that simpler domains don't.
 
@@ -31,7 +31,7 @@ Auctions are a natural fit for event-driven architecture. The core mechanic — 
 | **Sagas and process managers** | Auction closing, proxy bid manager, post-sale obligations, and anti-snipe extended bidding are four distinct saga shapes |
 | **Projections by audience** | Sellers, participants, ops staff, and finance all need radically different views of the same event streams |
 | **Real-time transport** | SignalR is load-bearing — the live bid feed is the participant experience, not a demo flourish |
-| **Mixed storage engines** | PostgreSQL via Marten for auction-core BCs; SQL Server via Polecat for operations and finance |
+| **Storage agnosticism** | All eight BCs run on PostgreSQL via Marten in MVP; the same patterns run against Polecat on SQL Server, preserved as a post-MVP swap demo |
 | **Transport agnosticism** | RabbitMQ for MVP, then a live swap to Azure Service Bus — one config change, no BC-level refactor |
 
 Any audience can follow a live bidding session, whether or not they know what an event store is. That makes it an unusually effective teaching vehicle.
@@ -58,11 +58,11 @@ This gives the boundary enforcement of microservices without the distributed sys
 | **Listings** | PostgreSQL / Marten | Multi-stream projections, full-text search, watchlist |
 | **Obligations** | PostgreSQL / Marten | Saga, cancellable scheduled messages, escalation chain |
 | **Relay** | PostgreSQL / Marten | Wolverine handlers, SignalR push to participants |
-| **Participants** | SQL Server / Polecat | Event-sourced aggregate, anonymous session management |
-| **Settlement** | SQL Server / Polecat | Saga, financial event stream, reserve evaluation |
-| **Operations** | SQL Server / Polecat | Cross-BC projections, SignalR ops dashboard |
+| **Participants** | PostgreSQL / Marten | Event-sourced aggregate, anonymous session management |
+| **Settlement** | PostgreSQL / Marten | Saga, financial event stream, reserve evaluation |
+| **Operations** | PostgreSQL / Marten | Cross-BC projections, SignalR ops dashboard |
 
-The SQL Server BCs reflect a real organizational pattern: finance and ops data belongs where BI tooling and compliance teams can query it directly, without an ETL layer.
+All eight BCs run on PostgreSQL via Marten for MVP (ADR 011 — All-Marten Pivot). The original design placed Participants, Settlement, and Operations on SQL Server via Polecat to give BI tooling and compliance teams direct query access without an ETL layer — that rationale is preserved as a post-MVP stretch goal, where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
 
 ---
 
@@ -73,7 +73,6 @@ The SQL Server BCs reflect a real organizational pattern: finance and ops data b
 | Language | C# 14 / .NET 10 |
 | Message handling | [Wolverine 5+](https://wolverine.netlify.app/) |
 | Event sourcing (PostgreSQL) | [Marten 8+](https://martendb.io/) |
-| Event sourcing (SQL Server) | [Polecat 2+](https://polecat.netlify.app/) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
@@ -123,13 +122,13 @@ This scenario directly shapes architectural decisions. Anonymous frictionless on
 
 ### Run Locally
 
-CritterBids uses [.NET Aspire](https://learn.microsoft.com/en-us/dotnet/aspire/get-started/aspire-overview) for local orchestration. A single command starts PostgreSQL, SQL Server, RabbitMQ, and the API host — no separate `docker compose up` needed.
+CritterBids uses [.NET Aspire](https://learn.microsoft.com/en-us/dotnet/aspire/get-started/aspire-overview) for local orchestration. A single command starts PostgreSQL, RabbitMQ, and the API host — no separate `docker compose up` needed.
 
 ```bash
 dotnet run --project src/CritterBids.AppHost --launch-profile http
 ```
 
-The Aspire dashboard opens at `http://localhost:15237`. It shows live service health, structured logs, and distributed traces for all running resources. In Docker Desktop, the three infrastructure containers (PostgreSQL, SQL Server, RabbitMQ) appear grouped under **critterbids** in the Containers view.
+The Aspire dashboard opens at `http://localhost:15237`. It shows live service health, structured logs, and distributed traces for all running resources. In Docker Desktop, the two infrastructure containers (PostgreSQL, RabbitMQ) appear grouped under **critterbids** in the Containers view.
 
 #### HTTPS dashboard (optional)
 
@@ -203,7 +202,7 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 **Post-MVP milestones (planned):**
 
 - `M-transport-swap` — Live swap from RabbitMQ to Azure Service Bus (configuration-only change, demonstrable during a conference talk)
-- `M-polecat-marten-swap` — Swap a Polecat BC to Marten, demonstrating JasperFx's storage-agnostic programming model
+- `M-polecat-marten-swap` — Migrate a BC's event store between Marten/PostgreSQL and Polecat/SQL Server, demonstrating the Critter Stack's storage-agnostic programming model
 - Real payment processor integration (same saga shape, real Stripe wiring)
 - Demo reset command cascade
 - Feedback and reputation system
