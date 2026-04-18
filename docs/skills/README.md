@@ -29,7 +29,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Integration messaging | `integration-messaging.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (Aspire RabbitMQ, Separated mode) |
 | SignalR real-time | `wolverine-signalr.md` | ✅ Complete | Extracted from CritterSupply |
 | Projection side effects for broadcast live views | `projection-side-effects-for-broadcast-live-views.md` | ✅ Complete | New — authored M2 from vision doc + Jeremy clarification |
-| Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (named store fixtures, cross-BC isolation) |
+| Testing patterns | `critter-stack-testing-patterns.md` | ✅ Complete | Extracted from CritterSupply + updated M2 (named store fixtures, cross-BC isolation) + Wave 5 2026-04-18 (restructured into Fundamentals/Integration/Advanced parts; added `PlayScheduledMessagesAsync`, `WaitForConditionAsync`, `IInitialData`, tracked session configuration, `codegen-preview` debugging, parallelization strategy, advanced Testcontainers patterns; Polecat section reframed as 📚 Archived) |
 | C# coding standards | `csharp-coding-standards.md` | ✅ Complete | Extracted from CritterSupply |
 | Event Modeling workshop | `event-modeling/SKILL.md` | ✅ Complete | Shared |
 | Adding a BC module | `adding-bc-module.md` | ✅ Complete | New — authored M2 pre-S2 from ADR 008 + JasperFx ai-skills |
@@ -57,7 +57,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Scheduled messages / timeouts | `wolverine-sagas.md` | — |
 | Event-sourced aggregate (Marten) | `marten-event-sourcing.md` | `csharp-coding-standards.md` |
 | Marten native projection | `marten-event-sourcing.md` | — |
-| EF Core projection (Marten or Polecat) | `marten-projections.md` | `polecat-event-sourcing.md` |
+| EF Core projection (Marten) | `marten-projections.md` | `marten-event-sourcing.md` |
 | Read model query (LINQ / compiled / batched) | `marten-querying.md` | `csharp-coding-standards.md` |
 | JSON streaming to HTTP response | `marten-querying.md` | `wolverine-message-handlers.md` |
 | Raw SQL / advanced SQL query | `marten-querying.md` | — |
@@ -76,7 +76,7 @@ Skills are living documents. When a new pattern is established or an existing on
 | Unit test (pure handler logic) | `critter-stack-testing-patterns.md` | — |
 | Marten BC test fixture | `critter-stack-testing-patterns.md` | `adding-bc-module.md` |
 | **Cross-BC handler isolation** | **`critter-stack-testing-patterns.md`** | — |
-| Polecat BC test fixture | `critter-stack-testing-patterns.md` | — |
+| Polecat BC test fixture (📚 archived — see ADR 011) | `critter-stack-testing-patterns.md` | `polecat-event-sourcing.md` |
 | Saga test | `wolverine-sagas.md` | `critter-stack-testing-patterns.md` |
 | EF Core projection test | `marten-projections.md` | `critter-stack-testing-patterns.md` |
 | Compiled query correctness | `marten-querying.md` | `critter-stack-testing-patterns.md` |
@@ -149,4 +149,12 @@ A fourth refresh on 2026-04-18 (Wave 4 of the cross-reference against the Jasper
 - **Reframed `polecat-event-sourcing.md`** from "✅ Complete" (M1 findings) to "📚 Reference — not currently used" to match ADR 011. Status banner rewritten; technical content preserved intact (accurate for Polecat 2.x, valuable for sibling projects). "Why SQL Server for Certain BCs?" section marked Superseded, retaining the rationale for evaluators.
 - **New JasperFx open-question (#2):** ai-skills' `marten/advanced/dynamic-consistency-boundary.md` claims "DCB is currently implemented in Polecat" — source-verified to be false (Marten's DCB implementation is production, with full `MartenTests/Dcb/` coverage). Logged in `docs/jasperfx-open-questions.md` for Jeremy Miller's next cycle. Severity low for CritterBids (our skills are already correct); higher for anyone treating ai-skills as primary reference.
 
-Waves 5–6 remain: testing-skills refactor (split from omnibus file) and a refreshed gap analysis dated 2026-04-18.
+A fifth refresh on 2026-04-18 (Wave 5 of the cross-reference against the JasperFx ai-skills repo) applied:
+- **Restructured `critter-stack-testing-patterns.md`** (40.8 KB → 66 KB, +25 KB) into three explicit parts: **Part I — Fundamentals** (philosophy, North Star lifecycle, test authentication, test isolation, unit-testing pure functions, validators, time-dependent handlers, failure paths, Shouldly, test organization), **Part II — Integration Testing** (Marten BC TestFixture pattern, event-sourcing race conditions, integration test patterns, fixture helper methods, tracked session configuration, scheduled messages, async projections, `IInitialData`, debugging with `codegen-preview`), and **Part III — Advanced Scenarios** (cross-BC handler isolation, parallelization strategy, advanced Testcontainers patterns, Polecat fixture as archived). The three-part structure keeps the single-file entry point while making the progression explicit; new contributors read Part I, fixture authors read Part II, multi-BC and parallelization cases live in Part III.
+- **New Part II content drawn from ai-skills:** `Tracked Session Configuration` (Timeout, IncludeExternalTransports, AlsoTrack, DoNotAssertOnExceptionsDetected with CritterBids posture); `Testing Scheduled Messages` with `PlayScheduledMessagesAsync` as the canonical saga-timeout testing pattern; `Testing Async Projections` with both `WaitForNonStaleProjectionDataAsync` and `WaitForConditionAsync` (the proper replacement for `Task.Delay`); `Seeding with IInitialData` with registration and reseed-helper patterns (not currently used in CritterBids, documented for the first cross-cutting reference-data need); `Debugging Integration Tests` with `codegen-preview`, `describe-routing`, and `describe-resiliency` CLI commands; void-endpoint 204 status explicitly called out in the integration test patterns.
+- **New Part III content:** `Test Parallelization Strategy` with the unique-IDs-vs-sequential trade-off, collection fixture patterns, `[assembly: CollectionBehavior(DisableTestParallelization = true)]` as the baseline safety net, parallelization anti-patterns (hard-coded IDs, mid-suite cleanup, concurrent tracked sessions); `Advanced Testcontainers Patterns` with parallel container startup via `Task.WhenAll`, `PullPolicy.Missing` for CI, dynamic database per fixture (shared container), RabbitMQ with dynamic virtual hosts, and a trade-offs table covering five isolation approaches.
+- **Polecat fixture section reframed** as `📚 Archived` with the same framing used in Wave 4 for `polecat-event-sourcing.md` and `polecat-event-sourcing.md`. Technical content preserved intact (accurate for Polecat 2.x, valuable for sibling projects).
+- **All existing content preserved.** Cross-BC handler isolation, `ConfigureAppConfiguration` caveat, `AutoApplyTransactions` gotcha, `ProblemDetails` in non-HTTP handlers, `TestAuthHandler` pattern, `TrackedHttpCall` helper, test organization tree — all kept verbatim where nothing needed to change, moved into the appropriate Part for findability.
+- **External references stable.** Keeping the single-file structure means the ≈20 inbound references from other skill files and CLAUDE.md continue to resolve. Deep links to specific sections (e.g., `#cross-bc-handler-isolation-in-test-fixtures`) retain their anchors.
+
+Wave 6 remains: a refreshed gap analysis dated 2026-04-18 summarizing all five wave outcomes.
