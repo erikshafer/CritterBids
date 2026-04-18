@@ -53,7 +53,7 @@ The Auctions BC specifically stays on Marten because the DCB APIs (`EventTagQuer
 
 ## Stretch Goal
 
-A post-MVP milestone (**M-polecat-marten-swap**) will demonstrate swapping a Polecat BC to Marten — showing that the JasperFx abstraction makes storage engine swaps a registration-level concern, not a business logic refactor.
+A post-MVP milestone (**M-storage-swap**) will demonstrate swapping a BC's event store between Marten and Polecat — showing that the JasperFx abstraction makes storage engine swaps a registration-level concern, not a business logic refactor.
 
 ---
 

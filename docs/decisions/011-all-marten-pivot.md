@@ -184,7 +184,7 @@ under the archived status. `docs/skills/README.md` is updated accordingly.
 
 ### Stretch goal preserved
 
-ADR 003's "Polecat ↔ Marten swap" stretch goal (**M-polecat-marten-swap**) is preserved as a future
+ADR 003's "Polecat ↔ Marten swap" stretch goal (**M-storage-swap**) is preserved as a future
 milestone. The goal was to demonstrate that storage engine swaps are registration-level concerns —
 this ADR is, itself, that demonstration. The swap can be reversed or extended in a future milestone
 if Polecat/SQL Server showcase value becomes a project priority.

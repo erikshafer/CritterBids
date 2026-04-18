@@ -202,7 +202,7 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 **Post-MVP milestones (planned):**
 
 - `M-transport-swap` — Live swap from RabbitMQ to Azure Service Bus (configuration-only change, demonstrable during a conference talk)
-- `M-polecat-marten-swap` — Migrate a BC's event store between Marten/PostgreSQL and Polecat/SQL Server, demonstrating the Critter Stack's storage-agnostic programming model
+- `M-storage-swap` — Migrate a BC's event store between Marten/PostgreSQL and Polecat/SQL Server, demonstrating the Critter Stack's storage-agnostic programming model
 - Real payment processor integration (same saga shape, real Stripe wiring)
 - Demo reset command cascade
 - Feedback and reputation system
