@@ -1,25 +1,592 @@
-# EF Core Projections from Marten Events
+# Marten Projections Reference
 
-Patterns for using Entity Framework Core as a projection target for Marten's event store — bridging event sourcing with relational read models.
+Complete reference for projection patterns available on Marten — both **native Marten projections** (JSONB documents in Postgres, projection daemon processes events from `mt_events` into `mt_doc_*` tables) and **EF Core projections** (relational tables via `Marten.EntityFrameworkCore`, for BI tooling and complex relational queries).
 
-> **CritterBids status:** Not yet implemented. This skill was authored ahead of first use. Update it with concrete findings when the first EF Core projection lands.
+> **Scope note.** The native and EF Core halves of this file both live under the same `marten-projections.md` name today. That's deliberate — both are Marten projection mechanisms, just with different storage backends. If the file grows past ~35 KB or either half starts to dominate maintenance churn, a split into `marten-native-projections.md` + `marten-efcore-projections.md` is a reasonable future refactor. Not today.
+
+> **CritterBids status:** EF Core projections are not yet implemented; native Marten projections (inline snapshots, multi-stream) are in active use. Update the corresponding section with concrete findings when the first EF Core projection lands.
 
 ---
 
 ## Table of Contents
 
-1. [When to Use EF Core Projections](#when-to-use-ef-core-projections)
-2. [The Three Projection Types](#the-three-projection-types)
-3. [Setup](#setup)
-4. [DbContext Configuration](#dbcontext-configuration)
-5. [Single Stream Projections](#single-stream-projections)
-6. [Multi-Stream Projections](#multi-stream-projections)
-7. [Event Projections](#event-projections)
-8. [Registration](#registration)
-9. [Testing](#testing)
-10. [Pitfalls](#pitfalls)
-11. [Lessons Learned](#lessons-learned)
-12. [How It Works Under the Hood](#how-it-works-under-the-hood)
+### Native Marten Projections (JSONB documents)
+
+1. [Single-Stream Projections](#single-stream-projections)
+2. [Multi-Stream Projection Routing Patterns](#multi-stream-projection-routing-patterns)
+3. [Composite Projections](#composite-projections)
+4. [Event Enrichment](#event-enrichment)
+5. [Flat Table Projections](#flat-table-projections)
+6. [Decision Guide — Which Projection Type?](#decision-guide--which-projection-type)
+
+### EF Core Projections (relational tables)
+
+7. [When to Use EF Core Projections](#when-to-use-ef-core-projections)
+8. [The Three EF Core Projection Types](#the-three-ef-core-projection-types)
+9. [Setup](#setup)
+10. [DbContext Configuration](#dbcontext-configuration)
+11. [Single-Stream (EF Core)](#single-stream-ef-core)
+12. [Multi-Stream (EF Core)](#multi-stream-ef-core)
+13. [Event Projections (EF Core)](#event-projections-ef-core)
+14. [EF Core Registration](#ef-core-registration)
+15. [Testing](#testing)
+16. [Pitfalls](#pitfalls)
+17. [Lessons Learned](#lessons-learned)
+18. [How It Works Under the Hood](#how-it-works-under-the-hood)
+
+---
+
+# Native Marten Projections
+
+Native Marten projections store projected documents as JSONB in PostgreSQL. The event-sourcing core (`marten-event-sourcing.md` §5) covers single-stream snapshots, inline vs async lifecycles, the `Apply` / `Evolve` / `DetermineAction` convention methods, and performance knobs (`IncludeType`, `CacheLimitPerTenant`, `BatchSize`). This file picks up from there with the **routing and composition** patterns: how to shape projections when events come from many streams, how to chain projections in stages, and how to batch reference-data lookups without N+1 queries.
+
+---
+
+## Single-Stream Projections
+
+Covered in full in `marten-event-sourcing.md` §5 (inline snapshots via `opts.Projections.Snapshot<T>`, separate `SingleStreamProjection<T, TId>` classes, `Evolve`, `DetermineAction`, `RebuildSingleStreamAsync`). This section is the pointer — go there for single-stream content.
+
+Key callouts for cross-referencing:
+
+- `opts.Projections.Snapshot<Listing>(SnapshotLifecycle.Inline)` is the CritterBids default for aggregates that need LINQ-queryable snapshots
+- `session.Events.FetchLatest<T>(streamId)` is the preferred read path; `AggregateStreamAsync` is for time travel only
+- Missing `Apply` methods for events in the stream return `null` silently — see Anti-Pattern #9 in `marten-event-sourcing.md`
+
+---
+
+## Multi-Stream Projection Routing Patterns
+
+Multi-stream projections produce read models that aggregate events from multiple source streams. The defining feature is a routing rule — `Identity<TEvent>(x => x.SomeId)` — that tells Marten which document each event belongs to.
+
+**Default lifecycle is async.** Multi-stream projections default to the async daemon because inline multi-stream can create contention under heavy load (multiple streams racing to update the same projection document in the same transaction).
+
+### Basic routing: one event, one document
+
+```csharp
+public sealed class SellerActivityProjection : MultiStreamProjection<SellerActivity, Guid>
+{
+    public SellerActivityProjection()
+    {
+        // Route events to the document keyed by SellerId
+        Identity<ListingPublished>(x => x.SellerId);
+        Identity<ListingSold>(x => x.SellerId);
+        Identity<ListingWithdrawn>(x => x.SellerId);
+    }
+
+    public SellerActivity Create(ListingPublished e)
+        => new SellerActivity { Id = e.SellerId, ListingCount = 1 };
+
+    public void Apply(ListingPublished e, SellerActivity view) => view.ListingCount++;
+    public void Apply(ListingSold e, SellerActivity view) => view.SoldCount++;
+    public void Apply(ListingWithdrawn e, SellerActivity view) => view.WithdrawnCount++;
+}
+```
+
+### Common-interface routing
+
+When many event types share a routing key, route by interface instead of enumerating each event:
+
+```csharp
+public interface IListingEvent { Guid ListingId { get; } }
+
+public sealed record ListingPublished(Guid ListingId, Guid SellerId, ...) : IListingEvent;
+public sealed record BidPlaced(Guid ListingId, Guid BidderId, decimal Amount) : IListingEvent;
+public sealed record BiddingClosed(Guid ListingId, ...) : IListingEvent;
+
+public sealed class ListingAuditProjection : MultiStreamProjection<ListingAudit, Guid>
+{
+    public ListingAuditProjection()
+    {
+        // Applies to every event implementing IListingEvent
+        Identity<IListingEvent>(x => x.ListingId);
+    }
+}
+```
+
+### Fan-out: one event, many documents
+
+`Identities<T>` (plural) routes a single event to multiple documents. Useful when an event carries a collection of entity IDs and each needs its own projection update:
+
+```csharp
+public sealed record FeaturedListingsPublished(IReadOnlyList<Guid> ListingIds, DateTimeOffset FeaturedAt);
+
+public sealed class ListingFeatureProjection : MultiStreamProjection<ListingFeatureStatus, Guid>
+{
+    public ListingFeatureProjection()
+    {
+        // Each ListingId in the collection gets its own document updated
+        Identities<IEvent<FeaturedListingsPublished>>(x => x.Data.ListingIds);
+    }
+
+    public void Apply(FeaturedListingsPublished e, ListingFeatureStatus view)
+    {
+        view.IsFeatured = true;
+        view.FeaturedAt = e.FeaturedAt;
+    }
+}
+```
+
+### Time-based segmentation
+
+Multi-stream identity rules can use event timestamps (via `IEvent<T>`) to segment a single stream into time-bucketed documents. Good fit for daily/monthly operations dashboards:
+
+```csharp
+public sealed class DailyBidActivity
+{
+    public string Id { get; set; } = "";  // composite: "{listingId}:{yyyy-MM-dd}"
+    public Guid ListingId { get; set; }
+    public DateOnly Day { get; set; }
+    public int BidCount { get; set; }
+    public decimal TotalBidVolume { get; set; }
+    public decimal HighestBid { get; set; }
+}
+
+public sealed class DailyBidActivityProjection : MultiStreamProjection<DailyBidActivity, string>
+{
+    public DailyBidActivityProjection()
+    {
+        // Compose document ID from stream ID + calendar date
+        Identity<IEvent<BidPlaced>>(e =>
+            $"{e.StreamId}:{e.Timestamp:yyyy-MM-dd}");
+    }
+
+    public DailyBidActivity Create(IEvent<BidPlaced> e) => new()
+    {
+        Id = $"{e.StreamId}:{e.Timestamp:yyyy-MM-dd}",
+        ListingId = e.StreamId,
+        Day = DateOnly.FromDateTime(e.Timestamp.Date),
+        BidCount = 1,
+        TotalBidVolume = e.Data.Amount,
+        HighestBid = e.Data.Amount
+    };
+
+    public void Apply(IEvent<BidPlaced> e, DailyBidActivity view)
+    {
+        view.BidCount++;
+        view.TotalBidVolume += e.Data.Amount;
+        if (e.Data.Amount > view.HighestBid)
+            view.HighestBid = e.Data.Amount;
+    }
+}
+```
+
+The same listing stream now produces a separate document per day of bidding activity — queryable by listing, by day, or both.
+
+### Fan-out with `FanOut<TParent, TChild>()`
+
+When an event carries a collection that should be processed as individual child events:
+
+```csharp
+public sealed class DailyOpsBoardProjection : MultiStreamProjection<DailyOpsBoard, DateOnly>
+{
+    public DailyOpsBoardProjection()
+    {
+        Identity<IEvent<BatchSettlementProcessed>>(e =>
+            DateOnly.FromDateTime(e.Timestamp.Date));
+
+        // Each SettlementLine in the event is processed as its own event
+        FanOut<BatchSettlementProcessed, SettlementLine>(x => x.Lines);
+    }
+
+    public void Apply(DailyOpsBoard view, SettlementLine line)
+    {
+        view.SettlementCount++;
+        view.SettlementTotal += line.Amount;
+    }
+}
+```
+
+### Custom groupers (DB lookups for routing)
+
+When the aggregate ID for routing isn't on the event itself and must be looked up, implement `IAggregateGrouper<TId>`:
+
+```csharp
+public class ListingToSellerGrouper : IAggregateGrouper<Guid>
+{
+    public async Task Group(
+        IQuerySession session,
+        IEnumerable<IEvent> events,
+        IEventGrouping<Guid> grouping)
+    {
+        var bidEvents = events.OfType<IEvent<BidPlaced>>().ToList();
+        if (!bidEvents.Any()) return;
+
+        // Look up seller IDs for the listings in this event batch
+        var listingIds = bidEvents.Select(e => e.Data.ListingId).Distinct().ToList();
+        var sellerLookup = await session.Query<Listing>()
+            .Where(x => listingIds.Contains(x.Id))
+            .Select(x => new { x.Id, x.SellerId })
+            .ToListAsync();
+
+        var streamIds = sellerLookup
+            .GroupBy(x => x.Id, x => x.SellerId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        grouping.AddEvents<BidPlaced>(e => streamIds[e.ListingId], bidEvents);
+    }
+}
+```
+
+**Important constraint:** custom groupers **cannot read the projected document itself** — grouping and document building run in parallel, so reads are stale. If a grouper needs the current projection state for routing, it's a sign the architecture is wrong — consider an auxiliary inline projection the grouper can safely read, or restructure the event model.
+
+### `RollUpByTenant()` — per-tenant summary
+
+For projections that aggregate all events within a tenant into one summary document:
+
+```csharp
+public class TenantSummaryProjection : MultiStreamProjection<TenantSummary, string>
+{
+    public TenantSummaryProjection()
+    {
+        RollUpByTenant();
+    }
+
+    public void Apply(TenantSummary view, ListingPublished e) => view.TotalListings++;
+    public void Apply(TenantSummary view, ListingSold e) => view.TotalSold++;
+}
+```
+
+Requires `opts.Events.EnableGlobalProjectionsForConjoinedTenancy = true`. CritterBids is single-tenant so this recipe isn't currently in use, but it's the first pattern to reach for if a multi-tenant variant is ever introduced.
+
+---
+
+## Composite Projections
+
+Composite projections group multiple projections into ordered stages. Stage 1 projections complete before stage 2 begins, letting downstream projections consume the **outputs** of upstream projections via **synthetic events**.
+
+**Composite projections always run async** — they require the projection daemon. The benefit is single-read efficiency: the event batch is read once and shared across all stages.
+
+### Configuration
+
+```csharp
+opts.Projections.CompositeProjectionFor("AuctionDashboard", projection =>
+{
+    // Stage 1 — base projections
+    projection.Add<ListingStatusProjection>();
+    projection.Add<BidActivityProjection>();
+    projection.Snapshot<Listing>();
+
+    // Stage 2 — depends on stage 1 outputs
+    projection.Add<AuctionBoardSummaryProjection>(2);
+    projection.Add<SellerDashboardProjection>(2);
+});
+```
+
+The `(2)` second argument declares the stage. Anything without a stage number defaults to stage 1.
+
+### Synthetic events
+
+When a stage N projection creates, updates, or deletes a document, the composite emits synthetic events that stage N+1 projections can handle:
+
+| Synthetic event | When emitted | Payload |
+|---|---|---|
+| `Updated<T>` | Upstream projection created or updated a document | Full document snapshot |
+| `ProjectionDeleted<TDoc, TId>` | Upstream projection deleted a document | Document type and ID |
+| `References<T>` | A projection attached a reference via `slice.Reference()` | The reference document |
+
+Downstream projections handle these synthetic events with the same `Apply` / `Identity` convention as any other event:
+
+```csharp
+public class AuctionBoardSummaryProjection
+    : MultiStreamProjection<AuctionBoardSummary, DateOnly>
+{
+    public AuctionBoardSummaryProjection()
+    {
+        // Route based on the data inside the upstream projection's snapshot
+        Identity<Updated<Listing>>(x =>
+            DateOnly.FromDateTime(x.Document.PublishedAt.Date));
+        Identity<Updated<BidActivity>>(x =>
+            DateOnly.FromDateTime(x.Document.LastBidAt.Date));
+    }
+
+    public void Apply(Updated<Listing> e, AuctionBoardSummary view)
+    {
+        // e.Document is the full Listing snapshot from the upstream projection
+        if (e.Document.Status == ListingStatus.Open)
+            view.OpenListings++;
+    }
+
+    public void Apply(Updated<BidActivity> e, AuctionBoardSummary view)
+    {
+        view.TotalBidVolume += e.Document.TotalVolume;
+    }
+}
+```
+
+The downstream projection doesn't need to re-query `Listing` or `BidActivity` — the composite hands it the snapshots directly.
+
+### Rebuilding
+
+Composites rebuild as a unit — you cannot rebuild one constituent projection within a composite independently:
+
+```csharp
+await daemon.RebuildProjectionAsync("AuctionDashboard", CancellationToken.None);
+```
+
+### When to reach for composite
+
+Composite projections are appropriate when **a projection genuinely needs the output of another projection**. Signs you want one:
+
+- A summary view that combines two or more read models (dashboard over listings + bids + sellers)
+- A derived projection that would otherwise ad-hoc query upstream projections during Apply
+- Multiple related projections for the same domain where single-read efficiency matters
+
+If a projection just needs reference data (user names, product lookups), composite is overkill — use **event enrichment** instead.
+
+---
+
+## Event Enrichment
+
+Event enrichment batches reference-data lookups before projection `Apply` methods run. It replaces the N+1 query pattern of resolving reference data inside `Apply` with a single batched load per daemon batch.
+
+### The N+1 problem
+
+```csharp
+// ❌ WRONG — one LoadAsync per event in every batch
+public async Task Apply(BidPlaced e, IQuerySession session, BidSummary view)
+{
+    var bidder = await session.LoadAsync<Bidder>(e.BidderId);  // N+1 query
+    view.TopBidderName = bidder.DisplayName;
+}
+```
+
+When a daemon batch contains hundreds of `BidPlaced` events, this generates hundreds of individual queries — each adding latency and load.
+
+### `EnrichEventsAsync` — batch-loading pattern
+
+Override `EnrichEventsAsync` on the projection. Marten calls it once per slice group before `Apply` methods run, giving you a single place to batch-load everything the slice needs:
+
+```csharp
+public class BidSummaryProjection : SingleStreamProjection<BidSummary, Guid>
+{
+    public override async Task EnrichEventsAsync(
+        SliceGroup<BidSummary, Guid> group,
+        IQuerySession querySession,
+        CancellationToken cancellation)
+    {
+        // 1. Collect every BidderId across all events in the batch
+        var bidEvents = group.Slices
+            .SelectMany(s => s.Events().OfType<IEvent<BidPlaced>>())
+            .ToArray();
+
+        if (!bidEvents.Any()) return;
+
+        // 2. Single batch query for all of them
+        var bidderIds = bidEvents.Select(e => e.Data.BidderId).Distinct().ToArray();
+        var bidders = await querySession.LoadManyAsync<Bidder>(cancellation, bidderIds);
+        var lookup = bidders.ToDictionary(x => x.Id);
+
+        // 3. Attach resolved data to events
+        foreach (var e in bidEvents)
+        {
+            if (lookup.TryGetValue(e.Data.BidderId, out var bidder))
+                e.Data.ResolvedBidder = bidder;  // requires a settable property on the event
+        }
+    }
+
+    public void Apply(BidPlaced e, BidSummary view)
+    {
+        // No async query needed — enrichment already happened
+        view.TopBidderName = e.ResolvedBidder?.DisplayName ?? "Unknown";
+    }
+}
+```
+
+**One query for the whole batch**, regardless of how many events it contains.
+
+### Declarative enrichment API (Marten 8.18+)
+
+The fluent API is cleaner when you want to replace event data or attach references:
+
+```csharp
+public override async Task EnrichEventsAsync(
+    SliceGroup<BidSummary, Guid> group,
+    IQuerySession querySession,
+    CancellationToken cancellation)
+{
+    await group
+        .EnrichWith<Bidder>()
+        .ForEvent<BidPlaced>()
+        .ForEntityId(e => e.BidderId)
+        .EnrichAsync((slice, e, bidder) =>
+        {
+            // Replace the raw event with an enriched wrapper
+            slice.ReplaceEvent(e, new EnhancedBidPlaced(e.Data.Amount, bidder));
+        });
+}
+```
+
+Key methods:
+
+- `EnrichWith<TReference>()` — declare the reference type
+- `ForEvent<TEvent>()` — which event triggers enrichment
+- `ForEntityId(e => e.PropertyId)` — extract the lookup ID
+- `EnrichAsync((slice, event, reference) => ...)` — what to do with the resolved data
+- `ReplaceEvent(original, replacement)` — swap an event for an enriched version
+- `Reference(doc)` — attach a reference to the slice for downstream consumers
+
+### Important limitation: `FetchLatest` does not run enrichment
+
+`EnrichEventsAsync` runs **only in the async daemon's projection pipeline**. It does **not** fire during `FetchForWriting` or `FetchLatest` live aggregations. Aggregate write models must resolve reference data in the command handler, not lean on projection enrichment.
+
+```csharp
+// ❌ WRONG — enriched data is absent in live aggregation path
+var bidSummary = await session.Events.FetchLatest<BidSummary>(listingId);
+// bidSummary.TopBidderName is empty if it was only set via enrichment
+
+// ✅ CORRECT — resolve reference data in the handler, not in the aggregate
+```
+
+### Business-key resolution (Marten 8.22+)
+
+When the lookup key isn't a document ID but a natural business key, `EnrichUsingEntityQuery` lets you run a custom query per slice:
+
+```csharp
+await group
+    .EnrichWith<Marketplace>()
+    .ForEvent<ListingPublished>()
+    .EnrichUsingEntityQuery<string>(async (slices, events, cache, ct) =>
+    {
+        var marketplaceCodes = events.Select(e => e.Data.MarketplaceCode).Distinct().ToArray();
+        var marketplaces = await querySession.Query<Marketplace>()
+            .Where(m => marketplaceCodes.Contains(m.Code))
+            .ToListAsync(ct);
+        var lookup = marketplaces.ToDictionary(m => m.Code);
+
+        foreach (var slice in slices)
+        foreach (var e in slice.Events().OfType<IEvent<ListingPublished>>())
+            if (lookup.TryGetValue(e.Data.MarketplaceCode, out var m))
+                slice.Reference(m);
+    }, cancellation);
+```
+
+---
+
+## Flat Table Projections
+
+For read models that should land in **SQL-friendly relational tables** rather than JSONB documents. Two shapes: declarative (`FlatTableProjection`) and raw-SQL (`EventProjection`).
+
+### `FlatTableProjection` — declarative upsert-style mapping
+
+Marten generates PostgreSQL upsert statements from a fluent mapping DSL:
+
+```csharp
+public class DailyBidVolumeProjection : FlatTableProjection
+{
+    public DailyBidVolumeProjection() : base("daily_bid_volume", SchemaNameSource.EventSchema)
+    {
+        Table.AddColumn<Guid>("id").AsPrimaryKey();
+
+        Options.TeardownDataOnRebuild = true;
+
+        Project<BidPlaced>(map =>
+        {
+            map.Map(x => x.ListingId);              // → listing_id column
+            map.Map(x => x.Amount, "bid_amount");    // → bid_amount column
+            map.Increment("bid_count");              // bid_count += 1
+            map.Increment(x => x.Amount, "total_volume");  // total_volume += Amount
+            map.SetValue("last_event_type", "BidPlaced");
+        });
+
+        Project<BiddingClosed>(map =>
+        {
+            map.Map(x => x.HammerPrice, "final_price");
+            map.SetValue("status", "closed");
+        });
+
+        Delete<ListingWithdrawn>();  // deletes the row
+    }
+}
+```
+
+**Key capabilities:**
+
+- **Marten manages the schema** (creates, migrates via Weasel)
+- **Upsert semantics** — robust to out-of-order events
+- **`Increment()`** for counter columns
+- **`SetValue()`** for literal values
+- **`Delete<T>()`** for row deletion
+- **`TeardownDataOnRebuild`** clears the table before rebuild
+
+**Limitation:** cannot access event metadata (timestamp, sequence, stream ID) from within the mapping. If you need those, use `EventProjection` with raw SQL (below).
+
+### `EventProjection` with raw SQL — full metadata access
+
+For cases where `FlatTableProjection`'s declarative mapping isn't enough (joins, subqueries, metadata access, complex conditionals):
+
+```csharp
+public class BidAuditProjection : EventProjection
+{
+    public BidAuditProjection()
+    {
+        var table = new Table("bid_audit");
+        table.AddColumn<Guid>("id").AsPrimaryKey();
+        table.AddColumn<Guid>("listing_id").NotNull();
+        table.AddColumn<Guid>("bidder_id").NotNull();
+        table.AddColumn<decimal>("amount").NotNull();
+        table.AddColumn<long>("event_sequence").NotNull();
+        table.AddColumn<DateTimeOffset>("bid_at").NotNull();
+        SchemaObjects.Add(table);
+
+        Options.DeleteDataInTableOnTeardown(table.Identifier);
+    }
+
+    // IEvent<T> gives access to stream id, sequence, timestamps
+    public void Project(IEvent<BidPlaced> e, IDocumentOperations ops)
+    {
+        ops.QueueSqlCommand(
+            "INSERT INTO bid_audit (id, listing_id, bidder_id, amount, event_sequence, bid_at) " +
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            Guid.NewGuid(), e.StreamId, e.Data.BidderId, e.Data.Amount, e.Sequence, e.Timestamp);
+    }
+
+    public void Project(IEvent<BidRejected> e, IDocumentOperations ops)
+    {
+        // More complex SQL with a lookup
+        ops.QueueSqlCommand(
+            "DELETE FROM bid_audit WHERE listing_id = ? AND bidder_id = ? AND amount = ?",
+            e.Data.ListingId, e.Data.BidderId, e.Data.Amount);
+    }
+}
+```
+
+`QueueSqlCommand` batches SQL into the session's unit of work — commands are sent in one round-trip with the event append.
+
+### When to reach for flat-table projections
+
+| Need | Use |
+|---|---|
+| Simple column-per-property mapping, upsert semantics | `FlatTableProjection` |
+| Counter/aggregate columns with increment semantics | `FlatTableProjection` |
+| Event metadata (sequence, timestamp, stream ID) in SQL | `EventProjection` with raw SQL |
+| Complex SQL (joins, CTEs, subqueries) | `EventProjection` with raw SQL |
+| Read model feeds Power BI / BI tooling | Either, or EF Core projections (see below) |
+
+CritterBids' future Operations BC dashboards are the most likely first adopter — daily bid volume, settlement totals, seller performance rollups — where the consumer is reporting tooling and flat tables are a better fit than JSONB.
+
+---
+
+## Decision Guide — Which Projection Type?
+
+| Situation | Projection type |
+|---|---|
+| One stream → one document, JSONB storage | **Single-stream snapshot** (inline or async) — see `marten-event-sourcing.md` §5 |
+| Events from multiple streams → one document per entity, JSONB | **`MultiStreamProjection<T, TId>`** with `Identity<TEvent>(x => ...)` |
+| One event updates many documents, JSONB | **`MultiStreamProjection` with `Identities<T>`** |
+| Routing requires DB lookup, JSONB | **`MultiStreamProjection` with custom `IAggregateGrouper<TId>`** |
+| Per-tenant rollup, JSONB | **`MultiStreamProjection` with `RollUpByTenant()`** |
+| Events carry collections that project individually | **`FanOut<TParent, TChild>()`** |
+| Reference data needed in projections | **Event enrichment** via `EnrichEventsAsync` |
+| Stage 2 projection consumes stage 1 output | **Composite projection** with `Updated<T>` synthetic events |
+| Read model for reporting tools (Power BI, SSRS) in flat tables | **`FlatTableProjection`** (simple mapping) or **`EventProjection`** (raw SQL) |
+| Read model for complex relational queries via EF Core LINQ | **EF Core projection** (see second half of this file) |
+| Dual-store output (Postgres JSONB + EF Core table) | **`EfCoreEventProjection`** (EF Core section) |
+
+---
+
+# EF Core Projections from Marten Events
+
+Patterns for using Entity Framework Core as a projection target for Marten's event store — bridging event sourcing with relational read models. Marten's event store remains the system of record; EF Core handles the read-side tables.
 
 ---
 
@@ -50,7 +617,7 @@ EF Core projections let you write event-sourced aggregates to relational tables 
 
 ---
 
-## The Three Projection Types
+## The Three EF Core Projection Types
 
 | Base Class | Use Case | Model |
 |---|---|---|
@@ -133,7 +700,7 @@ services.AddDbContext<OperationsProjectionDbContext>(options =>
 
 ---
 
-## Single Stream Projections
+## Single-Stream (EF Core)
 
 One listing's event stream → one `ListingBidSummary` entity.
 
@@ -222,7 +789,7 @@ public sealed class ListingBidSummaryProjection
 
 ---
 
-## Multi-Stream Projections
+## Multi-Stream (EF Core)
 
 Many listing streams → one `SellerPerformance` entity per seller.
 
@@ -286,7 +853,7 @@ public sealed class SellerPerformanceProjection
 
 ---
 
-## Event Projections
+## Event Projections (EF Core)
 
 React to individual events and write to **both** EF Core entities and Marten documents atomically. Use when you need dual-store — one relational (for BI/reporting) and one document (for internal queries).
 
@@ -329,7 +896,7 @@ public sealed class AuctionDashboardProjection
 
 ---
 
-## Registration
+## EF Core Registration
 
 ```csharp
 // In the BC's AddXyzModule() Marten configuration:
@@ -475,8 +1042,20 @@ await daemon.RebuildAsync<ListingBidSummaryProjection>(ct);
 
 ## References
 
+### Native Marten projections
+- [Marten Projections](https://martendb.io/events/projections/)
+- [Marten Single-Stream Projections](https://martendb.io/events/projections/single-stream-projections.html)
+- [Marten Multi-Stream Projections](https://martendb.io/events/projections/multi-stream-projections.html)
+- [Marten Composite Projections](https://martendb.io/events/projections/composite.html)
+- [Marten Event Enrichment](https://martendb.io/events/projections/enrichment.html)
+- [Marten Flat Table Projections](https://martendb.io/events/projections/flat.html)
+
+### EF Core projections
 - [Marten EF Core Projections](https://martendb.io/events/projections/efcore.html)
 - [Polecat.EntityFrameworkCore NuGet](https://www.nuget.org/packages/Polecat.EntityFrameworkCore/)
-- `docs/skills/marten-event-sourcing.md` — native Marten projection patterns
-- `docs/skills/polecat-event-sourcing.md` — SQL Server + Polecat specifics
-- `docs/skills/critter-stack-testing-patterns.md` — TestFixture patterns
+
+### Related CritterBids skills
+- `docs/skills/marten-event-sourcing.md` — single-stream projections, aggregate conventions, daemon configuration, `RebuildSingleStreamAsync`
+- `docs/skills/dynamic-consistency-boundary.md` — DCB patterns for cross-stream consistency (separate mechanism from composite projections)
+- `docs/skills/polecat-event-sourcing.md` — 📚 Reference only; SQL Server + Polecat specifics (not active under ADR 011)
+- `docs/skills/critter-stack-testing-patterns.md` — TestFixture patterns for async-projection testing

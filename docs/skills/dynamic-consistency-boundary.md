@@ -25,8 +25,11 @@ Do **not** reach for DCB when a single aggregate stream is sufficient. It adds m
 | Scenario | Tool |
 |---|---|
 | Single aggregate stream, single invariant boundary | Normal event-sourced aggregate handler |
-| Multiple event streams, one BC, one immediate decision | Consider DCB |
+| Two or more **known** streams with IDs on the command | Cross-stream aggregate handler with multiple `[WriteAggregate]` parameters — see `marten-event-sourcing.md` §9 |
+| Multiple event streams, one BC, one immediate decision, streams selected by query | Consider DCB |
 | Long-running workflow, cross-BC coordination, retries, external side effects | Saga / process manager |
+
+The key split is **known IDs vs dynamic selection**. If the command carries the stream IDs and you load fixed streams, multiple `[WriteAggregate]` parameters are simpler. If the set of streams is selected by a tag query at handler time ("all active sessions for this listing", "all courses with available capacity"), DCB is the right tool.
 
 ---
 
@@ -353,13 +356,17 @@ public sealed record BidderStreamId(Guid Value);
 
 **2. Register tag types in the BC's Marten/Polecat configuration:**
 
+The registration API is identical across stores — `opts.Events.RegisterTagType<T>(alias).ForAggregate<TState>()` works the same way on `StoreOptions` for Marten and on Polecat's `StoreOptions` equivalent:
+
 ```csharp
-// Marten or Polecat — same API
+// Marten or Polecat — same API shape
 opts.Events.RegisterTagType<ListingStreamId>("listing").ForAggregate<BidConsistencyState>();
 opts.Events.RegisterTagType<BidderStreamId>("bidder").ForAggregate<BidConsistencyState>();
 ```
 
 `.ForAggregate<TState>()` binds the tag type to the boundary state type — the same tag type can be registered against multiple state types if different handlers need it.
+
+> **Store coverage.** DCB works uniformly on Marten and Polecat today. `[BoundaryModel]`, `EventTagQuery`, and `IEventBoundary<T>` exist in both `Wolverine.Marten` / `Marten.Events.Dcb` and their Polecat equivalents. `EventTagQuery` itself lives in the shared `JasperFx.Events` core library. If you're reading a doc that claims DCB is Polecat-only, treat that as stale — see the Wolverine repo's `MartenTests/Dcb/` folder for canonical Marten coverage.
 
 **3. Add both `ConcurrencyException` and `DcbConcurrencyException` retry policies.** They are siblings, not parent-child. A separate `opts.OnException<DcbConcurrencyException>()` entry is required.
 

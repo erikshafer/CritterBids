@@ -1,8 +1,17 @@
 # Event Sourcing with Polecat and Wolverine
 
-> **Status: Complete — filled in from M1 Participants BC implementation (April 2026).**
+> **Status: 📚 Reference — not currently used.**
 >
-> CritterBids is the first project in this ecosystem to use Polecat. This skill documents confirmed API shapes and known SQL Server differences. Updated with concrete findings from the Participants BC (M1 sessions 4–6).
+> CritterBids pivoted entirely to PostgreSQL via Marten in [ADR 011 — All-Marten Pivot](../decisions/011-all-marten-pivot.md), which superseded ADR 003's "Polecat for Operations/Settlement/Participants" decision. Every one of CritterBids' eight BCs now uses Marten.
+>
+> This skill is retained as reference for:
+> - Polecat-based sibling projects outside CritterBids
+> - The CritterStackSamples archive and similar Polecat reference code
+> - The historical record of the M1 Participants BC implementation that ran on Polecat before the pivot
+>
+> **For current CritterBids work, use `marten-event-sourcing.md`.** The two files document the same programming model; the API surface between Polecat and Marten is intentionally close to identical (namespace swap, per-store exception types). When CritterBids introduces a Polecat-based BC (none planned), start from the Marten skill and consult this file only for SQL Server-specific gotchas.
+>
+> The technical content below remains accurate for Polecat 2.x and is preserved intact — M1 findings, verified API shapes, SQL Server differences — because the pivot does not invalidate the knowledge, only its applicability to the current codebase.
 
 ---
 
@@ -16,7 +25,9 @@ As of Polecat 2.0, the goal is near-feature parity with Marten. The aggregate de
 
 ## Why SQL Server for Certain BCs?
 
-CritterBids uses SQL Server via Polecat for **Operations**, **Settlement**, and **Participants** BCs. See `docs/decisions/003-polecat-bcs.md` for the full rationale. The short version:
+> **Superseded.** The "SQL Server for Operations/Settlement/Participants" split was CritterBids' original ADR 003 decision. All three BCs moved to Marten/PostgreSQL under ADR 011. The rationale below is preserved because it remains valid for sibling projects evaluating Polecat against a similar decision tree — it is not active CritterBids guidance.
+
+CritterBids originally used SQL Server via Polecat for **Operations**, **Settlement**, and **Participants** BCs. See `docs/decisions/003-polecat-bcs.md` for the full rationale. The short version:
 
 - **Operations** — projections are directly queryable by Power BI and SQL Server BI tooling
 - **Settlement** — financial records belong in SQL Server for audit trail and compliance
