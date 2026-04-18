@@ -69,6 +69,44 @@ connection.on("ReceiveMessage", (cloudEvent) => {
 });
 ```
 
+#### `type` field format — FQN vs kebab-case
+
+The format of the CloudEvents `type` field is driven by Wolverine's `WolverineMessageNaming` strategy chain. Two behaviours are relevant here:
+
+| If the message type… | `type` field is… | Example |
+|---|---|---|
+| Inherits from the `WebSocketMessage` base class | **kebab-case from the type name** | `WebSocketBidPlaced` → `"bid_placed"` |
+| Implements a marker interface (e.g. `IBiddingHubMessage`) with no base class | **fully-qualified .NET type name** | `"CritterBids.Relay.BiddingHub.BidPlacedNotification"` |
+| Carries `[MessageIdentity("custom")]` | **whatever the attribute says** | `"bid.placed.v1"` |
+
+**CritterBids uses marker interfaces** because `IBiddingHubMessage` carries structural information beyond routing (`ListingId`, `BidderId` for group-key derivation). That gives FQN-shaped `type` fields in the envelope — the JavaScript client splits on `.` and takes the last segment to recover the short name:
+
+```javascript
+const typeName = (cloudEvent.type ?? "").split(".").pop() ?? "";
+switch (typeName) {
+    case "BidPlacedNotification": handleBid(cloudEvent.data); break;
+    // ...
+}
+```
+
+To switch to kebab-case `type` fields globally, inherit from `WebSocketMessage` instead of using a marker interface. That path trades the structural per-message metadata for shorter envelope types. CritterBids prefers the marker-interface approach because group targeting needs the structural metadata.
+
+### Request/Reply to the Calling WebSocket
+
+When a handler is invoked *via* a SignalR client send (WebSocket-delivered command), `ResponseToCallingWebSocket<T>` sends the reply back to the specific connection that invoked the handler, rather than broadcasting to a group. Useful if a staff tool running in the ops hub sends a calculation request and expects only itself to receive the result.
+
+```csharp
+public static ResponseToCallingWebSocket<CalculationResult> Handle(
+    CalculateListingTotals cmd,
+    IDocumentSession session)
+{
+    var result = ComputeTotals(cmd, session);
+    return result.RespondToCallingWebSocket();
+}
+```
+
+CritterBids doesn't use this today (both hubs are outbound-only; client-to-server traffic flows through HTTP endpoints). Note the pattern exists so that if a future operator tool needs a true WebSocket-scoped request/reply — without building a separate HTTP endpoint — the mechanism is in reach.
+
 ### WolverineHub vs Plain Hub
 
 This is the most important architectural decision for each hub:
@@ -122,6 +160,21 @@ app.MapHub<OperationsHub>("/hub/operations")
 ```
 
 > **`.DisableAntiforgery()` is required** on hub routes in ASP.NET Core 10+. Without it, the WebSocket negotiation POST fails with 400/403. JWT-authenticated hubs (no ambient browser credentials) are safe to disable it. The participant-facing `BiddingHub` uses no cookies, so disabling is appropriate.
+
+### JSON Serialization Override
+
+The SignalR transport uses isolated JSON settings, defaulting to camelCase. That matches CritterBids' React/TypeScript client expectations and needs no customization today. Override it only if a downstream consumer has incompatible expectations:
+
+```csharp
+opts.UseSignalR()
+    .OverrideJson(new JsonSerializerOptions
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        // ...other customizations
+    });
+```
+
+The override applies only to SignalR-routed messages — it does not affect the host-level JSON settings used for HTTP endpoints or Marten persistence. That isolation is intentional: SignalR payloads and HTTP responses are independent surfaces.
 
 ---
 
@@ -297,6 +350,28 @@ public static class BidPlacedHandler
     }
 }
 ```
+
+### Client-Driven Group Changes
+
+`OnConnectedAsync` handles one-shot enrollment on connect. For groups a client joins or leaves **during** its session — switching from one listing's live feed to another, opening a side-panel that subscribes to a specific bidder's activity — return `AddConnectionToGroup` or `RemoveConnectionToGroup` as a handler side-effect. Wolverine applies the membership change against the calling connection automatically.
+
+```csharp
+public sealed record JoinListingFeed(Guid ListingId);
+public sealed record LeaveListingFeed(Guid ListingId);
+
+public static class ListingFeedMembershipHandler
+{
+    public static AddConnectionToGroup Handle(JoinListingFeed cmd) =>
+        new($"listing:{cmd.ListingId}");
+
+    public static RemoveConnectionToGroup Handle(LeaveListingFeed cmd) =>
+        new($"listing:{cmd.ListingId}");
+}
+```
+
+**Prerequisite:** this pattern requires the command to arrive via `WolverineHub` (so Wolverine knows which connection to mutate). CritterBids' current hubs are outbound-only (plain `Hub`) and use HTTP-delivered commands, so this side-effect pair isn't wired today. When a future BiddingHub evolution genuinely needs per-session listing switching without reconnect, flip the hub type to `WolverineHub`, route the `JoinListingFeed` / `LeaveListingFeed` commands over the hub, and the returns above take care of the rest.
+
+HTTP-delivered group changes don't use these types — the calling connection isn't available to Wolverine through an HTTP endpoint, so membership mutations from HTTP must go through `IHubContext<T>` directly or arrive via a separate WebSocket invocation. This is part of the "when does `WolverineHub` actually earn its keep" trade-off — client-driven mid-session group changes are one of the few use cases that justify it.
 
 ---
 

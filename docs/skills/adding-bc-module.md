@@ -179,6 +179,50 @@ For BCs with HTTP endpoints:
 `WolverineFx.Http.Marten` transitively includes `WolverineFx.Http`, `WolverineFx.Marten`, and
 `Marten`. **All `WolverineFx.*` packages in the solution must use the same version.**
 
+### Alternative: `IWolverineExtension` for Wolverine-Only Contributions
+
+CritterBids' `AddXyzModule(IServiceCollection)` pattern is the default because most BC modules contribute **both** IoC-registered services and Marten configuration via `services.ConfigureMarten(...)`. `IServiceCollection` extensions are the idiomatic surface for both.
+
+For modules whose contribution is **Wolverine-only** (extra discovery assemblies, custom routing policies, message-partitioning configuration — no IoC registrations, no Marten contribution), `IWolverineExtension` is an alternative:
+
+```csharp
+public class SampleWolverineExtension : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.LocalQueue("sample-partitioned").Sequential();
+        options.Discovery.IncludeAssembly(typeof(SomeSampleType).Assembly);
+    }
+}
+
+// Program.cs
+builder.UseWolverine(opts =>
+{
+    opts.Include<SampleWolverineExtension>();
+});
+```
+
+For extensions that need to consult resolved configuration (feature flags, runtime-loaded settings) at host-startup time, use `IAsyncWolverineExtension` and register it via IoC:
+
+```csharp
+public class FeatureFlagWolverineExtension(IFeatureFlags flags) : IAsyncWolverineExtension
+{
+    public async ValueTask Configure(WolverineOptions options)
+    {
+        if (await flags.IsEnabledAsync("flash-session-live-ticks"))
+            options.PublishMessage<FlashSessionTick>().ToLocalQueue("live-ticks").BufferedInMemory();
+    }
+}
+
+// Program.cs
+builder.Services.AddAsyncWolverineExtension<FeatureFlagWolverineExtension>();
+
+// Must be applied before MapWolverineEndpoints() if using HTTP:
+await app.Services.ApplyAsyncWolverineExtensions();
+```
+
+CritterBids doesn't use either today — every current BC contributes IoC services and Marten configuration, so `AddXyzModule(IServiceCollection)` remains the right default. Reach for `IWolverineExtension` when a future contribution is purely Wolverine-shaped; reach for the async variant when the contribution depends on configuration resolved at host-startup time.
+
 ---
 
 ## Polecat BC Module Registration (Historical)

@@ -13,10 +13,11 @@ Patterns and conventions for asynchronous message-based communication between bo
 5. [Integration Message Handlers](#integration-message-handlers)
 6. [Queue Naming Conventions](#queue-naming-conventions)
 7. [RabbitMQ Transport Configuration](#rabbitmq-transport-configuration)
-8. [Modular Monolith Routing Settings](#modular-monolith-routing-settings)
-9. [Adding a New Integration — Checklist](#adding-a-new-integration--checklist)
-10. [Critical Warnings](#critical-warnings)
-11. [Lessons Learned](#lessons-learned)
+8. [Resiliency Policies](#resiliency-policies)
+9. [Modular Monolith Routing Settings](#modular-monolith-routing-settings)
+10. [Adding a New Integration — Checklist](#adding-a-new-integration--checklist)
+11. [Critical Warnings](#critical-warnings)
+12. [Lessons Learned](#lessons-learned)
 
 ---
 
@@ -163,7 +164,64 @@ public static (Events, OutgoingMessages) Handle(
 
 `OutgoingMessages` is processed within the same Wolverine middleware pipeline that commits the Marten session — if the session commit fails, messages are not published. The transactional outbox guarantees at-least-once delivery.
 
-**Exception:** `bus.ScheduleAsync()` remains valid — delayed delivery cannot be expressed via `OutgoingMessages`.
+### Delayed Delivery with `bus.ScheduleAsync`
+
+The one exception to "always use `OutgoingMessages`" is delayed delivery. For fire-now send a return value; for send-later reach for `bus.ScheduleAsync` or the `DelayedFor`/`ScheduledAt` cascading helpers.
+
+**Two cascading shapes** — preferred when the scheduled message originates from a handler:
+
+```csharp
+public static IEnumerable<object> Handle(OpenBidding cmd, [WriteAggregate] Listing listing)
+{
+    yield return new BiddingOpened(listing.Id, cmd.ScheduledCloseAt);
+
+    // Delay from now
+    yield return new AutoClose(listing.Id).DelayedFor(cmd.ScheduledCloseAt - DateTimeOffset.UtcNow);
+
+    // Absolute time
+    yield return new ReminderEmail(listing.SellerId).ScheduledAt(cmd.ScheduledCloseAt.AddMinutes(-15));
+}
+```
+
+**Imperative `bus.ScheduleAsync`** — when the scheduled message originates outside a handler pipeline (background service, startup hook):
+
+```csharp
+await bus.ScheduleAsync(new AutoClose(listingId), 5.Minutes());
+await bus.ScheduleAsync(new AutoClose(listingId), DateTimeOffset.UtcNow.AddHours(2));
+```
+
+Scheduling priority: transport-native scheduling (RabbitMQ deferred-messages plugin) → database-backed (outbox-persisted) → in-memory. CritterBids' default configuration uses the database-backed path, which survives process crashes and the RabbitMQ broker restart.
+
+### Message Expiration with `DeliverWithin`
+
+For transient messages that lose value past a deadline — flash-session countdown ticks, "seller is typing" indicators, stale ops dashboard refreshes — declare a TTL so the framework discards stale messages instead of processing them minutes after they're relevant.
+
+**Per send:**
+
+```csharp
+await bus.PublishAsync(
+    new FlashSessionTick(sessionId, tickNumber),
+    new DeliveryOptions { DeliverWithin = 2.Seconds() });
+```
+
+**Per endpoint (applies to every message published to that queue):**
+
+```csharp
+opts.PublishMessage<FlashSessionTick>()
+    .ToRabbitQueue("operations-auctions-live-ticks")
+    .DeliverWithin(2.Seconds());
+```
+
+**Per message type via attribute:**
+
+```csharp
+[DeliverWithin(2)]   // seconds
+public sealed record FlashSessionTick(Guid SessionId, int TickNumber);
+```
+
+Expired messages are discarded by Wolverine. On RabbitMQ and Azure Service Bus, `DeliverWithin` maps to the broker's native TTL so messages never even leave the queue once they've gone stale. This is the right tool for anything where "deliver this in 30 seconds" is worse than "drop this."
+
+**CritterBids guidance:** reserve `DeliverWithin` for transient operational signals, not domain events. `ListingSold` must never expire; `FlashSessionTick` may.
 
 ---
 
@@ -319,6 +377,242 @@ opts.Policies.UseDurableOutboxOnAllSendingEndpoints();
 ```
 
 `AutoProvision()` creates durable queues and persistent messages automatically. All messages survive RabbitMQ restarts.
+
+### Per-Queue Durability and Parallelism Overrides
+
+`UseDurableOutboxOnAllSendingEndpoints()` covers outbound publishing. For inbound listeners and finer-grained control, override per queue:
+
+```csharp
+// Durable inbox for critical BC queues (Settlement, Obligations)
+opts.ListenToRabbitQueue("settlement-auctions-events")
+    .UseDurableInbox(new BufferingLimits(maximum: 1000, threshold: 500))
+    .ListenerCount(3)                     // parallel consumer connections to this queue
+    .MaximumParallelMessages(20);         // concurrent handler invocations in-process
+
+// Buffered for throughput-sensitive, loss-tolerant traffic
+opts.ListenToRabbitQueue("operations-auctions-live-ticks")
+    .BufferedInMemory(new BufferingLimits(1000, 200));
+
+// Global inbox durability policy (if every BC wants it)
+opts.Policies.UseDurableInboxOnAllListeners();
+```
+
+**BufferingLimits are back-pressure.** When the in-memory buffer fills to `maximum`, Wolverine pauses the listener; it resumes when the buffer drops to `threshold`. This prevents a slow handler from accumulating an unbounded prefetch queue during traffic spikes.
+
+**CritterBids durability posture by BC queue (recommended):**
+
+| Queue pattern | Endpoint type | Rationale |
+|---|---|---|
+| `settlement-*-events`, `obligations-*-events` | `UseDurableInbox()` | Financial / obligation paths — at-least-once delivery required |
+| `relay-*-events` | `BufferedInMemory()` | Notifications are retryable from source events; loss is tolerable |
+| `operations-*-events` (dashboard state) | `BufferedInMemory()` | Ops dashboard is a view; stale is bad, lost is fine |
+| `operations-*-live-ticks` (flash-session ticks) | `BufferedInMemory()` + `DeliverWithin` | Transient, time-sensitive, expiration-bounded |
+| `listings-*-events`, `auctions-*-events` | `UseDurableInbox()` | Catalog state transitions drive downstream decisions |
+
+Set these per-queue in the consuming BC's module (where `opts.ListenToRabbitQueue(...)` is declared). Do not globally apply `UseDurableInboxOnAllListeners()` — it over-persists the loss-tolerant queues and adds unnecessary database pressure.
+
+### Production Hardening — Quorum Queues
+
+For any production deployment past a single broker node, use quorum queues. They replicate across RabbitMQ cluster members, survive single-node failures, and are the current RabbitMQ recommendation over classic durable queues.
+
+```csharp
+// Opt every queue into quorum type by default (set once in Program.cs)
+opts.UseRabbitMq(...)
+    .UseQuorumQueues();
+
+// Or per-queue
+opts.ListenToRabbitQueue("settlement-auctions-events")
+    .QueueType(QueueType.quorum);
+```
+
+CritterBids' Hetzner VPS deployment runs a single RabbitMQ node for now, so quorum queues are optional. When the deployment becomes multi-node (or moves to a managed provider that offers cluster semantics), flipping this on is a one-line change.
+
+### Production Hardening — Enhanced Dead Lettering
+
+By default, messages that exhaust retry policies land in RabbitMQ's DLQ as the raw envelope — no exception metadata attached. Enhanced dead lettering adds exception headers to the failed message so the DLQ content is diagnostic without needing to cross-reference application logs.
+
+```csharp
+opts.UseRabbitMq(...)
+    .EnableEnhancedDeadLettering();
+// Adds headers: exception-type, exception-message, exception-stack, failed-at
+```
+
+**Recommended for CritterBids production.** The operational win is significant: when CritterWatch or the RabbitMQ management UI is browsing DLQ contents during an incident, the exception reason is right there with the message. Otherwise the investigator has to match by message ID across tool boundaries.
+
+### `AutoProvision()` in Production
+
+`AutoProvision()` creates missing queues, exchanges, and bindings at host startup. That's the right behaviour in development and in CritterBids' current conference-demo deployment, but is risky in shared or compliance-constrained production environments: any topology typo in code silently creates a new queue rather than failing loudly against the expected infrastructure.
+
+**Guarded pattern for hardened production:**
+
+```csharp
+var rabbit = opts.UseRabbitMqUsingNamedConnection("rabbit");
+
+if (builder.Environment.IsDevelopment() ||
+    builder.Configuration.GetValue<bool>("RabbitMq:AutoProvision"))
+{
+    rabbit.AutoProvision();
+}
+```
+
+Under this pattern, production deployments run without `AutoProvision()` and rely on a CI/CD job (or RabbitMQ definitions.json import) to apply topology changes separately. The opt-in configuration flag gives operators an escape hatch to re-enable provisioning during a recovery.
+
+CritterBids' current deployment posture — single Hetzner VPS, single app process, Aspire-provisioned broker — is well inside "safe to auto-provision" territory. Revisit when the deployment topology changes.
+
+---
+
+## Resiliency Policies
+
+Retry strategies, circuit breakers, and dead-letter handling for integration-message processing. Most of CritterBids' handlers through M2.5 are in-process against Marten/PostgreSQL — transient failures mean broker/database blips, and the default Wolverine retry posture is adequate. The Settlement BC (payment gateway) and Relay BC (outbound notifications, SignalR fan-out) are the first BCs where explicit resiliency policies will earn their keep; this section exists so the patterns are in reach when those BCs land.
+
+### Error handling actions, at a glance
+
+When a handler throws, Wolverine consults the configured policies and applies one of these actions:
+
+| Action | Behaviour |
+|---|---|
+| `RetryNow` / `RetryTimes(n)` | Immediate inline retry, no pause |
+| `RetryWithCooldown(...)` | Retry after each cooldown in a specified sequence (exponential backoff) |
+| `Requeue` | Put the message at the back of the receiving queue |
+| `ScheduleRetry(duration)` | Persist and redeliver at a future time |
+| `Discard` | Log and drop — no DLQ record |
+| `MoveToErrorQueue` | Send directly to the dead letter queue |
+| `PauseProcessing(duration)` | Stop the listener temporarily (use with `Requeue()` for broker-level outages) |
+
+Without any explicit policy and with retries exhausted, messages move to the dead letter queue automatically.
+
+### Global retry policy with exponential backoff
+
+```csharp
+// In Program.cs's UseWolverine() block
+opts.Policies.OnException<NpgsqlException>()
+    .RetryWithCooldown(
+        50.Milliseconds(),
+        200.Milliseconds(),
+        1.Seconds(),
+        5.Seconds());   // after this: DLQ
+
+opts.Policies.OnException<TimeoutException>()
+    .RetryWithCooldown(100.Milliseconds(), 500.Milliseconds(), 2.Seconds());
+
+// Catch-all for other exceptions: retry a couple of times then DLQ
+opts.Policies.OnException<Exception>().RetryTimes(3);
+```
+
+**Predicate filtering** works on exception properties, not just type:
+
+```csharp
+opts.Policies.OnException<NpgsqlException>(ex => ex.IsTransient)
+    .RetryWithCooldown(100.Milliseconds(), 500.Milliseconds(), 2.Seconds());
+
+opts.Policies.OnException<NpgsqlException>(ex => !ex.IsTransient)
+    .MoveToErrorQueue();
+```
+
+### Per-handler and per-message-type policies
+
+For handler-specific policies, prefer per-handler configuration so the policy lives next to the code it protects:
+
+**Attribute-based (simplest):**
+
+```csharp
+public static class ProcessPaymentHandler
+{
+    [RetryNow(typeof(SqlException), 50, 100, 250)]        // exponential ms
+    [ScheduleRetry(typeof(PaymentGatewayTransientException), 5)]  // retry in 5s
+    [MoveToErrorQueueOn(typeof(InvalidCardException))]
+    [MaximumAttempts(5)]
+    public static void Handle(ProcessPayment cmd) { /* ... */ }
+}
+```
+
+**`Configure(HandlerChain)` for richer policy composition:**
+
+```csharp
+public static class ProcessPaymentHandler
+{
+    public static void Configure(HandlerChain chain)
+    {
+        chain.OnException<PaymentGatewayException>()
+            .RetryWithCooldown(500.Milliseconds(), 2.Seconds(), 10.Seconds());
+
+        chain.OnException<PaymentGatewayDownException>()
+            .Requeue()
+            .AndPauseProcessing(2.Minutes());   // external outage — stop hammering it
+    }
+
+    public static (Events, OutgoingMessages) Handle(ProcessPayment cmd, [WriteAggregate] SettlementSaga saga) { /* ... */ }
+}
+```
+
+**Rule precedence** (most specific first): per-message-type attributes → `Configure(HandlerChain)` static method → `IHandlerPolicy` implementations → global `opts.Policies.OnException<T>()`.
+
+### Circuit breakers on external-facing queues
+
+Circuit breakers pause an endpoint when the failure rate exceeds a threshold within a rolling window. They are **per-endpoint**, not global — a failing payment queue should never pause the listing-catalog queue.
+
+**Use them on any listener whose handler interacts synchronously with an external system:** payment gateways, shipping carriers, email / SMS providers, third-party APIs.
+
+```csharp
+opts.ListenToRabbitQueue("settlement-auctions-events")
+    .CircuitBreaker(cb =>
+    {
+        cb.MinimumThreshold = 10;                // minimum messages before evaluation
+        cb.TrackingPeriod = 5.Minutes();         // rolling window
+        cb.FailurePercentageThreshold = 20;      // trip at >20% failure rate
+        cb.PauseTime = 2.Minutes();              // how long the circuit stays open
+
+        // Only count external-system errors toward the threshold
+        cb.Include<PaymentGatewayException>();
+        cb.Include<HttpRequestException>();
+        cb.Include<TimeoutException>();
+
+        // Ignore expected exceptions that indicate bad data, not a downed service
+        cb.Exclude<InvalidCardException>();
+    });
+```
+
+**Circuit breaker + retry policy together** is the canonical pair: retries absorb transient blips, the circuit breaker catches sustained outages and pauses the listener until the downstream recovers. Without the breaker, retries alone will thrash through messages against a downed service and generate a storm of DLQ entries and wasted load.
+
+### Dead-letter queue handling
+
+Messages that exhaust retries go to the DLQ automatically. Force immediate DLQ when a message can never succeed:
+
+```csharp
+opts.Policies.OnException<ContractViolationException>().MoveToErrorQueue();
+```
+
+Prefer `Discard` over `MoveToErrorQueue` when the message is truly fire-and-forget and cluttering the DLQ would make diagnostic investigation noisier:
+
+```csharp
+opts.Policies.OnException<StaleNotificationException>().Discard();   // no DLQ record
+```
+
+**Inspect DLQ contents** through CritterWatch's DLQ management UI (when deployed) or Wolverine's dead-letter administration API. With enhanced dead lettering enabled (see RabbitMQ Transport Configuration), exception metadata rides with the message.
+
+### Inspecting configured policies via CLI
+
+The `describe-resiliency` CLI reads the assembled policy graph and prints the active rules for any endpoint or message type. Use it to audit policy coverage before a production deployment:
+
+```bash
+# All endpoints
+dotnet run --project src/CritterBids.Api -- wolverine-diagnostics describe-resiliency --all
+
+# One endpoint
+dotnet run --project src/CritterBids.Api -- wolverine-diagnostics describe-resiliency settlement-auctions-events
+
+# One message type
+dotnet run --project src/CritterBids.Api -- wolverine-diagnostics describe-resiliency --message "CritterBids.Contracts.Auctions.ListingSold"
+```
+
+The output shows circuit-breaker settings, per-message retry schedules, and the default-fallback policies that apply when no more-specific rule matches. This is also the fastest way to confirm that `[MaximumAttempts]` on a message type is being honoured alongside global `opts.Policies` rules.
+
+### Anti-patterns
+
+- **Swallowing exceptions inside handlers.** Letting exceptions bubble is how policies get a chance to work. A `catch` block that logs and swallows hides the failure from Wolverine entirely, denying the framework the chance to retry or DLQ.
+- **Infinite retries without a circuit breaker.** If a handler calls an external service and the policy retries indefinitely, a sustained outage becomes an unbounded retry storm. Pair indefinite or aggressive retries with a circuit breaker on the endpoint.
+- **Global circuit breakers.** Circuit breakers are intentionally per-endpoint. Apply them to the queues whose handlers touch external systems, not as a global policy.
+- **Mixing attribute and fluent policies haphazardly.** Pick one dominant style per BC. The rule-precedence order makes mixing work, but the cognitive load of tracing which rule wins during a real incident is not worth the flexibility.
 
 ---
 
