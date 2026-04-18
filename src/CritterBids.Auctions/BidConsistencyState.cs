@@ -61,4 +61,17 @@ public class BidConsistencyState
         ReserveMet = false;
         IsOpen = true;
     }
+
+    public void Apply(BidPlaced @event)
+    {
+        CurrentHighBid = @event.Amount;
+        CurrentHighBidderId = @event.BidderId;
+        BidCount = @event.BidCount;
+    }
+
+    public void Apply(BuyItNowOptionRemoved @event) => BuyItNowAvailable = false;
+
+    public void Apply(ReserveMet @event) => this.ReserveMet = true;
+
+    public void Apply(ExtendedBiddingTriggered @event) => ScheduledCloseAt = @event.NewCloseAt;
 }
