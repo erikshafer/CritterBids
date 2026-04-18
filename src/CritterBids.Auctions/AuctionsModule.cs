@@ -1,3 +1,4 @@
+using CritterBids.Contracts.Auctions;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -14,16 +15,15 @@ public static class AuctionsModule
         {
             opts.Schema.For<Listing>().DatabaseSchemaName("auctions");
 
+            // Event types register at first use (M2 key learning — registering ahead of
+            // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
+            // BiddingOpened is the first produced here by ListingPublishedHandler (S3);
+            // the bid-and-friends batch registers in S4, closing-outcome batch in S5.
+            opts.Events.AddEventType<BiddingOpened>();
+
             // Listing aggregate uses live stream aggregation — state is rebuilt from events
             // on each load rather than snapshotted. S4 introduces the Apply() methods that
-            // make this projection non-trivial. Registering the projection on an empty
-            // aggregate is safe: live aggregation against zero events returns a default-
-            // constructed aggregate.
-            //
-            // No opts.Events.AddEventType<T>() calls in S2 — event type registrations land
-            // with their first use (BiddingOpened in S3, bid-and-friends in S4). Registering
-            // event types ahead of their Apply() methods causes silent null returns from
-            // AggregateStreamAsync<T> (M2 key learning).
+            // make this projection non-trivial.
             opts.Projections.LiveStreamAggregation<Listing>();
         });
 

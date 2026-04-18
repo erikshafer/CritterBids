@@ -7,8 +7,8 @@
     <PackageReference Include="WolverineFx.Http.Marten" />
   </ItemGroup>
 
-  <!-- No ProjectReference to CritterBids.Contracts yet — M3-S3 adds it when the
-       ListingPublished consumer needs CritterBids.Contracts.Selling.ListingPublished
-       and produces CritterBids.Contracts.Auctions.BiddingOpened. -->
+  <ItemGroup>
+    <ProjectReference Include="..\CritterBids.Contracts\CritterBids.Contracts.csproj" />
+  </ItemGroup>
 
 </Project>
