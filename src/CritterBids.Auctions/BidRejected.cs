@@ -23,12 +23,29 @@ public sealed record BidRejected(
     DateTimeOffset RejectedAt);
 
 /// <summary>
-/// Stream-type marker for the per-listing bid-rejection audit stream.
-/// Stream key is UUID v5 of <c>"bid-rejection-audit:{listingId}"</c> — deterministic,
-/// collision-free against the listing's primary stream. Not projected into a live aggregate
-/// or registered with <c>LiveStreamAggregation</c>; it's a raw audit log.
+/// Stream-type marker for the per-listing bid-rejection audit stream. Required because
+/// <c>UseMandatoryStreamTypeDeclaration = true</c> forces every new stream to declare its
+/// type at <c>StartStream&lt;T&gt;</c>. Not projected into a live aggregate or registered
+/// with <c>LiveStreamAggregation</c>; it's a raw audit log.
+///
+/// Stream key is derived deterministically from the listing id via <see cref="StreamKey"/> —
+/// a non-SHA1 XOR scheme sufficient to guarantee the audit stream's Guid never collides
+/// with the listing's primary stream Guid. A cryptographic UUID v5 would be overkill for a
+/// single-domain, fixed-prefix derivation.
 /// </summary>
 public class BidRejectionAudit
 {
     public Guid Id { get; set; }
+
+    private static readonly Guid Namespace = new("b1d4a123-0000-0000-0000-000000000001");
+
+    public static Guid StreamKey(Guid listingId)
+    {
+        Span<byte> listing = stackalloc byte[16];
+        Span<byte> ns = stackalloc byte[16];
+        listingId.TryWriteBytes(listing);
+        Namespace.TryWriteBytes(ns);
+        for (var i = 0; i < 16; i++) listing[i] ^= ns[i];
+        return new Guid(listing);
+    }
 }

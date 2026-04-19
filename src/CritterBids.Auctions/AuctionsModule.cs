@@ -31,10 +31,15 @@ public static class AuctionsModule
             opts.Events.AddEventType<ExtendedBiddingTriggered>();
             opts.Events.AddEventType<BuyItNowOptionRemoved>();
 
-            // DCB tag-type registration. The canonical BidConsistencyState boundary model
-            // loads events tagged with ListingStreamId via the EventTagQuery built by
-            // PlaceBidHandler.Load. ListingStreamId wraps Guid to dodge .NET 10's new
-            // Variant/Version public properties on Guid which break ValueTypeInfo validation.
+            // DCB tag-type registration. ListingStreamId wraps Guid because .NET 10 added
+            // Variant/Version public properties to Guid, which trips ValueTypeInfo's
+            // "exactly one public gettable property" rule. See ListingStreamId.cs.
+            //
+            // PlaceBidHandler does not use the [BoundaryModel] auto-append path — the
+            // automatic path relies on Marten inferring tags from an event property of
+            // the registered tag type, and our contract events expose Guid, not
+            // ListingStreamId. The handler instead tags events explicitly via
+            // IEvent.AddTag(new ListingStreamId(...)) then calls IDocumentSession.Events.Append.
             opts.Events.RegisterTagType<ListingStreamId>("listing").ForAggregate<BidConsistencyState>();
 
             // Listing aggregate uses live stream aggregation — state is rebuilt from events

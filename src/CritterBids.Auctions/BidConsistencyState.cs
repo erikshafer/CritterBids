@@ -10,9 +10,11 @@ namespace CritterBids.Auctions;
 /// <c>ExtendedBiddingTriggered</c>). <c>BidRejected</c> is excluded by type (W002-7 decision)
 /// so rejected bids are invisible to the decision model by construction.
 ///
-/// Canonical Wolverine state classes (Jeremy Miller's University example) omit
-/// <c>public Guid Id</c>. We start without it per M3-S4 Open Question 2 — the property is
-/// added only if test-harness teardown throws <c>InvalidDocumentException</c>.
+/// <c>public Guid Id</c> is required even though Wolverine's University DCB example omits it
+/// — Marten 8 treats the tag-aggregate as a document once <c>RegisterTagType.ForAggregate</c>
+/// is wired, so <c>CleanAllMartenDataAsync</c> (and schema validation generally) throw
+/// <c>InvalidDocumentException</c> at fixture startup without an Id/id property. Empirical
+/// answer to M3-S4 Open Question 2.
 ///
 /// <c>Apply(BiddingOpened)</c> populates <c>BuyItNowPrice</c> and <c>BuyItNowAvailable</c>
 /// even though this slice's PlaceBid flow uses <c>BuyItNowAvailable</c> only for scenario 1.1
@@ -21,6 +23,7 @@ namespace CritterBids.Auctions;
 /// </summary>
 public class BidConsistencyState
 {
+    public Guid Id { get; set; }
     public Guid ListingId { get; private set; }
     public Guid SellerId { get; private set; }
     public decimal StartingBid { get; private set; }
