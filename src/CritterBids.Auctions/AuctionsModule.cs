@@ -20,6 +20,15 @@ public static class AuctionsModule
         {
             opts.Schema.For<Listing>().DatabaseSchemaName("auctions");
 
+            // Auction Closing saga document. Numeric revisions provide optimistic concurrency
+            // for saga writes — ConcurrencyException on conflict is retried by the existing
+            // AuctionsConcurrencyRetryPolicies below. The saga Id is the ListingId (see
+            // AuctionClosingSaga.cs for the OQ1 Path A correlation decision).
+            opts.Schema.For<AuctionClosingSaga>()
+                .DatabaseSchemaName("auctions")
+                .Identity(x => x.Id)
+                .UseNumericRevisions(true);
+
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
