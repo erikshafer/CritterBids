@@ -1,5 +1,6 @@
 using CritterBids.Auctions.Tests.Fixtures;
 using CritterBids.Contracts.Auctions;
+using CritterBids.Contracts.Selling;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Wolverine.Persistence.Durability;
@@ -286,6 +287,50 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         afterSaga.CurrentHighBid.ShouldBe(50m);
         afterSaga.CurrentHighBidderId.ShouldBe(bidderId);
         afterSaga.ReserveHasBeenMet.ShouldBeTrue();
+    }
+
+    [Fact]
+    public async Task ListingWithdrawn_TerminatesWithoutEvaluation()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        // Seed an Active saga with bids on the books — withdrawal must skip reserve
+        // evaluation entirely, so even with bids present no ListingSold/ListingPassed is
+        // emitted (workshop scenario 3.10; M3 milestone doc §3 "terminates without
+        // evaluation").
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 5,
+            currentHighBid: 75m,
+            currentHighBidderId: bidderId,
+            reserveHasBeenMet: true);
+        await ScheduleCloseAuctionAsync(listingId, closeAt);
+
+        // Dispatch via the bus — the fixture's session-scoped AppendListingWithdrawnAsync
+        // does not forward (per M3-S5 retro §OQ4), and the Selling-side publisher remains
+        // deferred (M3 §3), so the test acts as the synthetic producer.
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .InvokeMessageAndWaitAsync(new ListingWithdrawn(listingId));
+
+        // Saga document deleted by MarkCompleted.
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+
+        // No outcome events on the withdrawal terminal path — no BiddingClosed (OQ1 Path B
+        // — terminal handlers do not emit it), no ListingSold even though reserve was met,
+        // no ListingPassed even though bids existed.
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldBeEmpty();
+
+        // Pending CloseAuction cancelled (M3-S5b OQ2 Path a — same shape as BIN).
+        var pending = await QueryPendingCloseAuctionsAsync();
+        pending.ShouldBeEmpty();
     }
 
     [Fact]

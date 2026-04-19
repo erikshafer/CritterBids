@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using CritterBids.Contracts.Selling;
 using Marten;
 using Wolverine;
 using Wolverine.Persistence.Durability;
@@ -161,6 +162,26 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
         // safety net above). Without this, the scheduled CloseAuction would still fire and
         // hit the NotFound branch — correct behaviour, but observably noisier in the
         // scheduled-message store.
+        await CancelPendingCloseAsync(messageStore, ScheduledCloseAt, cancellationToken);
+
+        Status = AuctionClosingStatus.Resolved;
+        MarkCompleted();
+    }
+
+    public async Task Handle(
+        [SagaIdentityFrom(nameof(ListingWithdrawn.ListingId))] ListingWithdrawn message,
+        IMessageStore messageStore,
+        CancellationToken cancellationToken)
+    {
+        // Idempotency — same guard shape as Handle(BuyItNowPurchased). Withdrawal is the
+        // "terminate without evaluation" path: no reserve check, no outcome event, no money
+        // moves (workshop scenario 3.10; ListingWithdrawn.cs §Consumed by → Auctions BC).
+        if (Status == AuctionClosingStatus.Resolved) return;
+
+        // Same explicit-cancel rationale as Handle(BuyItNowPurchased) — Path a from M3-S5b
+        // OQ2. Until a Selling-side publisher lands (deferred per M3 §3), the only producer
+        // is the test fixture; cancellation discipline still matters because future producers
+        // will inherit this saga's terminal contract unchanged.
         await CancelPendingCloseAsync(messageStore, ScheduledCloseAt, cancellationToken);
 
         Status = AuctionClosingStatus.Resolved;
