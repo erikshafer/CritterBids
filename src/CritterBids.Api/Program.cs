@@ -50,6 +50,11 @@ builder.UseWolverine(opts =>
     }
 
     opts.Policies.AutoApplyTransactions();
+
+    // Local queues persist to Wolverine's envelope store — saga-scheduled CloseAuction
+    // messages survive a node restart and are visible via IMessageStore.ScheduledMessages.
+    // M3-S5 first-use requirement for the Auction Closing saga.
+    opts.Policies.UseDurableLocalQueues();
 });
 
 // ── Primary Marten store + all BC modules (ADR 011: All-Marten pivot) ────────
@@ -71,7 +76,7 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     })
     .UseLightweightSessions()
     .ApplyAllDatabaseChangesOnStartup()
-    .IntegrateWithWolverine();
+    .IntegrateWithWolverine(configure: integration => integration.UseFastEventForwarding = true);
 
     // All BC modules live here — each calls services.ConfigureMarten() to contribute
     // its event types and projections to the primary store above.
