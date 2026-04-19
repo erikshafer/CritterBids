@@ -48,7 +48,7 @@ public class AuctionsTestFixture : IAsyncLifetime
                 })
                 .UseLightweightSessions()
                 .ApplyAllDatabaseChangesOnStartup()
-                .IntegrateWithWolverine();
+                .IntegrateWithWolverine(configure: integration => integration.UseFastEventForwarding = true);
 
                 // Register the Auctions BC module so its ConfigureMarten contributions
                 // (auctions schema for Listing, LiveStreamAggregation<Listing>) are present.
@@ -98,6 +98,12 @@ public class AuctionsTestFixture : IAsyncLifetime
 
     public Marten.IDocumentSession GetDocumentSession() =>
         Host.DocumentStore().LightweightSession();
+
+    public async Task<T?> LoadSaga<T>(Guid id) where T : Wolverine.Saga
+    {
+        await using var session = GetDocumentSession();
+        return await session.LoadAsync<T>(id);
+    }
 }
 
 /// <summary>
