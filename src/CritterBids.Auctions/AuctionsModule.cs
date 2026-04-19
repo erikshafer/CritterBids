@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using CritterBids.Contracts.Selling;
 using JasperFx;
 using JasperFx.Core;
 using Marten;
@@ -41,6 +42,16 @@ public static class AuctionsModule
             opts.Events.AddEventType<ExtendedBiddingTriggered>();
             opts.Events.AddEventType<BuyItNowOptionRemoved>();
             opts.Events.AddEventType<BuyItNowPurchased>();
+
+            // ListingWithdrawn is authored as a Selling-BC contract (M3-S5b) but its only
+            // M3 producer is the Auctions test fixture (synthetic seed for scenario 3.10).
+            // The saga consumes it via [SagaIdentityFrom(nameof(ListingWithdrawn.ListingId))];
+            // Marten requires the event type registered for stream replay / forwarding to
+            // resolve the typed payload. Outcome events (BiddingClosed / ListingSold /
+            // ListingPassed) intentionally NOT registered here — they are bus-only via
+            // OutgoingMessages cascading from the saga (M3-S5b OQ5 Path ◦), not appended to
+            // any Marten stream.
+            opts.Events.AddEventType<ListingWithdrawn>();
 
             // DCB tag-type registration. ListingStreamId wraps Guid because .NET 10 added
             // Variant/Version public properties to Guid, which trips ValueTypeInfo's
