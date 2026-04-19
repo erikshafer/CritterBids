@@ -504,6 +504,148 @@ predicate:**
 
 ---
 
+## CritterBids M3-S4 Learnings
+
+Empirical findings from landing `PlaceBidHandler` (the first production DCB handler in
+CritterBids) against Wolverine 5.0.2 / Marten 8 / .NET 10 on 2026-04-18. Sections below are
+append-only records; sections above this block are authoritative and were not edited.
+
+### `EventTagQuery` shape used
+
+The fluent form was chosen because it reads top-to-bottom as English:
+
+```csharp
+public static EventTagQuery BuildQuery(Guid listingId) =>
+    EventTagQuery
+        .For(new ListingStreamId(listingId))
+        .AndEventsOfType<BiddingOpened, BidPlaced, BuyItNowOptionRemoved, ReserveMet, ExtendedBiddingTriggered>();
+```
+
+`BidRejected` is excluded by type per the W002-7 decision above. The query is exposed as a
+`public static BuildQuery` so tests can assert on it directly; in the handler, it feeds
+`session.Events.FetchForWritingByTags<BidConsistencyState>(query)`.
+
+### Why the `[BoundaryModel]` auto-append shape did NOT fit
+
+The canonical University example returns `Events` (from `Wolverine.Marten`) from the
+handler, and Wolverine auto-appends each event through `IEventBoundary.AppendMany`. That
+path does tag inference by scanning the event for a property whose **type exactly matches**
+the registered tag type.
+
+CritterBids' contract events expose `Guid ListingId`, not `ListingStreamId ListingTag`.
+Registering `Guid` itself as a tag type fails at boot — see next subsection. Changing the
+contract event shape to carry `ListingStreamId` would leak a Marten wrapper type into
+`CritterBids.Contracts.Auctions.*` — a non-starter for a modular monolith where contracts
+are consumed by other BCs that have no reason to know about Marten's tag registration rules.
+
+The workaround: abandon the auto-append shape, call `FetchForWritingByTags<T>` directly,
+and for each accepted event do `session.Events.BuildEvent(evt).AddTag(new ListingStreamId(...))`
+followed by `session.Events.Append(listingId, wrapped)`. The DCB optimistic-concurrency
+guarantee survives because `FetchForWritingByTags` queues an `AssertDcbConsistency`
+operation on the session at fetch time — it fires at `SaveChanges`, independent of whether
+the write went through `IEventBoundary.AppendMany` or `IDocumentSession.Events.Append`.
+
+### Why `ListingStreamId` wraps `Guid` instead of using `Guid` directly
+
+.NET 10 added `Variant` and `Version` as public instance properties on `Guid`.
+`JasperFx.Core.Reflection.ValueTypeInfo.ForType` (which Marten calls at tag registration
+time) requires a type to have **exactly one gettable public instance property**. Registering
+`Guid` via `opts.Events.RegisterTagType<Guid>("listing")` therefore throws
+`InvalidValueTypeException` at boot. Wrapping in `public sealed record ListingStreamId(Guid Value)`
+restores the one-property invariant.
+
+The tradeoff: events must be tagged manually in the handler and in test seeding because tag
+inference no longer applies. In exchange, contracts stay Guid-based and the BC boundary
+holds.
+
+### `BidConsistencyState` needs `public Guid Id { get; set; }` (empirical — answers Open Question 2)
+
+The University example's `SubscriptionState` and `CourseState` classes don't expose `Id`. In
+CritterBids, omitting it caused `InvalidDocumentException` at fixture teardown (during
+`CleanAllMartenDataAsync`) because `RegisterTagType<ListingStreamId>("listing").ForAggregate<BidConsistencyState>()`
+registers the aggregate type as a **document** under Marten 8. Documents require an identity
+property. Adding `public Guid Id { get; set; }` resolves it; the value is set by Marten —
+the handler does not need to populate it.
+
+```csharp
+public class BidConsistencyState
+{
+    public Guid Id { get; set; }           // <-- required under Marten 8
+    public Guid ListingId { get; private set; }
+    // ...
+}
+```
+
+This is worth checking the next time the canonical Wolverine examples are refreshed — they
+may eventually carry the `Id` property themselves.
+
+### `ValidateAsync` + `[BoundaryModel]` do not compose
+
+Wolverine's compound-handler convention routes `ValidateAsync` returning
+`Task<HandlerContinuation>` to a pre-handler validation slot. Attempting to combine a
+`ValidateAsync` sibling with a `HandleAsync` that has a `[BoundaryModel]` parameter caused
+the handler to fail discovery — rejection-path tests landed with an empty audit stream
+because the handler never ran.
+
+Folding the validation into `HandleAsync` (returning early on rejection) was the fix.
+Wolverine 6 may tighten this composition; for now, single-method is safer with
+`[BoundaryModel]`.
+
+Additionally: two static methods whose names start with `Handle` on the same handler class
+break discovery with `NoHandlerForEndpointException`. When a pure-function test sibling
+is useful (here: `PlaceBidHandler.Decide(...)` for scenarios that don't need the bus),
+name it something that does not start with `Handle`.
+
+### `[BoundaryModel]` state parameter is nullable
+
+When the `EventTagQuery` matches zero events (scenario 1.6 — no `BiddingOpened` ever
+written to the tagged stream), Marten passes `null` to the `[BoundaryModel] state` parameter.
+Handle with `state ??= new BidConsistencyState()`. This matters even with the manual-append
+approach above because `FetchForWritingByTags<T>` returns an `IEventBoundary<T>` whose
+`.Aggregate` is `null` when there are no matching events.
+
+### `UseMandatoryStreamTypeDeclaration = true` and seeding
+
+The `AuctionsTestFixture` enables `UseMandatoryStreamTypeDeclaration = true` (ADR 008-ish
+policy). Seeding a tagged stream under that policy requires:
+
+```csharp
+session.Events.StartStream<Listing>(listingId, opened);                         // declare type
+session.PendingChanges.Streams().Single().Events.Single().AddTag(new ListingStreamId(listingId));
+await session.SaveChangesAsync();
+```
+
+For subsequent appends to the same stream use the `BuildEvent` + `AddTag` + `Append(streamKey, wrapped)`
+shape — `StartStream<T>` is the one-time declaration.
+
+### Live aggregation and DCB-appended events (Open Question 3)
+
+The manual-append path used here calls `session.Events.Append(listingId, wrapped)` against
+the listing's **primary stream**. Events are both appended to the primary stream AND tagged
+with `ListingStreamId`. This means the `LiveStreamAggregation<Listing>()` projection picks
+them up on subsequent `AggregateStreamAsync<Listing>(listingId)` calls with no special
+handling — bids are visible to the `Listing` aggregate immediately after `SaveChanges`.
+
+This may diverge from the `IEventBoundary.AppendMany` path (which writes only through the
+boundary). If M3-S5's Auction Closing saga switches to auto-append, re-verify that the saga
+can still `AggregateStreamAsync<Listing>` and see the bids.
+
+### Concurrency policies: both exception types
+
+`DcbConcurrencyException` (in `Marten.Events.Dcb`, subclass of `MartenException`) and
+`ConcurrencyException` (in `JasperFx`) are **siblings**, not parent/child. Retry policies
+need both:
+
+```csharp
+options.OnException<ConcurrencyException>().RetryWithCooldown(100.Milliseconds(), 250.Milliseconds());
+options.OnException<DcbConcurrencyException>().RetryWithCooldown(100.Milliseconds(), 250.Milliseconds());
+```
+
+A single `OnException<MartenException>` would accidentally retry on unrelated Marten
+failures; stay specific.
+
+---
+
 ## References
 
 - [dcb.events](https://dcb.events/) — pattern specification
