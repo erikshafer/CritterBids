@@ -1,5 +1,7 @@
 using Alba;
 using CritterBids.Auctions;
+using CritterBids.Contracts.Auctions;
+using CritterBids.Contracts.Selling;
 using JasperFx.CommandLine;
 using JasperFx.Events;
 using Marten;
@@ -103,6 +105,93 @@ public class AuctionsTestFixture : IAsyncLifetime
     {
         await using var session = GetDocumentSession();
         return await session.LoadAsync<T>(id);
+    }
+
+    // ─── M3-S5b saga seed helpers ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Seed an Auction Closing saga document directly in a specified pre-terminal state.
+    /// Bypasses the Start handler — appropriate for scenario tests that need to land at
+    /// a specific point in the saga's state machine (e.g. Active with N bids and reserve
+    /// met) without re-running the BiddingOpened → BidPlaced → ReserveMet replay.
+    /// Direct session.Store() does not forward — the saga is simply persisted, not started.
+    /// </summary>
+    public async Task SeedAuctionClosingSagaAsync(
+        Guid listingId,
+        AuctionClosingStatus status,
+        DateTimeOffset scheduledCloseAt,
+        DateTimeOffset originalCloseAt,
+        int bidCount = 0,
+        decimal currentHighBid = 0m,
+        Guid? currentHighBidderId = null,
+        bool reserveHasBeenMet = false,
+        bool extendedBiddingEnabled = false)
+    {
+        await using var session = GetDocumentSession();
+        session.Store(new AuctionClosingSaga
+        {
+            Id = listingId,
+            ListingId = listingId,
+            Status = status,
+            ScheduledCloseAt = scheduledCloseAt,
+            OriginalCloseAt = originalCloseAt,
+            BidCount = bidCount,
+            CurrentHighBid = currentHighBid,
+            CurrentHighBidderId = currentHighBidderId,
+            ReserveHasBeenMet = reserveHasBeenMet,
+            ExtendedBiddingEnabled = extendedBiddingEnabled,
+        });
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Seed a Listing primary stream with a single BiddingOpened event. The saga's
+    /// Handle(CloseAuction) loads the Listing aggregate via AggregateStreamAsync to read
+    /// SellerId for ListingSold emission — scenarios 3.5 and 3.11 need this seed alongside
+    /// the saga seed. Session-scoped writes do not forward (per M3-S5 retro §OQ4), so this
+    /// does not start a saga via the start handler.
+    /// </summary>
+    public async Task SeedListingStreamAsync(
+        Guid listingId,
+        Guid sellerId,
+        DateTimeOffset scheduledCloseAt,
+        decimal startingBid = 25m,
+        decimal? buyItNowPrice = null)
+    {
+        await using var session = GetDocumentSession();
+        var opened = new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: startingBid,
+            ReserveThreshold: null,
+            BuyItNowPrice: buyItNowPrice,
+            ScheduledCloseAt: scheduledCloseAt,
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromHours(24),
+            OpenedAt: DateTimeOffset.UtcNow);
+
+        session.Events.StartStream<Listing>(listingId, opened);
+        session.PendingChanges.Streams().Single().Events.Single().AddTag(new ListingStreamId(listingId));
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Append a synthetic ListingWithdrawn event to an existing listing stream, tagged so
+    /// UseFastEventForwarding picks it up. Used by scenario 3.10 only — the Selling-side
+    /// publisher is deferred per milestone doc §3, so the test fixture is the sole producer.
+    /// Note: session-scoped appends do not forward; for forwarding-driven dispatch the test
+    /// uses Host.InvokeMessageAndWaitAsync(new ListingWithdrawn(...)) instead. This helper
+    /// exists for future stream-replay scenarios where the event must live on the stream.
+    /// </summary>
+    public async Task AppendListingWithdrawnAsync(Guid listingId)
+    {
+        await using var session = GetDocumentSession();
+        var withdrawn = new ListingWithdrawn(listingId);
+        session.Events.Append(listingId, withdrawn);
+        session.PendingChanges.Streams().Single().Events.Single().AddTag(new ListingStreamId(listingId));
+        await session.SaveChangesAsync();
     }
 }
 

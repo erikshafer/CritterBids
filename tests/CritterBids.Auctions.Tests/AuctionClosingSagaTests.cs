@@ -111,6 +111,132 @@ public class AuctionClosingSagaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Close_ReserveMet_ProducesListingSold()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var winnerId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        await _fixture.SeedListingStreamAsync(listingId, sellerId, closeAt, startingBid: 25m);
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 12,
+            currentHighBid: 85m,
+            currentHighBidderId: winnerId,
+            reserveHasBeenMet: true);
+
+        var tracked = await TrackAndDispatchCloseAsync(listingId, closeAt);
+
+        var biddingClosed = tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+        biddingClosed.ListingId.ShouldBe(listingId);
+
+        var sold = tracked.NoRoutes.MessagesOf<ListingSold>().ShouldHaveSingleItem();
+        sold.ListingId.ShouldBe(listingId);
+        sold.SellerId.ShouldBe(sellerId);
+        sold.WinnerId.ShouldBe(winnerId);
+        sold.HammerPrice.ShouldBe(85m);
+        sold.BidCount.ShouldBe(12);
+
+        tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldBeEmpty();
+
+        // Saga document deleted by MarkCompleted.
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Close_ReserveNotMet_ProducesListingPassed()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 5,
+            currentHighBid: 40m,
+            currentHighBidderId: bidderId,
+            reserveHasBeenMet: false);
+
+        var tracked = await TrackAndDispatchCloseAsync(listingId, closeAt);
+
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+
+        var passed = tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
+        passed.ListingId.ShouldBe(listingId);
+        passed.Reason.ShouldBe("ReserveNotMet");
+        passed.HighestBid.ShouldBe(40m);
+        passed.BidCount.ShouldBe(5);
+
+        tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Close_NoBids_ProducesListingPassed()
+    {
+        var listingId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.AwaitingBids,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 0,
+            reserveHasBeenMet: false);
+
+        var tracked = await TrackAndDispatchCloseAsync(listingId, closeAt);
+
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+
+        var passed = tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
+        passed.Reason.ShouldBe("NoBids");
+        passed.HighestBid.ShouldBeNull();
+        passed.BidCount.ShouldBe(0);
+
+        tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+    }
+
+    [Fact]
+    public async Task Close_AfterExtension_UsesRescheduledTime()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var winnerId = Guid.CreateVersion7();
+        var originalCloseAt = DateTimeOffset.UtcNow.AddMinutes(-2);
+        var extendedCloseAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        await _fixture.SeedListingStreamAsync(listingId, sellerId, extendedCloseAt, startingBid: 25m);
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Extended,
+            scheduledCloseAt: extendedCloseAt,
+            originalCloseAt: originalCloseAt,
+            bidCount: 12,
+            currentHighBid: 85m,
+            currentHighBidderId: winnerId,
+            reserveHasBeenMet: true);
+
+        // Dispatch CloseAuction at the extended time — same evaluation logic regardless of
+        // whether the listing was extended (workshop scenario 3.11).
+        var tracked = await TrackAndDispatchCloseAsync(listingId, extendedCloseAt);
+
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+        var sold = tracked.NoRoutes.MessagesOf<ListingSold>().ShouldHaveSingleItem();
+        sold.HammerPrice.ShouldBe(85m);
+        sold.BidCount.ShouldBe(12);
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+    }
+
+    [Fact]
     public async Task ExtendedBidding_CancelsAndReschedules()
     {
         var listingId = Guid.CreateVersion7();
@@ -173,6 +299,22 @@ public class AuctionClosingSagaTests : IAsyncLifetime
             new ScheduledMessageQuery { PageSize = 1000 },
             CancellationToken.None);
         return result.Messages;
+    }
+
+    /// <summary>
+    /// Dispatch a CloseAuction through the bus inside a TrackedSession so cascaded outcome
+    /// events (BiddingClosed, ListingSold/ListingPassed) emitted via OutgoingMessages can be
+    /// observed. Outcome events have no routing rule wired in this fixture (RabbitMQ is
+    /// disabled, no opts.Publish for these types until M3-S6), so cascaded messages land in
+    /// tracked.NoRoutes — the envelope record carries the message body for assertions via
+    /// MessagesOf&lt;T&gt;().
+    /// </summary>
+    private async Task<Wolverine.Tracking.ITrackedSession> TrackAndDispatchCloseAsync(
+        Guid listingId, DateTimeOffset scheduledAt)
+    {
+        return await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .InvokeMessageAndWaitAsync(new CloseAuction(listingId, scheduledAt));
     }
 
     private async Task CancelAllScheduledCloseAuctionsAsync()

@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using Marten;
 using Wolverine;
 using Wolverine.Persistence.Durability;
 using Wolverine.Persistence.Durability.ScheduledMessageManagement;
@@ -79,12 +80,69 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
         Status = AuctionClosingStatus.Extended;
     }
 
-    public OutgoingMessages Handle(
-        [SagaIdentityFrom(nameof(CloseAuction.ListingId))] CloseAuction message)
+    public async Task<OutgoingMessages> Handle(
+        [SagaIdentityFrom(nameof(CloseAuction.ListingId))] CloseAuction message,
+        IDocumentSession session,
+        TimeProvider time,
+        CancellationToken cancellationToken)
     {
-        // TODO(M3-S5b): real close evaluation lives here — emit BiddingClosed + ListingSold/ListingPassed, then MarkCompleted().
-        return new OutgoingMessages();
+        // Idempotency — a CloseAuction arriving for a saga already terminated by
+        // BuyItNowPurchased or ListingWithdrawn (and not cancelled in time) returns
+        // empty without emitting a second outcome (workshop scenario 3.9).
+        if (Status == AuctionClosingStatus.Resolved) return new OutgoingMessages();
+
+        var now = time.GetUtcNow();
+        var messages = new OutgoingMessages
+        {
+            new BiddingClosed(ListingId, now),
+        };
+
+        if (BidCount > 0 && ReserveHasBeenMet)
+        {
+            // SellerId is not tracked on the saga because StartAuctionClosingSagaHandler
+            // (frozen from M3-S5) does not capture it. Load the Listing aggregate's live
+            // projection — populated by Apply(BiddingOpened) — to read SellerId at close.
+            var listing = await session.Events.AggregateStreamAsync<Listing>(
+                ListingId, token: cancellationToken);
+
+            messages.Add(new ListingSold(
+                ListingId: ListingId,
+                SellerId: listing!.SellerId,
+                WinnerId: CurrentHighBidderId!.Value,
+                HammerPrice: CurrentHighBid,
+                BidCount: BidCount,
+                SoldAt: now));
+        }
+        else if (BidCount > 0)
+        {
+            messages.Add(new ListingPassed(
+                ListingId: ListingId,
+                Reason: "ReserveNotMet",
+                HighestBid: CurrentHighBid,
+                BidCount: BidCount,
+                PassedAt: now));
+        }
+        else
+        {
+            messages.Add(new ListingPassed(
+                ListingId: ListingId,
+                Reason: "NoBids",
+                HighestBid: null,
+                BidCount: BidCount,
+                PassedAt: now));
+        }
+
+        Status = AuctionClosingStatus.Resolved;
+        MarkCompleted();
+        return messages;
     }
+
+    // Wolverine's named-method convention — invoked instead of throwing UnknownSagaException
+    // when a CloseAuction arrives but no saga document is found (e.g. the saga was already
+    // deleted by MarkCompleted from a terminal handler and the pending CloseAuction slipped
+    // through cancellation). Source: Wolverine SagaChain.cs — `NotFound` constant + branch
+    // emitted instead of AssertSagaStateExistsFrame when a static method by that name exists.
+    public static OutgoingMessages NotFound(CloseAuction message) => new();
 
     internal static async Task CancelPendingCloseAsync(
         IMessageStore messageStore,
