@@ -16,10 +16,11 @@ namespace CritterBids.Auctions;
 /// <c>InvalidDocumentException</c> at fixture startup without an Id/id property. Empirical
 /// answer to M3-S4 Open Question 2.
 ///
-/// <c>Apply(BiddingOpened)</c> populates <c>BuyItNowPrice</c> and <c>BuyItNowAvailable</c>
-/// even though this slice's PlaceBid flow uses <c>BuyItNowAvailable</c> only for scenario 1.1
-/// (first-bid removes BIN). M3-S4b reuses the same state class for <c>BuyNowHandler</c>
-/// without extending it.
+/// <c>Apply(BiddingOpened)</c> populates <c>BuyItNowPrice</c> and <c>BuyItNowAvailable</c>.
+/// <c>Apply(BuyItNowPurchased)</c> was added in M3-S4b to mark the listing terminal — a
+/// second BuyNow on the same listing then rejects via the "BuyItNowNotAvailable" reason
+/// code on the next <c>FetchForWritingByTags</c> cycle, and the DCB consistency assertion
+/// prevents concurrent attempts from both committing.
 /// </summary>
 public class BidConsistencyState
 {
@@ -77,4 +78,10 @@ public class BidConsistencyState
     public void Apply(ReserveMet @event) => this.ReserveMet = true;
 
     public void Apply(ExtendedBiddingTriggered @event) => ScheduledCloseAt = @event.NewCloseAt;
+
+    public void Apply(BuyItNowPurchased @event)
+    {
+        IsOpen = false;
+        BuyItNowAvailable = false;
+    }
 }
