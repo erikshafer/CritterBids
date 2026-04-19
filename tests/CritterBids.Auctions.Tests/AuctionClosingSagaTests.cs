@@ -1,6 +1,7 @@
 using CritterBids.Auctions.Tests.Fixtures;
 using CritterBids.Contracts.Auctions;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 using Wolverine.Persistence.Durability;
 using Wolverine.Persistence.Durability.ScheduledMessageManagement;
 using Wolverine.Tracking;
@@ -206,6 +207,88 @@ public class AuctionClosingSagaTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task BuyItNowPurchased_CompletesSaga()
+    {
+        var listingId = Guid.CreateVersion7();
+        var buyerId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        // Seed an open saga and a real pending CloseAuction at closeAt so the cancel path
+        // in Handle(BuyItNowPurchased) has something to remove (assertion below).
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.AwaitingBids,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt);
+        await ScheduleCloseAuctionAsync(listingId, closeAt);
+
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .InvokeMessageAndWaitAsync(new BuyItNowPurchased(
+                ListingId: listingId,
+                BuyerId: buyerId,
+                Price: 100m,
+                PurchasedAt: DateTimeOffset.UtcNow));
+
+        // Saga document deleted by MarkCompleted (Wolverine.Saga.cs:12-28).
+        (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
+
+        // No outcome events on the BIN terminal path — BuyItNowPurchased is itself the
+        // terminal outcome contract (BiddingClosed.cs explicit "Not emitted on the BuyItNow
+        // terminal path"; workshop scenario 3.8 explicit "no BiddingClosed, no ListingSold").
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldBeEmpty();
+
+        // Pending CloseAuction cancelled (M3-S5b OQ2 Path a).
+        var pending = await QueryPendingCloseAuctionsAsync();
+        pending.ShouldBeEmpty();
+    }
+
+    [Fact]
+    public async Task CloseAuction_AfterBuyItNow_NoOp()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var closeAt = DateTimeOffset.UtcNow.AddSeconds(-1);
+
+        // Seed a saga directly in Resolved state — represents "saga already terminated by
+        // BuyItNowPurchased" without going through MarkCompleted (which would delete the
+        // doc, leaving nothing for Handle(CloseAuction) to find). This tests the
+        // Status == Resolved early-return guard, which is the production path when the
+        // pending CloseAuction was somehow not cancelled before the saga terminated.
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Resolved,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 3,
+            currentHighBid: 50m,
+            currentHighBidderId: bidderId,
+            reserveHasBeenMet: true);
+
+        var beforeSaga = await _fixture.LoadSaga<AuctionClosingSaga>(listingId);
+        beforeSaga.ShouldNotBeNull();
+        var beforeRevision = beforeSaga!.Version;
+
+        var tracked = await TrackAndDispatchCloseAsync(listingId, closeAt);
+
+        // No outcome events — early-return guard fired.
+        tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldBeEmpty();
+
+        // Saga state byte-identical (no MarkCompleted called on the early-return path).
+        var afterSaga = await _fixture.LoadSaga<AuctionClosingSaga>(listingId);
+        afterSaga.ShouldNotBeNull();
+        afterSaga!.Status.ShouldBe(AuctionClosingStatus.Resolved);
+        afterSaga.BidCount.ShouldBe(3);
+        afterSaga.CurrentHighBid.ShouldBe(50m);
+        afterSaga.CurrentHighBidderId.ShouldBe(bidderId);
+        afterSaga.ReserveHasBeenMet.ShouldBeTrue();
+    }
+
+    [Fact]
     public async Task Close_AfterExtension_UsesRescheduledTime()
     {
         var listingId = Guid.CreateVersion7();
@@ -315,6 +398,22 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         return await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
             .InvokeMessageAndWaitAsync(new CloseAuction(listingId, scheduledAt));
+    }
+
+    /// <summary>
+    /// Schedule a real pending CloseAuction for the listing — used to verify the
+    /// cancel-on-terminal path in scenarios 3.8 / 3.10. Mirrors what
+    /// StartAuctionClosingSagaHandler does in production for the BiddingOpened path.
+    /// </summary>
+    private async Task ScheduleCloseAuctionAsync(Guid listingId, DateTimeOffset scheduledAt)
+    {
+        // IMessageBus is registered scoped — resolving from Host.Services (the root provider)
+        // throws InvalidOperationException. Create an async scope so the request-scoped bus
+        // resolves cleanly. ScheduleAsync writes to the scheduled-message store synchronously,
+        // so the scope can dispose immediately after the await.
+        await using var scope = _fixture.Host.Services.CreateAsyncScope();
+        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+        await bus.ScheduleAsync(new CloseAuction(listingId, scheduledAt), scheduledAt);
     }
 
     private async Task CancelAllScheduledCloseAuctionsAsync()

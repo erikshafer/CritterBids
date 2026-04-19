@@ -144,6 +144,29 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
     // emitted instead of AssertSagaStateExistsFrame when a static method by that name exists.
     public static OutgoingMessages NotFound(CloseAuction message) => new();
 
+    public async Task Handle(
+        [SagaIdentityFrom(nameof(BuyItNowPurchased.ListingId))] BuyItNowPurchased message,
+        IMessageStore messageStore,
+        CancellationToken cancellationToken)
+    {
+        // Idempotency — replay-safe terminal guard. Without this, a redelivered
+        // BuyItNowPurchased would re-cancel the (already-cancelled) close and re-emit
+        // any cascade. Currently no cascade on this path (workshop scenario 3.8 — BIN is
+        // its own terminal outcome, no BiddingClosed per BiddingClosed.cs contract docs),
+        // but the guard keeps the terminal-handler shape uniform.
+        if (Status == AuctionClosingStatus.Resolved) return;
+
+        // Cancel the pending CloseAuction explicitly (M3-S5b OQ2 Path a — belt-and-suspenders
+        // alongside MarkCompleted's saga-doc deletion + the static NotFound(CloseAuction)
+        // safety net above). Without this, the scheduled CloseAuction would still fire and
+        // hit the NotFound branch — correct behaviour, but observably noisier in the
+        // scheduled-message store.
+        await CancelPendingCloseAsync(messageStore, ScheduledCloseAt, cancellationToken);
+
+        Status = AuctionClosingStatus.Resolved;
+        MarkCompleted();
+    }
+
     internal static async Task CancelPendingCloseAsync(
         IMessageStore messageStore,
         DateTimeOffset at,
