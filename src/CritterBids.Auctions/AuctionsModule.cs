@@ -23,13 +23,15 @@ public static class AuctionsModule
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
-            // lands with S4. S5 adds BiddingClosed / ListingSold / ListingPassed.
+            // lands with S4. BuyItNowPurchased lands with S4b as the terminal event of the
+            // BIN short-circuit path. S5 adds BiddingClosed / ListingSold / ListingPassed.
             opts.Events.AddEventType<BiddingOpened>();
             opts.Events.AddEventType<BidPlaced>();
             opts.Events.AddEventType<BidRejected>();
             opts.Events.AddEventType<ReserveMet>();
             opts.Events.AddEventType<ExtendedBiddingTriggered>();
             opts.Events.AddEventType<BuyItNowOptionRemoved>();
+            opts.Events.AddEventType<BuyItNowPurchased>();
 
             // DCB tag-type registration. ListingStreamId wraps Guid because .NET 10 added
             // Variant/Version public properties to Guid, which trips ValueTypeInfo's
