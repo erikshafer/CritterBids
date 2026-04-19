@@ -42,7 +42,19 @@ public class BuyNowDispatchTests : IAsyncLifetime
         var buyerId = Guid.CreateVersion7();
         var now = DateTimeOffset.UtcNow;
 
-        await SeedOpenListing(listingId, sellerId, startingBid: 25m, buyItNow: 100m, close: now.AddMinutes(5));
+        var close = now.AddMinutes(5);
+        await SeedOpenListing(listingId, sellerId, startingBid: 25m, buyItNow: 100m, close: close);
+
+        // The BiddingOpened append above is session-scoped and does not forward through
+        // Wolverine, so StartAuctionClosingSagaHandler never runs (M3-S5 retro §OQ4). With
+        // M3-S5b's Handle(BuyItNowPurchased) live, the cascaded BuyItNowPurchased forwards to
+        // the saga and throws UnknownSagaException unless a saga document exists. Seed it
+        // directly — mirrors the PlaceBidDispatchTests precedent (commit 47f7cc4).
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            AuctionClosingStatus.AwaitingBids,
+            scheduledCloseAt: close,
+            originalCloseAt: close);
 
         await _fixture.Host.InvokeMessageAndWaitAsync(
             new BuyNow(listingId, buyerId, CreditCeiling: 200m));
