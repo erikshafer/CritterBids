@@ -19,7 +19,8 @@ They are distinct from their peer folders:
 | [`MVP.md`](MVP.md) | MVP definition of done — in-scope and out-of-scope inventory, demo scenario, success criteria. Start here. |
 | [`M1-skeleton.md`](M1-skeleton.md) | Milestone 1 — repository skeleton, BC module scaffolding, Aspire orchestration. Foundation milestone. |
 | [`M2-listings-pipeline.md`](M2-listings-pipeline.md) | Milestone 2 — listings pipeline from draft through publication. First vertical slice. |
-| [`M3-auctions-bc.md`](M3-auctions-bc.md) | Milestone 3 — Auctions BC core: DCB, Auction Closing saga, Proxy Bid Manager saga, bidding mechanics. |
+| [`M3-auctions-bc.md`](M3-auctions-bc.md) | Milestone 3 — Auctions BC core: DCB boundary model, `Listing` aggregate, Auction Closing saga with extended bidding. Proxy Bid Manager and Session aggregate deferred to M4. |
+| [`M4-auctions-bc-completion.md`](M4-auctions-bc-completion.md) | Milestone 4 — Auctions BC completion: Proxy Bid Manager saga (first composite-key saga), Session aggregate with Flash format, Selling-side `WithdrawListing` producer. Triggers ADR 014 authoring. |
 
 ---
 
@@ -27,7 +28,7 @@ They are distinct from their peer folders:
 
 For a new contributor:
 1. [`MVP.md`](MVP.md) — grounding on the end state
-2. Sequence through `M1` → `M2` → `M3` to see how scope stacks toward MVP
+2. Sequence through `M1` → `M2` → `M3` → `M4` to see how scope stacks toward MVP
 
 For someone picking up work on a specific milestone: read that milestone's document plus the session prompts in [`docs/prompts/`](../prompts/) tagged with the corresponding milestone prefix (e.g. `M3-S1-*.md`).
 
