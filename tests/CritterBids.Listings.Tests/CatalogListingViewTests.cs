@@ -383,4 +383,46 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.ClosedAt.ShouldBe(passedAt);
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
     }
+
+    [Fact]
+    public async Task BuyItNowPurchased_SetsCatalogStatusSold()
+    {
+        // Arrange — view in Open state; BIN purchased before any bid.
+        // BIN terminal path skips BiddingClosed entirely (S5b OQ1 Path B + retro §5).
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var buyerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        var purchasedAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var binPurchased = new BuyItNowPurchased(
+            ListingId: listingId,
+            BuyerId: buyerId,
+            Price: 150_000m,
+            PurchasedAt: purchasedAt);
+
+        // Act — note: no intermediate BiddingClosed dispatch.
+        await InvokeAuctionHandlerAsync<BuyItNowPurchased>(AuctionStatusHandler.Handle, binPurchased);
+
+        // Assert — Status transitions Open → Sold directly; HammerPrice = BIN price
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Sold");
+        view.HammerPrice.ShouldBe(150_000m);
+        view.WinnerId.ShouldBe(buyerId);
+        view.ClosedAt.ShouldBe(purchasedAt);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
 }

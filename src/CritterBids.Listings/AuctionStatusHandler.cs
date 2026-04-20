@@ -116,4 +116,25 @@ public static class AuctionStatusHandler
             ClosedAt        = message.PassedAt
         });
     }
+
+    public static async Task Handle(
+        BuyItNowPurchased message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        // BIN is its own terminal — no preceding BiddingClosed (S5b retro
+        // §"What M3-S6 should know" §5). Status transitions directly from
+        // any prior state ("Published" or "Open") to "Sold". HammerPrice
+        // captures the BIN price; WinnerId is the buyer.
+        session.Store(view with
+        {
+            Status      = "Sold",
+            HammerPrice = message.Price,
+            WinnerId    = message.BuyerId,
+            ClosedAt    = message.PurchasedAt
+        });
+    }
 }
