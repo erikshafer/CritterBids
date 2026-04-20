@@ -1,6 +1,8 @@
+using CritterBids.Contracts.Auctions;
 using CritterBids.Contracts.Selling;
 using CritterBids.Listings;
 using CritterBids.Listings.Tests.Fixtures;
+using Marten;
 
 namespace CritterBids.Listings.Tests;
 
@@ -144,5 +146,66 @@ public class CatalogListingViewTests : IAsyncLifetime
             s.Get.Url($"/api/listings/{Guid.NewGuid()}");
             s.StatusCodeShouldBe(404);
         });
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // M3-S6 — Auction-status projection extension (milestone doc §7)
+    //
+    // Each test seeds a CatalogListingView in its post-publish baseline, then
+    // invokes AuctionStatusHandler.Handle directly with an IDocumentSession and
+    // explicitly SaveChangesAsync — same shape as the M2 SeedCatalogEntry helper.
+    // Direct invocation is required here because opts.ListenToRabbitQueue in
+    // Program.cs creates a sticky binding for these message types to the
+    // RabbitMQ endpoint, and the test fixture calls DisableAllExternalWolverine-
+    // Transports — bus dispatch (Host.InvokeMessageAndWaitAsync) raises
+    // NoHandlerForEndpointException ("sticky handler" pattern; see
+    // C:\Users\Erik\.claude\projects\C--Code-CritterBids\memory\
+    // project_wolverine_sticky_handler.md). Direct invocation is the M2-S7
+    // precedent and exercises the same handler logic — only the dispatch
+    // mechanism differs.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    private async Task InvokeAuctionHandlerAsync<TMessage>(
+        Func<TMessage, IDocumentSession, CancellationToken, Task> handler,
+        TMessage message)
+    {
+        await using var session = _fixture.GetDocumentSession();
+        await handler(message, session, CancellationToken.None);
+        await session.SaveChangesAsync();
+    }
+
+    [Fact]
+    public async Task BiddingOpened_SetsCatalogStatusOpen()
+    {
+        // Arrange — view exists in published-but-not-opened state
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        var scheduledCloseAt = DateTimeOffset.UtcNow.AddHours(24);
+        var opened = new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: scheduledCloseAt,
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, opened);
+
+        // Assert — M2 fields preserved, auction fields populated
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Id.ShouldBe(listingId);
+        view.SellerId.ShouldBe(sellerId);                              // M2 field preserved
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");        // M2 field preserved
+        view.Status.ShouldBe("Open");
+        view.ScheduledCloseAt.ShouldBe(scheduledCloseAt);
     }
 }

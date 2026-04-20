@@ -94,6 +94,51 @@ public class ListingsTestFixture : IAsyncLifetime
 
     public Marten.IDocumentSession GetDocumentSession() =>
         Host.DocumentStore().LightweightSession();
+
+    // ─── M3-S6 catalog-extension helpers ──────────────────────────────────────
+
+    /// <summary>
+    /// Seed a CatalogListingView document directly in its M2 published-but-not-opened
+    /// baseline state — lets auction-status tests start from a realistic post-publish view
+    /// without re-running the full ListingPublished pipeline. Mirrors the
+    /// SeedAuctionClosingSagaAsync shape from AuctionsTestFixture.
+    /// </summary>
+    public async Task SeedCatalogListingViewAsync(
+        Guid listingId,
+        Guid sellerId,
+        string title = "Mint Condition Foil Black Lotus",
+        string format = "Timed",
+        decimal startingBid = 50_000m,
+        decimal? buyItNow = 150_000m,
+        TimeSpan? duration = null,
+        DateTimeOffset? publishedAt = null)
+    {
+        await using var session = GetDocumentSession();
+        session.Store(new CatalogListingView
+        {
+            Id          = listingId,
+            SellerId    = sellerId,
+            Title       = title,
+            Format      = format,
+            StartingBid = startingBid,
+            BuyItNow    = buyItNow,
+            Duration    = duration ?? TimeSpan.FromDays(7),
+            PublishedAt = publishedAt ?? DateTimeOffset.UtcNow,
+            Status      = "Published"
+        });
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Load the current CatalogListingView document by ListingId. Returns null if the
+    /// view does not exist — auction-status tests assert on the post-handler state by
+    /// re-reading after Host.InvokeMessageAndWaitAsync returns.
+    /// </summary>
+    public async Task<CatalogListingView?> LoadCatalogListingViewAsync(Guid listingId)
+    {
+        await using var session = GetDocumentSession();
+        return await session.LoadAsync<CatalogListingView>(listingId);
+    }
 }
 
 /// <summary>
