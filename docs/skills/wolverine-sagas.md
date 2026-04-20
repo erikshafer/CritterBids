@@ -256,6 +256,46 @@ public sealed class AuctionClosingSaga : Saga
 }
 ```
 
+### State Minimality — Re-Read Emission-Only Fields
+
+Saga state is **orchestration state**, not a snapshot of the domain. If an outcome event needs a field that the saga doesn't drive decisions on, re-read it from the source of truth at emission time rather than expanding saga state to carry it through the lifetime of the process.
+
+The decision boundary: **store a field if it gates a `Handle` branch; load it on demand if it only appears in a cascaded event payload.** Every field added to saga state becomes a concurrent-update hazard under numeric revisions, widens the start handler's capture surface, and forces a saga schema migration when the outcome contract changes.
+
+```csharp
+public async Task<OutgoingMessages> Handle(
+    [SagaIdentityFrom(nameof(CloseAuction.ListingId))] CloseAuction message,
+    IDocumentSession session,
+    TimeProvider time,
+    CancellationToken cancellationToken)
+{
+    if (Status == AuctionClosingStatus.Resolved) return new OutgoingMessages();
+
+    var messages = new OutgoingMessages { new BiddingClosed(ListingId, time.GetUtcNow()) };
+
+    if (BidCount > 0 && ReserveHasBeenMet)
+    {
+        // ListingSold carries SellerId, but the saga never decides on it —
+        // re-read the live aggregate rather than widening saga state or
+        // threading SellerId through the Start handler.
+        var listing = await session.Events.AggregateStreamAsync<Listing>(
+            ListingId, token: cancellationToken);
+        messages.Add(new ListingSold(
+            ListingId, listing!.SellerId, CurrentHighBidderId!.Value,
+            CurrentHighBid, BidCount, time.GetUtcNow()));
+    }
+    /* ... */
+
+    Status = AuctionClosingStatus.Resolved;
+    MarkCompleted();
+    return messages;
+}
+```
+
+The read cost is paid once per terminal — cheap against a live aggregate (which the DCB already hits on every decision), negligible against an inline projection.
+
+**In-repo ground:** CritterBids `AuctionClosingSaga.Handle(CloseAuction)` (authored M3-S5b) — `SellerId` lives on the `Listing` aggregate (populated via `Apply(BiddingOpened)`) and is re-read at close time instead of being captured by `StartAuctionClosingSagaHandler`. The frozen-start-handler invariant was preserved at zero cost. See `src/CritterBids.Auctions/AuctionClosingSaga.cs` and retrospective `docs/retrospectives/M3-S5b-auction-closing-saga-terminal-paths-retrospective.md` §"S5b-1" for the full narrative.
+
 ---
 
 ## Scheduled Messages and Timeouts
@@ -457,6 +497,30 @@ public void Handle(DisputeResolved message)
 }
 ```
 
+### Handling Post-`MarkCompleted()` Deliveries — the `NotFound` Named-Method Convention
+
+`MarkCompleted()` deletes the saga document. Any message that arrives afterward correlated to the same saga id — a retry, a late cascade, an at-least-once redelivery — finds no saga. By default Wolverine throws. If the message is one you want to **silently absorb** (the saga's job is already done), add a static method literally named `NotFound` on the saga class that accepts that message type.
+
+```csharp
+public sealed class AuctionClosingSaga : Saga
+{
+    // Normal handler path — runs when the saga document still exists
+    public OutgoingMessages Handle(BiddingClosed message) { /* ... */ }
+
+    // Escape hatch — runs when the saga was already completed & deleted
+    public static void NotFound(BiddingClosed message)
+    {
+        // Intentional no-op: terminal arrived after saga closed out normally.
+    }
+}
+```
+
+The method must be `static` (the saga instance by definition does not exist at this point), and its parameter list is resolved exactly like a normal Wolverine handler — `IDocumentSession`, `ILogger<T>`, etc. can be injected. Use it to log, surface a metric, or quietly drop — but do **not** use it as a back-door for "resurrect the saga": if the flow isn't really terminal, the saga shouldn't have called `MarkCompleted()` in the first place.
+
+**Citation:** Wolverine source `src/Wolverine/Persistence/Sagas/SagaChain.cs:24` (`public const string NotFound = "NotFound";`), `:235` (`NotFoundCalls = findByNames(NotFound);` — the codegen field), `:354-366` (the dispatch branch that invokes `NotFoundCalls` when the saga load returns null).
+
+**In-repo ground:** `AuctionClosingSaga.NotFound(CloseAuction)` and `AuctionClosingSaga.NotFound(ListingWithdrawn)` — both authored M3-S5b to absorb late `CloseAuction` timer fires that race the withdrawn/completed terminal. See retrospective `docs/retrospectives/M3-S5b-auction-closing-saga-terminal-paths-retrospective.md` §"Surprise 1" for the failure mode that prompted the discovery.
+
 ---
 
 ## DOs and DO NOTs
@@ -535,6 +599,25 @@ public async Task AuctionClosingSaga_WhenBidInExtensionWindow_ReschedulesClose()
 ```
 
 Use `ExecuteAndWaitAsync` from the TestFixture to dispatch messages and wait for all Wolverine side effects to complete before asserting.
+
+### Resolving `IMessageBus` in a Test Harness — It Is Scoped
+
+Wolverine registers `IMessageBus` as a **scoped** service: `services.AddScoped<IMessageBus, MessageContext>()`. Attempting `host.Services.GetRequiredService<IMessageBus>()` against the root container throws `InvalidOperationException: Cannot resolve scoped service ... from root provider`. In production this is invisible because every message invocation already runs inside a per-message scope. In tests you must create the scope yourself.
+
+```csharp
+// ❌ WRONG — throws: IMessageBus is scoped, root container cannot satisfy it
+var bus = _fixture.Host.Services.GetRequiredService<IMessageBus>();
+await bus.ScheduleAsync(new CloseAuction(sagaId), DateTimeOffset.UtcNow.AddSeconds(30));
+
+// ✅ CORRECT — create a scope; dispose releases bus + any scoped deps
+await using var scope = _fixture.Host.Services.CreateAsyncScope();
+var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+await bus.ScheduleAsync(new CloseAuction(sagaId), DateTimeOffset.UtcNow.AddSeconds(30));
+```
+
+**Citation:** Wolverine source `src/Wolverine/HostBuilderExtensions.cs:190` (`services.AddScoped<IMessageBus, MessageContext>();`).
+
+**In-repo ground:** The `ExecuteAndWaitAsync` family on `AuctionsTestFixture` wraps the scope-and-dispose dance so saga tests don't have to spell it out per call. Reach for the raw `IMessageBus` (scoped) only when you need a capability the fixture helper does not expose — e.g. `ScheduleAsync` with a specific trigger time for a `CloseAuction` cancellation test. See retrospective `docs/retrospectives/M3-S5-auction-closing-saga-skeleton-retrospective.md` §"Surprise 4" for the discovery.
 
 ---
 
