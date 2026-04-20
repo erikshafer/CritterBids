@@ -47,6 +47,24 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
             .ToRabbitQueue("auctions-selling-events");
         opts.ListenToRabbitQueue("auctions-selling-events");
+
+        // M3-S6: Auctions BC publishes auction-status events to the Listings BC's
+        // CatalogListingView projection. All six events share one queue so the
+        // consumer endpoint binds once. BuyItNowPurchased is included per M3-S6
+        // OQ3 Path (a) — terminal BIN path, no preceding BiddingClosed.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BiddingOpened>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BidPlaced>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BiddingClosed>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.ListenToRabbitQueue("listings-auctions-events");
     }
 
     opts.Policies.AutoApplyTransactions();
