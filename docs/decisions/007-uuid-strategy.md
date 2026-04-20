@@ -1,8 +1,8 @@
 # ADR 007 — UUID Strategy for Stream IDs and Event Row IDs
 
-**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (⏸ Deferred — Gate 1 unconfirmed, Gate 4 awaiting JasperFx input, re-evaluate before M3-S4)
-**Date:** 2026-04-13 (original) · 2026-04-16 (M3-S1 Gate 4 deferral)
-**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession (original) · M3-S1 — Auctions Foundation Decisions (Gate 4 deferral)
+**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (⏸ Deferred — Gate 1 unconfirmed, Gate 4 re-deferred at M4-S1 to M5-S1 Settlement BC trigger with named owner)
+**Date:** 2026-04-13 (original) · 2026-04-16 (M3-S1 Gate 4 deferral) · 2026-04-20 (M4-S1 Gate 4 second re-evaluation, re-deferred)
+**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession (original) · M3-S1 — Auctions Foundation Decisions (Gate 4 first deferral) · M4-S1 — Auctions Completion Foundation Decisions (Gate 4 second re-evaluation, re-deferred)
 
 ---
 
@@ -83,6 +83,20 @@ The acceptance gates below must be satisfied before this moves to Accepted.
   > time of the M3-S1 foundation-decisions session. Formally deferred per the Event Row ID
   > Decision section below. Re-evaluation trigger set before the M3-S4 DCB authoring session
   > or on JasperFx response, whichever comes first.
+  >
+  > **Gate 4 — Re-Deferred (M4-S1, 2026-04-20).** Second scheduled re-evaluation at the
+  > M4-S1 foundation-decisions session. JasperFx guidance still not in hand; the M3-S4
+  > trigger lapsed without Gate 1 being confirmed, M3 shipped on the Marten engine default,
+  > and no operational signal during M3 motivated an unscheduled re-open. Re-deferred with
+  > a new trigger and a named owner rather than allowed to drift into indefinite deferral.
+  > **New trigger:** re-evaluate at **M5-S1 — Settlement BC Foundation Decisions**. M5
+  > lands the last Marten BC in CritterBids; M5-S1 is the final foundation-decisions
+  > session at which an application-layer row-ID strategy could be adopted uniformly
+  > across every BC without a post-hoc backfill. **Named owner for the JasperFx
+  > follow-up nudge:** Erik. If the M5-S1 trigger fires without JasperFx input, the
+  > accepted outcome is final engine-default acceptance recorded as one more amendment
+  > to this ADR at that time (not a new ADR). See the Event Row ID Decision — Re-Deferred
+  > (M4-S1) section below.
 
 ---
 
@@ -150,6 +164,69 @@ outcome is to ship M3 on the Marten engine default for Auctions event row IDs an
 | Gate 2 — Polecat 2 exposes the same | ✅ Closed (N/A per ADR 011) |
 | Gate 3 — `Guid.CreateVersion7()` in net10.0 | ✅ Confirmed (M1-S5) |
 | Gate 4 — JasperFx guidance for Auctions-scale write workloads | ⏸ Deferred — awaiting input |
+
+---
+
+## Event Row ID Decision — Re-Deferred (M4-S1, 2026-04-20)
+
+**Status:** ⏸ Re-deferred at the second scheduled re-evaluation; new trigger and named owner
+pinned. Not a bare re-deferral — the M4-S1 prompt's open-question guidance explicitly
+flagged that outcome as unacceptable.
+
+**Second re-evaluation outcome:** JasperFx input is still not in hand at M4-S1. The M3-S4
+trigger set in the first deferral lapsed — M3 shipped on the Marten engine default and no
+operational signal during the M3 Auctions BC implementation (DCB `PlaceBid` / `BuyNow` at
+M3-S4, Auction Closing saga at M3-S5/S5b, listings catalog at M3-S6) motivated an
+unscheduled re-open. The engine default has held correctly through the first high-write
+DCB use case.
+
+**Why re-deferral over engine-default acceptance at M4-S1:**
+
+The M4-S1 prompt's acceptance criteria listed two outcomes:
+(a) closure with a decision, or (b) re-deferral with a specific downstream trigger and
+named owner. Bare re-deferral without a new trigger would escalate to a milestone-level
+question about indefinite drift. Immediate engine-default acceptance at M4-S1 would close
+the door on the remaining high-value adoption window (M5-S1 as the last foundation
+session across every Marten BC) without the JasperFx input the ADR has always treated as
+the blocker. Re-deferral to M5-S1 with a named owner preserves the decision window one
+more time while bounding the drift.
+
+**New trigger:** Re-evaluate at **M5-S1 — Settlement BC Foundation Decisions**, when M5
+(the last Marten BC in the system) opens. M5-S1 is the final foundation-decisions session
+at which an application-layer row-ID strategy could be adopted uniformly across every BC
+without a post-hoc backfill. If JasperFx guidance arrives before M5-S1, trigger fires
+early (same whichever-comes-first shape as the M3-S1 deferral).
+
+**Named owner for the JasperFx follow-up nudge:** Erik. The nudge is the outbound request
+for guidance, not the internal decision authority. If no guidance is received by M5-S1
+prompt draft, the accepted outcome at that point is permanent engine-default acceptance,
+recorded as one further amendment to this ADR rather than a new ADR.
+
+**Default in effect until M5-S1:** Unchanged from the M3-S1 deferral — Marten's engine-
+assigned event row IDs. No application-layer assignment is performed for event rows in any
+BC. Stream IDs remain UUID v7 per the accepted Stream ID Decision section.
+
+**Rationale for re-deferral over closure:**
+
+- Gate 1 (Marten 8 exposing an application-level event row ID generation seam) remains
+  unconfirmed. Closing the ADR by accepting "engine default, permanent" at M4-S1 would
+  foreclose adoption before the last foundation session where it could be applied
+  uniformly — a one-way door being walked through while a reversible option remains.
+- M3 shipped on the engine default without operational issue. This is evidence that the
+  engine default is functionally adequate for the current write profile, not evidence
+  that v7 row IDs would not add value. Insert-locality benefits surface under sustained
+  high-write load (Auctions BC bid events at conference-demo scale or beyond) that the
+  M3 integration test suite does not exercise.
+- Carrying the deferral forward one more scheduled step with a named owner converts an
+  open-ended drift into a bounded one. The M5-S1 forcing function matches the original
+  "foundation session = decision window" discipline the ADR has followed since M3-S1.
+
+| Gate | Status as of 2026-04-20 |
+|---|---|
+| Gate 1 — Marten 8 exposes event row ID generation seam | 🟡 Unconfirmed (unchanged since M3-S1) |
+| Gate 2 — Polecat 2 exposes the same | ✅ Closed (N/A per ADR 011) |
+| Gate 3 — `Guid.CreateVersion7()` in net10.0 | ✅ Confirmed (M1-S5) |
+| Gate 4 — JasperFx guidance for Auctions-scale write workloads | ⏸ Re-deferred — trigger: M5-S1 (Settlement BC foundation decisions); owner: Erik |
 
 ---
 
