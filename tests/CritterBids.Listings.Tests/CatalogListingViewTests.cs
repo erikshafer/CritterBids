@@ -332,4 +332,55 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.ClosedAt.ShouldBe(soldAt);
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
     }
+
+    [Theory]
+    [InlineData("NoBids", null)]                  // no bids landed before close — HighestBid null
+    [InlineData("ReserveNotMet", 60_000.0)]       // bids landed but none reached reserve
+    public async Task ListingPassed_SetsCatalogStatusPassed(string reason, double? highestBidNullable)
+    {
+        // Theory data: doubles unbox cleanly to decimal? — InlineData rejects decimal literals.
+        decimal? highestBid = highestBidNullable.HasValue ? (decimal)highestBidNullable.Value : null;
+
+        // Arrange — view in Closed state on the no-sale path
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+        await InvokeAuctionHandlerAsync<BiddingClosed>(AuctionStatusHandler.Handle, new BiddingClosed(
+            ListingId: listingId,
+            ClosedAt: DateTimeOffset.UtcNow));
+
+        var passedAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var bidCount = reason == "NoBids" ? 0 : 2;
+        var listingPassed = new ListingPassed(
+            ListingId: listingId,
+            Reason: reason,
+            HighestBid: highestBid,
+            BidCount: bidCount,
+            PassedAt: passedAt);
+
+        // Act
+        await InvokeAuctionHandlerAsync<ListingPassed>(AuctionStatusHandler.Handle, listingPassed);
+
+        // Assert
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Passed");
+        view.PassedReason.ShouldBe(reason);
+        view.FinalHighestBid.ShouldBe(highestBid);
+        view.BidCount.ShouldBe(bidCount);
+        view.ClosedAt.ShouldBe(passedAt);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
 }

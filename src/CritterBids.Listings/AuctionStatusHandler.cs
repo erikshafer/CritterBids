@@ -95,4 +95,25 @@ public static class AuctionStatusHandler
             ClosedAt    = message.SoldAt
         });
     }
+
+    public static async Task Handle(
+        ListingPassed message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        // Final outcome on the no-sale paths. Reason is one of "NoBids" or
+        // "ReserveNotMet"; HighestBid is null when Reason = "NoBids".
+        // PassedAt overrides any prior ClosedAt set by BiddingClosed.
+        session.Store(view with
+        {
+            Status          = "Passed",
+            PassedReason    = message.Reason,
+            FinalHighestBid = message.HighestBid,
+            BidCount        = message.BidCount,
+            ClosedAt        = message.PassedAt
+        });
+    }
 }
