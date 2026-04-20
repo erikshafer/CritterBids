@@ -56,4 +56,22 @@ public static class AuctionStatusHandler
             BidCount            = message.BidCount
         });
     }
+
+    public static async Task Handle(
+        BiddingClosed message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        // Mechanical close signal — followed by ListingSold or ListingPassed on the
+        // timer paths (per S5b retro §"What M3-S6 should know" §3). Not emitted on
+        // the BIN or Withdrawn terminal paths.
+        session.Store(view with
+        {
+            Status   = "Closed",
+            ClosedAt = message.ClosedAt
+        });
+    }
 }

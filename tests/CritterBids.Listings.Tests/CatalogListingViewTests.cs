@@ -251,4 +251,38 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.Status.ShouldBe("Open");                 // BiddingOpened transition preserved
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
     }
+
+    [Fact]
+    public async Task BiddingClosed_SetsCatalogStatusClosed()
+    {
+        // Arrange — view is in Open state (post-BiddingOpened)
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        var closedAt = DateTimeOffset.UtcNow.AddHours(24);
+        var biddingClosed = new BiddingClosed(ListingId: listingId, ClosedAt: closedAt);
+
+        // Act
+        await InvokeAuctionHandlerAsync<BiddingClosed>(AuctionStatusHandler.Handle, biddingClosed);
+
+        // Assert
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Closed");
+        view.ClosedAt.ShouldBe(closedAt);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
 }
