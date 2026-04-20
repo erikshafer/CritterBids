@@ -195,7 +195,14 @@ public class AuctionsTestFixture : IAsyncLifetime
     public async Task AppendListingWithdrawnAsync(Guid listingId)
     {
         await using var session = GetDocumentSession();
-        var withdrawn = new ListingWithdrawn(listingId);
+        // M4-S1: ListingWithdrawn extended with WithdrawnBy/Reason/WithdrawnAt under ADR 005
+        // additive versioning. M3 Auction Closing saga path (scenario 3.10) does not read the
+        // new fields — seller-withdrawal defaults used here.
+        var withdrawn = new ListingWithdrawn(
+            ListingId: listingId,
+            WithdrawnBy: Guid.NewGuid(),
+            Reason: null,
+            WithdrawnAt: DateTimeOffset.UtcNow);
         session.Events.Append(listingId, withdrawn);
         session.PendingChanges.Streams().Single().Events.Single().AddTag(new ListingStreamId(listingId));
         await session.SaveChangesAsync();

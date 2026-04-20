@@ -316,7 +316,11 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         // deferred (M3 §3), so the test acts as the synthetic producer.
         var tracked = await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
-            .InvokeMessageAndWaitAsync(new ListingWithdrawn(listingId));
+            .InvokeMessageAndWaitAsync(new ListingWithdrawn(
+                ListingId: listingId,
+                WithdrawnBy: Guid.NewGuid(),
+                Reason: null,
+                WithdrawnAt: DateTimeOffset.UtcNow));
 
         // Saga document deleted by MarkCompleted.
         (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
