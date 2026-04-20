@@ -14,7 +14,7 @@ docs/decisions/0007-uuid-strategy.md     ❌ four-digit — do not use
 docs/decisions/7-uuid-strategy.md        ❌ no padding — do not use
 ```
 
-The next ADR is **`012-<slug>.md`**. Check this index before creating one to confirm the next available number.
+The next ADR is **`014-<slug>.md`**. Check this index before creating one to confirm the next available number.
 
 ---
 
@@ -33,6 +33,8 @@ The next ADR is **`012-<slug>.md`**. Check this index before creating one to con
 | [009](009-shared-marten-store.md) | Shared Primary Marten Store | ✅ Accepted | 2026-04-14 | Single primary `IDocumentStore` in `Program.cs`; each Marten BC contributes its types via `services.ConfigureMarten()` inside `AddXyzModule()` |
 | [010](010-wolverine-dual-store-resolution.md) | Wolverine Dual-Store Resolution | ~~Resolved by ADR 011~~ | 2026-04-15 | Both `AddMarten().IntegrateWithWolverine()` and `AddPolecat().IntegrateWithWolverine()` claim "main" store; Polecat has no ancillary-store API; production Aspire start blocked — resolved by removing the dual-store scenario (ADR 011) |
 | [011](011-all-marten-pivot.md) | All-Marten Pivot | ✅ Accepted | 2026-04-15 | Migrate Participants, Settlement, Operations from Polecat/SQL Server to Marten/PostgreSQL; eliminates dual-store conflict; all 8 BCs use uniform bootstrap pattern; supersedes ADR 003 |
+| [012](012-frontend-spa-vite.md) | Frontend: Vite SPA, Not a Meta-Framework | ✅ Accepted | 2026-04-19 | React frontends ship as static Vite SPAs; no Next.js, Remix framework mode, or TanStack Start; backend owns all contracts; extends ADR 004 |
+| [013](013-frontend-core-stack.md) | Frontend Core Stack | 🟡 Proposed | 2026-04-19 | TypeScript strict, Zod, TanStack Query, Tailwind v4 + shadcn/ui, react-hook-form, `@microsoft/signalr`, Vitest + Playwright, PWA from day one; routing and auth client pattern deferred |
 
 **Status key:** ✅ Accepted · 🟡 Proposed (acceptance gates open) · ⏸ Deferred (trigger set) · ~~Superseded~~
 

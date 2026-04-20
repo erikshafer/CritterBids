@@ -1,6 +1,6 @@
 # ADR 012 — Frontend: Vite SPA, Not a Meta-Framework
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-04-19
 
 ---
