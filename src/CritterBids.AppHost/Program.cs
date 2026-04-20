@@ -13,9 +13,12 @@ var postgres = builder.AddPostgres("postgres")
 // WolverineFx.Http.Polecat + Polecat packages archived; see docs/decisions/011-all-marten-pivot.md.
 
 // RabbitMQ 3 management image — includes the management UI, useful for the Aspire demo
-// dashboard and local debugging.
+// dashboard and local debugging. WithManagementPlugin publishes the 15672 UI endpoint to
+// the Aspire dashboard so local smoke-tests and workshop demos can inspect queues without
+// docker exec (M3-S7 operational-smoke gap; closed at M4-S1).
 var rabbitMq = builder.AddRabbitMQ("rabbitmq")
     .WithImageTag("3-management")
+    .WithManagementPlugin()
     .WithContainerRuntimeArgs("--label", $"com.docker.compose.project={dockerProject}");
 
 builder.AddProject<Projects.CritterBids_Api>("critterbids-api")
