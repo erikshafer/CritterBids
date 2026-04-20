@@ -37,4 +37,23 @@ public static class AuctionStatusHandler
             ScheduledCloseAt = message.ScheduledCloseAt
         });
     }
+
+    public static async Task Handle(
+        BidPlaced message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        // BidCount is set authoritatively from the message (M3-S6 OQ6 Path (a))
+        // — never incremented. DCB monotonicity at the source plus last-write-wins
+        // here makes this naturally idempotent under at-least-once redelivery.
+        session.Store(view with
+        {
+            CurrentHighBid      = message.Amount,
+            CurrentHighBidderId = message.BidderId,
+            BidCount            = message.BidCount
+        });
+    }
 }

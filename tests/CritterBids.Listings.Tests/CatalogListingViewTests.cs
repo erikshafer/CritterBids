@@ -208,4 +208,47 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.Status.ShouldBe("Open");
         view.ScheduledCloseAt.ShouldBe(scheduledCloseAt);
     }
+
+    [Fact]
+    public async Task BidPlaced_UpdatesCatalogHighBid()
+    {
+        // Arrange — view is already in Open state with no bids yet
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        var bidPlaced = new BidPlaced(
+            ListingId: listingId,
+            BidId: Guid.CreateVersion7(),
+            BidderId: bidderId,
+            Amount: 60_000m,
+            BidCount: 3,                  // authoritative from source — not "+1"
+            IsProxy: false,
+            PlacedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        await InvokeAuctionHandlerAsync<BidPlaced>(AuctionStatusHandler.Handle, bidPlaced);
+
+        // Assert — bid fields populated; prior auction-status fields preserved
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.CurrentHighBid.ShouldBe(60_000m);
+        view.CurrentHighBidderId.ShouldBe(bidderId);
+        view.BidCount.ShouldBe(3);
+        view.Status.ShouldBe("Open");                 // BiddingOpened transition preserved
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
 }
