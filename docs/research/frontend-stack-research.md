@@ -11,7 +11,7 @@
 
 This document captures the initial research effort to select a frontend technology stack for CritterBids. It is explicitly a **research document**, not a commitment. Decisions that emerge from it will be promoted to Architecture Decision Records (ADRs) through the normal milestone process.
 
-The CritterBids frontend exists to make the Critter Stack showcase feel real during conference demos and to give the system a usable face. The backend (Wolverine, Marten, Polecat, and the rest of the Critter Stack) is the architectural centerpiece. The frontend complements it; it does not drive it.
+The CritterBids frontend exists to make the Critter Stack showcase feel real during conference demos and to give the system a usable face. The backend (Wolverine, Marten, and the rest of the Critter Stack) is the architectural centerpiece. The frontend complements it; it does not drive it.
 
 This framing matters for every decision in this document. When a technology choice could plausibly seat the frontend as co-equal with the backend (for example, Next.js with API routes and server actions), we reject it on principle, not on merit alone. The backend owns contracts, events, and projections. The frontend renders them.
 
@@ -26,7 +26,7 @@ CritterBids is a Critter Stack showcase project modeled on eBay-style auctions. 
 - **Mobile-first is not optional.** The audience at conferences and user groups primarily uses phones. Tablets and laptops follow.
 - **Event-sourced backend.** Every state change is an event in Marten (PostgreSQL). Reconciliation on reconnect is naturally a projection replay, not a bespoke sync protocol.
 - **Self-hosted deployment on Hetzner VPS.** No Azure, no Vercel, no managed SignalR service. Scaling is a single-box concern first and a two-or-three-instance concern later.
-- **Bounded contexts spanning two databases.** Auction-core BCs (Auctions, Listings, Bidding) run on PostgreSQL via Marten. Operations, Settlement, and Participants run on SQL Server via Polecat. The frontend should be agnostic to this split; it talks to HTTP endpoints and SignalR hubs, not directly to stores.
+- **Eight bounded contexts on a single Marten store.** All BCs (Participants, Auctions, Listings, Selling, Settlement, Obligations, Relay, Operations) use PostgreSQL via Marten per ADR 011, which superseded ADR 003's earlier dual-store arrangement. The frontend is agnostic to bounded-context structure entirely; it talks to HTTP endpoints and SignalR hubs, not directly to stores.
 - **LLM-assisted development.** Agents (Claude Code, Copilot, and others) will author a substantial portion of the frontend code. Stack choices that have strong LLM training support and idiomatic patterns matter.
 
 ---
@@ -78,7 +78,7 @@ Each subsection summarizes what the current ecosystem looks like as of April 202
 
 Create React App (`create-react-app`) was officially deprecated in February 2025 and is no longer the recommended starting point. The React team now points developers at meta-frameworks (Next.js, Remix) or at build tools (Vite, Parcel, Rsbuild) for non-framework SPAs.
 
-Vite is the de facto choice for SPA work in 2026. It provides native ES module serving in development (sub-second cold starts, near-instant HMR), uses Rollup (migrating to Rolldown, a Rust-based bundler) for production builds, and has a large plugin ecosystem that covers React, TypeScript, PWA, SVG handling, and legacy browser support. Project creation is a single command: `npm create vite@latest <name> -- --template react-ts`.
+Vite is the de facto choice for SPA work in 2026. It provides native ES module serving in development (sub-second cold starts, near-instant HMR), uses Rollup (migrating to Rolldown, a Rust-based bundler) for production builds, and has a large plugin ecosystem that covers React, TypeScript, PWA, SVG handling, and legacy browser support. Project creation is a single command: `npm create vite@latest <n> -- --template react-ts`.
 
 Parcel and Rsbuild are viable alternatives but have smaller ecosystems and less LLM coverage. They are not worth evaluating further for this project.
 
@@ -349,7 +349,7 @@ A short ADR capturing this decision is a reasonable companion to the frontend st
 These questions have defensible answers in either direction and should not be resolved in this document. They will be addressed in their own milestones.
 
 1. **TanStack Router vs React Router v7.** Type-safety maximalism vs ecosystem familiarity. Both are fine. Revisit when routing requirements are concrete (which routes exist, do we need search-param-as-state, does LLM fluency with the routing API matter more than IDE red squiggles).
-2. **Single SignalR hub vs per-BC hubs.** Listings, Bidding, and Ops could share a hub or live on separate hubs. Separate hubs match BC boundaries and allow different auth per hub. Single hub is simpler to operate. Backend input required.
+2. **Single SignalR hub vs per-BC hubs.** Listings, Auctions, and Operations could share a hub or live on separate hubs. Separate hubs match BC boundaries and allow different auth per hub. Single hub is simpler to operate. Backend input required.
 3. **JWT vs cookie authentication on the wire.** Depends on Participants BC decisions.
 4. **Auction ops dashboard: separate app or same app?** The ops dashboard is internal and has a different audience than the bidder UI. It could be a separate Vite app at a different subdomain, a separate route tree in the same app gated by role, or a separate app entirely. Revisit once Operations BC has more shape.
 5. **State management beyond TanStack Query.** For UI state (modals, theme, drawer open/closed), Zustand is the current lightweight default. TanStack Store is another option. React Context for truly small-scope state may also be sufficient. Defer until a concrete need arises; do not scaffold state management preemptively.
@@ -362,6 +362,8 @@ These questions have defensible answers in either direction and should not be re
 ## 10. Candidate ADRs
 
 Ranked by confidence. We have discussed producing one, two, or three ADRs from this research. Recommended subset: ADR-FE-001 and ADR-FE-002. ADR-FE-003 is a strong candidate if backend concurrence on SignalR event patterns is ready.
+
+> **Status update (2026-04-19):** The candidates below were realized as follows. ADR-FE-001 became **ADR 012 — Frontend: Vite SPA, Not a Meta-Framework** (Accepted). ADR-FE-002 became **ADR 013 — Frontend Core Stack** (Proposed). ADR-FE-003 remains a candidate and will become **ADR 014** once the Auctions BC has produced its first real hub. ADR-FE-004 is deferred as a separate convention ADR with number TBD.
 
 ### ADR-FE-001: CritterBids Frontend is a Vite SPA, not Next.js
 
@@ -377,7 +379,7 @@ Ranked by confidence. We have discussed producing one, two, or three ADRs from t
 
 ### ADR-FE-003: SignalR Client Integration Pattern
 
-**Confidence:** Medium. The pattern is clear from research, but the concrete event shapes and hub structure require backend concurrence. This ADR may be better written after ADR-FE-001 and ADR-FE-002 and after the Auctions or Bidding BC has produced its first hub.
+**Confidence:** Medium. The pattern is clear from research, but the concrete event shapes and hub structure require backend concurrence. This ADR may be better written after ADR-FE-001 and ADR-FE-002 and after the Auctions BC has produced its first hub.
 
 **Core claim:** The frontend integrates SignalR via a `SignalRProvider` React Context owning the `HubConnection` lifecycle, a `useListen(event, handler)` hook for component-scoped subscriptions, and a bridge layer that translates incoming events into TanStack Query cache mutations (`setQueryData` for surgical updates, `invalidateQueries` for fuller refreshes). Reconnection uses `.withAutomaticReconnect()` with exponential backoff plus jitter. State reconciliation on reconnect is performed by fetching a projection snapshot over HTTP, then resubscribing to the stream.
 
@@ -398,13 +400,13 @@ The frontend track runs as research and documentation only for Milestones RF-1 a
 ### Milestone RF-1: Frontend Stack Research (this milestone)
 
 - Produce this research document.
-- Draft ADR-FE-001 (SPA vs meta-framework) and ADR-FE-002 (core stack).
+- Draft ADR 012 (SPA vs meta-framework) and ADR 013 (core stack).
 - Create `docs/skills/frontend/` directory in the CritterBids repo.
 
 ### Milestone RF-2: Real-Time and Skill Authoring
 
 - Deep-dive on SignalR client integration patterns, including reconnection and reconciliation.
-- Draft ADR-FE-003 (SignalR integration pattern) if backend is ready to concur.
+- Draft ADR 014 (SignalR integration pattern) if backend is ready to concur.
 - Author initial frontend skills in `docs/skills/frontend/`:
   - `vite-spa-setup.md`
   - `tanstack-query-patterns.md`
@@ -415,7 +417,7 @@ The frontend track runs as research and documentation only for Milestones RF-1 a
 
 ### Milestone RF-3: First Prototype Spike
 
-- Precondition: Auctions or Bidding BC has produced at least one real hub with stable event shapes.
+- Precondition: The Auctions BC (or whichever BC owns bid events) has produced at least one real hub with stable event shapes.
 - Scope: one vertical slice, most likely the bid-stream reconciliation scenario (subscribe, receive bids, reconcile on simulated disconnect, apply optimistic update on local bid).
 - Explicit scope statement: this prototype is a throwaway. Its purpose is to validate the integration pattern, not to seed the production codebase.
 - Retrospective mandatory, per the standard session-workflow rule.
