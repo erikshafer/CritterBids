@@ -80,20 +80,30 @@ jobs:
       - name: Build
         run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
 
-      - name: Test — CritterBids.Api.Tests
-        run: >
-          dotnet test tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --logger "trx;LogFileName=api-tests.trx"
-          --results-directory ./test-results
-
       - name: Test — CritterBids.Contracts.Tests
         run: >
           dotnet test tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj
           --no-build --configuration ${{ env.CONFIGURATION }}
           --verbosity normal
           --logger "trx;LogFileName=contracts-tests.trx"
+          --results-directory ./test-results
+
+      - name: Test — Selling unit tests
+        run: >
+          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --filter "FullyQualifiedName~DraftListingTests|FullyQualifiedName~SubmitListingTests|FullyQualifiedName~ListingValidatorTests"
+          --logger "trx;LogFileName=selling-unit-tests.trx"
+          --results-directory ./test-results
+
+      - name: Test — Participants unit tests
+        run: >
+          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj
+          --no-build --configuration ${{ env.CONFIGURATION }}
+          --verbosity normal
+          --filter "FullyQualifiedName~SmokeTests"
+          --logger "trx;LogFileName=participants-unit-tests.trx"
           --results-directory ./test-results
 
       - name: Upload unit test results
@@ -105,8 +115,27 @@ jobs:
           retention-days: 5
 
   integration-tests:
-    name: Integration Tests
+    name: Integration — ${{ matrix.name }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Api
+            project: tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj
+            trx: api-tests.trx
+          - name: Participants
+            project: tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj
+            trx: participants-tests.trx
+          - name: Selling
+            project: tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj
+            trx: selling-tests.trx
+          - name: Auctions
+            project: tests/CritterBids.Auctions.Tests/CritterBids.Auctions.Tests.csproj
+            trx: auctions-tests.trx
+          - name: Listings
+            project: tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj
+            trx: listings-tests.trx
 
     steps:
       - name: Checkout
@@ -131,42 +160,18 @@ jobs:
       - name: Build
         run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
 
-      - name: Test — CritterBids.Participants.Tests
+      - name: Test — ${{ matrix.name }}
         run: >
-          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj
+          dotnet test ${{ matrix.project }}
           --no-build --configuration ${{ env.CONFIGURATION }}
           --verbosity normal
-          --logger "trx;LogFileName=participants-tests.trx"
+          --logger "trx;LogFileName=${{ matrix.trx }}"
           --results-directory ./test-results
 
-      - name: Test — CritterBids.Selling.Tests
-        run: >
-          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --logger "trx;LogFileName=selling-tests.trx"
-          --results-directory ./test-results
-
-      - name: Test — CritterBids.Auctions.Tests
-        run: >
-          dotnet test tests/CritterBids.Auctions.Tests/CritterBids.Auctions.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --logger "trx;LogFileName=auctions-tests.trx"
-          --results-directory ./test-results
-
-      - name: Test — CritterBids.Listings.Tests
-        run: >
-          dotnet test tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --logger "trx;LogFileName=listings-tests.trx"
-          --results-directory ./test-results
-
-      - name: Upload integration test results
+      - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: integration-test-results
+          name: integration-test-results-${{ matrix.name }}
           path: ./test-results
           retention-days: 5
