@@ -66,9 +66,16 @@ public class AuctionsTestFixture : IAsyncLifetime
                 // Wolverine's handler discovery for CreateDraftListingHandler.ValidateAsync
                 // would fail code-gen due to the unresolvable ISellerRegistrationService
                 // dependency. See critter-stack-testing-patterns.md §Cross-BC Handler Isolation.
-                // Listings and Participants handlers have no unresolvable dependencies in this
-                // fixture and do not need exclusion.
                 services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
+
+                // Exclude Listings BC handlers — AuctionStatusHandler (M3-S6) handles the same
+                // five auction integration events the Auctions saga starts/advances on
+                // (BiddingOpened, BidPlaced, BiddingClosed, ListingSold, ListingPassed). With
+                // MultipleHandlerBehavior.Separated, each cross-BC handler gets its own endpoint
+                // and Host.InvokeMessageAndWaitAsync becomes ambiguous, surfacing as a sticky-
+                // handler NoHandlerForEndpointException. The Auctions fixture does not register
+                // AddListingsModule(), so dropping these handlers from discovery is safe.
+                services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
             });
         });
     }
@@ -209,6 +216,25 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Selling BC inactive — ISellerRegistrationService not registered (no AddSellingModule in Auctions fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Listings BC handlers from Wolverine's handler discovery in the Auctions test fixture.
+/// AuctionStatusHandler (M3-S6) handles five auction integration events the saga also handles;
+/// MultipleHandlerBehavior.Separated splits them across endpoints, breaking InvokeMessageAndWaitAsync.
+/// The Listings module isn't registered here, so the projection handlers have nowhere useful to run.
+/// </summary>
+internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Listings BC inactive — AddListingsModule not called in Auctions fixture; AuctionStatusHandler would shadow saga handlers under MultipleHandlerBehavior.Separated",
+                t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
         });
     }
 }
