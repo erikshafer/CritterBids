@@ -17,22 +17,24 @@ Complete reference for projection patterns available on Marten — both **native
 3. [Composite Projections](#composite-projections)
 4. [Event Enrichment](#event-enrichment)
 5. [Flat Table Projections](#flat-table-projections)
-6. [Decision Guide — Which Projection Type?](#decision-guide--which-projection-type)
+6. [Handler-Driven Projections — Tolerant Upsert](#handler-driven-projections--tolerant-upsert)
+7. [View Extension Across Milestones](#view-extension-across-milestones)
+8. [Decision Guide — Which Projection Type?](#decision-guide--which-projection-type)
 
 ### EF Core Projections (relational tables)
 
-7. [When to Use EF Core Projections](#when-to-use-ef-core-projections)
-8. [The Three EF Core Projection Types](#the-three-ef-core-projection-types)
-9. [Setup](#setup)
-10. [DbContext Configuration](#dbcontext-configuration)
-11. [Single-Stream (EF Core)](#single-stream-ef-core)
-12. [Multi-Stream (EF Core)](#multi-stream-ef-core)
-13. [Event Projections (EF Core)](#event-projections-ef-core)
-14. [EF Core Registration](#ef-core-registration)
-15. [Testing](#testing)
-16. [Pitfalls](#pitfalls)
-17. [Lessons Learned](#lessons-learned)
-18. [How It Works Under the Hood](#how-it-works-under-the-hood)
+9. [When to Use EF Core Projections](#when-to-use-ef-core-projections)
+10. [The Three EF Core Projection Types](#the-three-ef-core-projection-types)
+11. [Setup](#setup)
+12. [DbContext Configuration](#dbcontext-configuration)
+13. [Single-Stream (EF Core)](#single-stream-ef-core)
+14. [Multi-Stream (EF Core)](#multi-stream-ef-core)
+15. [Event Projections (EF Core)](#event-projections-ef-core)
+16. [EF Core Registration](#ef-core-registration)
+17. [Testing](#testing)
+18. [Pitfalls](#pitfalls)
+19. [Lessons Learned](#lessons-learned)
+20. [How It Works Under the Hood](#how-it-works-under-the-hood)
 
 ---
 
@@ -566,6 +568,107 @@ CritterBids' future Operations BC dashboards are the most likely first adopter �
 
 ---
 
+## Handler-Driven Projections — Tolerant Upsert
+
+Native `MultiStreamProjection<T, TId>` is the right tool when the projection's **routing rule is a property on the event**. When the projection is driven by cross-BC integration events handled by a Wolverine handler — where the handler also needs to call domain services, schedule messages, or emit further events — the projection is updated from inside the handler instead. The store-side pattern for that handler is a **tolerant upsert**.
+
+```csharp
+public static async Task Handle(
+    BiddingOpened integration,
+    IDocumentSession session,
+    CancellationToken cancellationToken)
+{
+    var view = await session.LoadAsync<CatalogListingView>(integration.ListingId, cancellationToken)
+               ?? new CatalogListingView { Id = integration.ListingId };
+
+    view.AuctionStatus = CatalogAuctionStatus.Live;
+    view.ScheduledCloseAt = integration.ScheduledCloseAt;
+
+    session.Store(view);
+    // CommitAsync is driven by Wolverine auto-transactions — do not call it here.
+}
+```
+
+**The primitive:** `LoadAsync ?? new T { Id = ... }`. Marten's `IQuerySession.LoadAsync<T>(Guid id)` returns `Task<T?>` — `null` when the document doesn't yet exist. Defaulting to `new T` gives you a single code path that covers first-touch (insert) and subsequent-touch (update) without a separate `StoreAsync` vs `UpdateAsync` split.
+
+**Why tolerant.** Cross-BC integration events can arrive in any order depending on queue scheduling, retry policy, and deployment order. A handler in BC Y consuming an event from BC X cannot assume that BC X's inline snapshot has already flowed out to BC Y's view. If `Listing` inline snapshots fail to reach `CatalogListingView` first, a `BiddingOpened` handler that assumed `view != null` would throw `NullReferenceException` under the first real queue-order race. Tolerant upsert makes arrival order irrelevant.
+
+**When to prefer this over a native `MultiStreamProjection`:**
+
+| Situation | Reach for |
+|---|---|
+| Routing purely by `event.Id` property, no external calls | **Native `MultiStreamProjection<T, TId>`** |
+| Handler also schedules messages / calls domain services / emits further events | **Handler-driven tolerant upsert** |
+| Events originate from another BC over the message bus | **Handler-driven tolerant upsert** |
+| Read model combines events from multiple BCs' contracts | **Handler-driven tolerant upsert** (one handler class per source BC) |
+
+**Citation:** Marten source `src/Marten/IQuerySession.cs:169` — `Task<T?> LoadAsync<T>(Guid id, CancellationToken token = default) where T : notnull;`. The nullable return type is the whole API contract you lean on.
+
+**In-repo ground:** `src/CritterBids.Listings/ProjectionHandlers/AuctionStatusHandler.cs` (authored M3-S6) and its `ListingSnapshotHandler` sibling — both handle `CatalogListingView` upserts from foreign-BC cascades. See retrospective `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"LoadAsync ?? new" for the arrival-order failure mode that motivated the pattern.
+
+---
+
+## View Extension Across Milestones
+
+Read models accumulate fields across milestones as new BCs start contributing. The naïve structural response — a new view per source BC (`CatalogListingCore`, `CatalogListingAuctionStatus`, `CatalogListingSettlement`) — fragments the read model and forces every UI query into a multi-document join.
+
+**The shape rule (M3-D2 Path A):** **one view per logical entity; one sibling handler class per event-source BC; fields grow additively on the shared view across milestones.**
+
+```
+src/CritterBids.Listings/
+├── CatalogListingView.cs                      ← single view, all fields
+└── ProjectionHandlers/
+    ├── ListingSnapshotHandler.cs              ← M2-S7: consumes ListingPublished,
+    │                                              ListingUpdated, ListingWithdrawn
+    ├── AuctionStatusHandler.cs                ← M3-S6: consumes BiddingOpened,
+    │                                              BiddingClosed, ListingSold,
+    │                                              ListingPassed
+    ├── SettlementStatusHandler.cs             ← M4 (planned): PaymentCaptured,
+    │                                              PayoutReleased fields
+    └── ObligationsStatusHandler.cs            ← M5 (planned): ShippedOn,
+                                                   TrackingNumber, etc.
+```
+
+Each handler class owns a disjoint field set on the same `CatalogListingView`. No handler reads fields owned by another handler. Additions are purely additive — existing handlers never need to change when a new milestone lands.
+
+```csharp
+// CatalogListingView.cs — grows additively; no fields removed across milestones
+public sealed class CatalogListingView
+{
+    // M2-S7 — ListingSnapshotHandler
+    public required Guid Id { get; set; }
+    public required Guid SellerId { get; set; }
+    public required string Title { get; set; }
+    public required string Description { get; set; }
+    public required decimal StartPrice { get; set; }
+    public string[] Categories { get; set; } = [];
+
+    // M3-S6 — AuctionStatusHandler
+    public CatalogAuctionStatus AuctionStatus { get; set; }
+    public DateTimeOffset? ScheduledCloseAt { get; set; }
+    public decimal? HammerPrice { get; set; }
+    public Guid? WinnerId { get; set; }
+    public int BidCount { get; set; }
+    public string? ClosedReason { get; set; }
+
+    // M4 planned — SettlementStatusHandler
+    // public SettlementStatus SettlementStatus { get; set; }
+    // public DateTimeOffset? PaidAt { get; set; }
+}
+```
+
+**Why not a native `MultiStreamProjection`?** Because the source events are **integration contracts from multiple BCs**, not streams in the projecting BC. Native projections route by streams visible to the projecting store; integration events flow through the message bus and land in handlers. See the previous section for the handler-driven tolerant upsert primitive these handler classes build on.
+
+**Rejected alternatives (M3-D2 review):**
+- **Path B — one view per source BC with a UI-side join.** Rejected: pushes the join into every read path, and the set of source BCs grows every milestone.
+- **Path C — inline snapshot of `CatalogListingView` via native composition.** Rejected: the view aggregates cross-BC events that the Listings store does not own; Marten cannot route events it does not see.
+
+**Decision boundary — when this shape applies.** Use the one-view/sibling-handlers shape when: (a) the read model is a per-entity rollup; (b) fields originate from two or more BCs; (c) every UI query against the view wants all fields in one round trip. When the read model is genuinely per-BC (e.g. `SellerActivity` summarizing a seller's own listings), a native `MultiStreamProjection` owned by that BC is still the right tool.
+
+**In-repo ground:** `CatalogListingView` established at M2-S7 by `ListingSnapshotHandler`, extended at M3-S6 by `AuctionStatusHandler` with the six auction-status fields listed above. See retrospective `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"M3-D2 resolution" for the Path A decision record.
+
+---
+
 ## Decision Guide — Which Projection Type?
 
 | Situation | Projection type |
@@ -581,6 +684,8 @@ CritterBids' future Operations BC dashboards are the most likely first adopter �
 | Read model for reporting tools (Power BI, SSRS) in flat tables | **`FlatTableProjection`** (simple mapping) or **`EventProjection`** (raw SQL) |
 | Read model for complex relational queries via EF Core LINQ | **EF Core projection** (see second half of this file) |
 | Dual-store output (Postgres JSONB + EF Core table) | **`EfCoreEventProjection`** (EF Core section) |
+| Read model driven by cross-BC integration events (handler also schedules / calls services) | **Handler-driven tolerant upsert** — `LoadAsync ?? new` pattern (§6) |
+| Read model accumulates fields across milestones from two or more source BCs | **One view, sibling handler classes per source BC** (§7) |
 
 ---
 
