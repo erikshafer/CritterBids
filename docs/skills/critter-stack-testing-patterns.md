@@ -1044,6 +1044,83 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
 The stub queue needs no handler. Wolverine's `NoHandlerContinuation` records `NoHandlers` then
 `MessageSucceeded` — no exception thrown, `DoNotAssertOnExceptionsDetected` is not needed.
 
+### Problem 3: Foreign-BC handler **shadows** a same-BC saga handler under `MultipleHandlerBehavior.Separated`
+
+CritterBids' `Program.cs` configures `opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated`. Under that mode Wolverine mints **one endpoint per handler**, not one endpoint per message type. When two BCs both handle the same integration event type (e.g. `BiddingOpened`), each BC's assembly contributes its own endpoint. In-process dispatch via `Host.InvokeMessageAndWaitAsync` cannot pick a single endpoint and throws:
+
+```
+Wolverine.Runtime.Handlers.NoHandlerForEndpointException:
+No handler is registered for the specified endpoint
+```
+
+This looks like a sticky-handler or missing-handler error — but the trigger is **handler shadowing**, not absence. The foreign-BC handler got discovered (its namespace prefix was inside `IncludeAssembly` scope), the current-BC handler also got discovered, and the runtime cannot choose.
+
+Critically, this failure can fire even when foreign-BC DI is wired (shared PostgreSQL / shared Marten document store). Problem 1's "missing infrastructure" is not a prerequisite — shadowing is purely a handler-count problem in the endpoint-selection step.
+
+**Fix: exclude the foreign BC's namespace with the same `IWolverineExtension` pattern as Problem 1.**
+
+```csharp
+// tests/CritterBids.Auctions.Tests/Fixtures/AuctionsTestFixture.cs
+internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Listings BC inactive — AddListingsModule not called in Auctions fixture; "
+                + "AuctionStatusHandler would shadow saga handlers under MultipleHandlerBehavior.Separated",
+                t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
+        });
+    }
+}
+```
+
+**The trigger rule — add an exclusion when both conditions hold:**
+
+1. The fixture does **not** call `AddXyzModule()` for some BC X.
+2. A handler in BC X handles an event type the fixture's BC **also** handles.
+
+If both are true, BC X's handler will shadow the fixture's BC's handler at dispatch time. Add the exclusion preemptively — the failure is loud (`NoHandlerForEndpointException`) but the cause is non-obvious.
+
+**Regression example (M3-S6, commit `1514600`):** Adding `AuctionStatusHandler` to `CritterBids.Listings` for `BiddingOpened` / `BiddingClosed` / `ListingSold` / `ListingPassed` broke **all 35 Auctions saga tests** because `Host.InvokeMessageAndWaitAsync(opened)` could no longer pick a single endpoint. The fix was a single `ListingsBcDiscoveryExclusion` in `AuctionsTestFixture.cs`; all 35 tests went green in one commit. See retrospective `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"Cross-BC handler shadowing" for the full incident.
+
+### Problem 4: `tracked.Sent` vs `tracked.NoRoutes` — assertion target for cascaded messages
+
+`IntegrationTestRun.Tracked` exposes two distinct buckets for outgoing messages, and the difference is **invisible** until your assertion picks the wrong one:
+
+| Bucket | Populated when |
+|---|---|
+| `tracked.Sent.MessagesOf<T>()` | A routing rule existed → Wolverine invoked an `ISendingAgent` (even a stub local queue counts) |
+| `tracked.NoRoutes.MessagesOf<T>()` | No routing rule existed → Wolverine called `NoRoutesFor(envelope)` before any sending agent ran |
+
+A handler that returns `new OutgoingMessages { new BiddingClosed(...) }` is correct production code. In a fixture that has not added a stub routing rule for `BiddingClosed`, `tracked.Sent.MessagesOf<BiddingClosed>()` returns **zero** — and the assertion fails with a message that reads "handler didn't emit the event", when in fact the handler did emit it. It just landed in the other bucket.
+
+**Fix A — assert against `NoRoutes` when the test cares only that the cascade fired, not that it went anywhere:**
+
+```csharp
+var tracked = await _fixture.InvokeMessageAndWaitAsync(new CloseAuction(sagaId, ...));
+
+// The handler's responsibility ends at "emit the event"; routing is orthogonal.
+tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+```
+
+**Fix B — add a stub routing rule (Problem 2's pattern) when the test ALSO exercises downstream delivery:**
+
+```csharp
+// In the fixture's IWolverineExtension
+options.PublishMessage<BiddingClosed>().ToLocalQueue("auctions-close-stub");
+
+// Test now asserts against Sent — delivery path is exercised too
+tracked.Sent.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
+```
+
+**Rule of thumb:** `NoRoutes` is the right target when you're asserting **handler output**. `Sent` is the right target when you're asserting **delivery occurred via a routing path**. Default new assertions to `NoRoutes` unless the test has deliberately added a routing rule — it avoids the false-negative trap and matches the shape of a CritterBids fixture that has `DisableAllExternalWolverineTransports()` on by default.
+
+**Distinction from Problem 2:** Problem 2 is the other direction — a **production** routing rule exists, but the transport it points at is disabled in tests; the fix is replacing the production route with a stub. Problem 4 is a pure test-code concern: given cascaded messages with no routing, which bucket does the assertion check? Both can coexist in one fixture.
+
+See retrospective `docs/retrospectives/M3-S5b-auction-closing-saga-terminal-paths-retrospective.md` §"Surprise 3" for the original discovery — a `BiddingClosed` assertion that spent a debugging afternoon looking like a handler bug and turned out to be a tracked-bucket bug.
+
 ### Naming convention
 
 Name the `IWolverineExtension` after the BC being excluded, not the fixture registering it:
