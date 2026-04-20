@@ -285,4 +285,51 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.ClosedAt.ShouldBe(closedAt);
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
     }
+
+    [Fact]
+    public async Task ListingSold_SetsCatalogStatusSold()
+    {
+        // Arrange — view is in Closed state (post-BiddingClosed on timer path)
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var winnerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+        await InvokeAuctionHandlerAsync<BiddingClosed>(AuctionStatusHandler.Handle, new BiddingClosed(
+            ListingId: listingId,
+            ClosedAt: DateTimeOffset.UtcNow));
+
+        var soldAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var listingSold = new ListingSold(
+            ListingId: listingId,
+            SellerId: sellerId,
+            WinnerId: winnerId,
+            HammerPrice: 100_000m,
+            BidCount: 5,
+            SoldAt: soldAt);
+
+        // Act
+        await InvokeAuctionHandlerAsync<ListingSold>(AuctionStatusHandler.Handle, listingSold);
+
+        // Assert
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Sold");
+        view.HammerPrice.ShouldBe(100_000m);
+        view.WinnerId.ShouldBe(winnerId);
+        view.BidCount.ShouldBe(5);
+        view.ClosedAt.ShouldBe(soldAt);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
 }

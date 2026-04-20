@@ -74,4 +74,25 @@ public static class AuctionStatusHandler
             ClosedAt = message.ClosedAt
         });
     }
+
+    public static async Task Handle(
+        ListingSold message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        // Final outcome on the sold path — preceded by BiddingClosed on the
+        // timer path. SoldAt overrides any prior ClosedAt set by BiddingClosed
+        // so the catalog reflects the terminal time of sale.
+        session.Store(view with
+        {
+            Status      = "Sold",
+            HammerPrice = message.HammerPrice,
+            WinnerId    = message.WinnerId,
+            BidCount    = message.BidCount,
+            ClosedAt    = message.SoldAt
+        });
+    }
 }
