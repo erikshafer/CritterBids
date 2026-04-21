@@ -5,10 +5,6 @@
         <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
-        <WolverineVersion>5.4.0</WolverineVersion>
-        <MartenVersion>8.16.1</MartenVersion>
-        <AlbaVersion>8.4.0</AlbaVersion>
-        <SwashbuckleAspNetCoreVersion>10.0.1</SwashbuckleAspNetCoreVersion>
         <Authors>Erik Shafer</Authors>
         <RepositoryUrl>https://github.com/erikshafer/critterbids</RepositoryUrl>
         <PackageProjectUrl>https://event-sourcing.dev/</PackageProjectUrl>

@@ -11,13 +11,13 @@
     </ItemGroup>
     <!-- Wolverine — 5.31.0 bumped from 5.30.0 in M2-S6 -->
     <ItemGroup>
-        <PackageVersion Include="WolverineFx" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.Http" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.Http.Polecat" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.Http.Marten" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.Marten" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.Polecat" Version="5.31.0" />
-        <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.31.0" />
+        <PackageVersion Include="WolverineFx" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.Http" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.Http.Polecat" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.Http.Marten" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.Marten" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.Polecat" Version="5.32.0" />
+        <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.32.0" />
     </ItemGroup>
     <!-- Polecat — 2.0.1 is current -->
     <ItemGroup>
