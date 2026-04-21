@@ -8,8 +8,11 @@ Use this skill whenever writing read-side queries against a Marten `IQuerySessio
 
 ```
 Need to serve raw JSON to HTTP response?
-  └─ YES → Use WriteArray() / WriteSingle() / WriteById() from Marten.AspNetCore
-             └─ High-traffic endpoint? Wrap query in ICompiledListQuery / ICompiledQuery
+  └─ YES → Wolverine HTTP endpoint (new code)?
+             └─ YES → Return StreamOne<T> / StreamMany<T> / StreamAggregate<T> from Marten.AspNetCore
+           MVC controller, middleware, or raw HttpContext write?
+             └─ YES → Use WriteArray() / WriteSingle() / WriteById() / WriteLatest() from Marten.AspNetCore
+           └─ High-traffic endpoint either way? Wrap query in ICompiledListQuery / ICompiledQuery
   └─ NO
        │
        ├─ Multiple independent queries in one request?
@@ -507,6 +510,48 @@ public Task GetState(Guid id, [FromServices] IDocumentSession session) =>
 
 **Important:** `WriteLatest<T>()` requires `IDocumentSession`. Inject it only in write-side handlers or endpoints that already hold a document session; avoid creating a write session purely for reads.
 
+### Return-Type API — `StreamOne<T>` / `StreamMany<T>` / `StreamAggregate<T>` (Wolverine 5.32+)
+
+Starting with Wolverine 5.32 (Marten.AspNetCore sibling release), three return types let Wolverine HTTP endpoints stream raw JSONB without a method-call shape. Each implements `IResult` (Wolverine's existing `ResultWriterPolicy` dispatches them with no pipeline change) and `IEndpointMetadataProvider` (OpenAPI `Produces<T>` / `Produces(404)` metadata is generated automatically — no `[ProducesResponseType]` attributes required). Reference: <https://wolverine.netlify.app/guide/http/marten.html#streaming-json-responses>.
+
+```csharp
+using Marten.AspNetCore;
+
+// Single document by LINQ predicate — 404 on miss
+[WolverineGet("/auctions/{id}")]
+public static StreamOne<Auction> Get(Guid id, IQuerySession session)
+    => new(session.Query<Auction>().Where(x => x.Id == id));
+
+// Array from an IQueryable — returns empty array, never 404
+[WolverineGet("/auctions/active")]
+public static StreamMany<Auction> Active(IQuerySession session)
+    => new(session.Query<Auction>().Where(x => x.Status == AuctionStatus.Active));
+
+// Event-sourced aggregate current state — 404 on miss
+[WolverineGet("/sessions/{id}/state")]
+public static StreamAggregate<SessionState> GetState(Guid id, IDocumentSession session)
+    => new(session, id);
+```
+
+**404 semantics split by type.** `StreamOne<T>` and `StreamAggregate<T>` return 404 when the document/aggregate does not exist. `StreamMany<T>` returns an empty JSON array and never 404s — matches REST-array idiom, prevents "empty result" ambiguity.
+
+**Init-only customization properties.** Both types expose `OnFoundStatus` (override the 200 default) and `ContentType` (override `application/json`):
+
+```csharp
+return new StreamOne<Auction>(query) { OnFoundStatus = 200, ContentType = "application/json" };
+```
+
+**When to prefer the return-type API over `WriteArray`/`WriteById`/`WriteLatest`:**
+
+| Context | Preferred |
+|---|---|
+| New Wolverine HTTP endpoint | **Return-type API** — typed return, auto OpenAPI, no `HttpContext` parameter |
+| Existing MVC controller | Extension methods — MVC actions don't consume `IResult` the same way |
+| Middleware or raw `HttpContext` write | Extension methods — no endpoint result pipeline involved |
+| Compiled query composition | Either — `new StreamMany<T>(compiledQuery.Queryable(session))` composes cleanly |
+
+Both API shapes live in the same `Marten.AspNetCore` package and can coexist in the same project.
+
 ### Gotchas
 
 - `WriteArray()` / `WriteSingle()` / `WriteById()` serve exactly what is persisted — no anti-corruption/mapping layer. If the persisted shape must differ from what clients receive, introduce a mapping projection or a `Select()` transform before calling these methods.
@@ -529,7 +574,10 @@ public Task GetState(Guid id, [FromServices] IDocumentSession session) =>
 | Simple WHERE clause SQL | `session.QueryAsync<T>("where ...")` |
 | Full SQL with multi-type results | `session.AdvancedSql.QueryAsync<T1, T2, T3>(...)` |
 | Stream large SQL result sets | `session.AdvancedSql.StreamAsync<T>(...)` |
-| Stream JSON array to HTTP | `query.WriteArray(HttpContext)` |
-| Stream single doc JSON to HTTP | `session.Json.WriteById<T>(id, HttpContext)` |
-| Stream compiled query JSON to HTTP | `session.WriteArray(new MyCompiledQuery(), HttpContext)` |
-| Stream event-sourced aggregate to HTTP | `session.Events.WriteLatest<T>(id, HttpContext)` |
+| Stream JSON array to HTTP (extension API) | `query.WriteArray(HttpContext)` |
+| Stream single doc JSON to HTTP (extension API) | `session.Json.WriteById<T>(id, HttpContext)` |
+| Stream compiled query JSON to HTTP (extension API) | `session.WriteArray(new MyCompiledQuery(), HttpContext)` |
+| Stream event-sourced aggregate to HTTP (extension API) | `session.Events.WriteLatest<T>(id, HttpContext)` |
+| Stream single doc from Wolverine endpoint (return-type API, 5.32+) | `return new StreamOne<T>(session.Query<T>().Where(...))` |
+| Stream array from Wolverine endpoint (return-type API, 5.32+) | `return new StreamMany<T>(session.Query<T>().Where(...))` |
+| Stream aggregate state from Wolverine endpoint (return-type API, 5.32+) | `return new StreamAggregate<T>(session, id)` |

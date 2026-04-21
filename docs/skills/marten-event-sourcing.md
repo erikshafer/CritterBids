@@ -1028,6 +1028,18 @@ public static Task GetListing(Guid id, IQuerySession session, HttpContext contex
 
 **OpenAPI caveat:** because these endpoints return `Task` (void from the framework's perspective), Wolverine can't infer the response type for OpenAPI/Swagger. Add `[ProducesResponseType<T>]` explicitly — this is the trade-off for the performance win.
 
+**Aggregate streaming with `StreamAggregate<T>` (Wolverine 5.32+).** For a Wolverine HTTP endpoint that serves the current state of an event-sourced aggregate, the newer return-type API is preferred over `session.Events.WriteLatest<T>(id, context)`:
+
+```csharp
+using Marten.AspNetCore;
+
+[WolverineGet("/sessions/{id}/state")]
+public static StreamAggregate<SessionState> GetState(Guid id, IDocumentSession session)
+    => new(session, id);
+```
+
+Same JSONB-direct performance (no `IResult` pipeline cost — `StreamAggregate<T>` itself implements `IResult`), but with typed return, no `HttpContext` parameter, and automatic OpenAPI metadata (`Produces<T>` + `Produces(404)`) via `IEndpointMetadataProvider` — no `[ProducesResponseType]` attribute needed. See `marten-querying.md` §"Return-Type API" for the full surface including `StreamOne<T>` / `StreamMany<T>` and the customization properties. Reference: <https://wolverine.netlify.app/guide/http/marten.html#streaming-json-responses>.
+
 **Serialization caveat:** the JSON streamed is Marten's stored JSONB, which uses `AddMarten()`'s configured serializer settings (typically camelCase with `EnumStorage.AsString`). If the HTTP API contract requires a different JSON shape than Marten stores internally, either align the Marten serializer to the API contract or use a conventional endpoint that materializes through a DTO.
 
 CritterBids' Listings BC catalog browse is the obvious first adopter once the Listings BC lands; until then, standard `ToListAsync()` endpoints are fine.
