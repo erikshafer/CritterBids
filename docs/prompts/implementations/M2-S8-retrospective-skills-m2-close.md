@@ -2,7 +2,7 @@
 
 **Milestone:** M2 — Listings Pipeline
 **Session:** S8 of 8 (final)
-**Prompt file:** `docs/prompts/M2-S8-retrospective-skills-m2-close.md`
+**Prompt file:** `docs/prompts/implementations/M2-S8-retrospective-skills-m2-close.md`
 **Agent:** @PSA
 **Baseline:** 42 tests passing (Listings: 4, Selling: 30, Participants: 6, Api: 1, Contracts: 1) · `dotnet build` 0 errors, 0 warnings
 

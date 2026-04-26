@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S3 — Infrastructure baseline
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S3-infrastructure-baseline.md`
+**Prompt:** `docs/prompts/implementations/M1-S3-infrastructure-baseline.md`
 
 ## Baseline
 
@@ -165,7 +165,7 @@ The Quick Start now describes only the Aspire path, consistent with ADR 006.
 
 Both §4 targets (AppHost in `src/`, Layout 2 test names) were already present in the milestone doc — apparently resolved as part of the M1-S2 coherence edits. No §4 changes needed.
 
-§9 S3 row updated from `*TBD*` to `docs/prompts/M1-S3-infrastructure-baseline.md`. This is within the allowed file list per the prompt's acceptance criteria.
+§9 S3 row updated from `*TBD*` to `docs/prompts/implementations/M1-S3-infrastructure-baseline.md`. This is within the allowed file list per the prompt's acceptance criteria.
 
 ---
 

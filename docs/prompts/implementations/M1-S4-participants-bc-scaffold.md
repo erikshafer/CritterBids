@@ -89,7 +89,7 @@ At session close: the solution builds green, the three smoke tests pass (2 exist
 
 ### Doc fix: `docs/milestones/M1-skeleton.md` §9
 
-- Update the S4 row from `*TBD*` to `docs/prompts/M1-S4-participants-bc-scaffold.md`.
+- Update the S4 row from `*TBD*` to `docs/prompts/implementations/M1-S4-participants-bc-scaffold.md`.
 
 ## Explicitly out of scope
 

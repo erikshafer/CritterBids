@@ -345,7 +345,7 @@ These are places the prior analysis flagged as likely to produce findings. The a
 - **`BuyItNowPurchased` is a terminal outcome with no preceding `BiddingClosed`** (per memory). Outcome events cascade via OutgoingMessages bus-only and are not stream-appended. A bidder narrative for "I clicked Buy It Now" needs to render this; verify the read-side projection consequences are intentional.
 - **`ListingPublished` exists as both a domain event and an integration contract** in different namespaces. The narrative should render exactly the right one at the right Moment without conflating them.
 - **Workshop W001 predates lived implementation.** Some W001 scenarios will be wrong in detail (event names changed, payloads grew fields, sagas added intermediate states). Each is `workshop-update`.
-- **M3-S6 is queued, not built.** The Listings catalog auction-status extension prompt at `C:\Code\CritterBids\docs\prompts\M3-S6-listings-catalog-auction-status.md` (which will move to `implementations/` in Phase 1) hasn't run. **The narrative should be authored before M3-S6 runs.** If the narrative reshapes M3-S6's scope, M3-S6 is re-prompted as the first Phase 2.5 slice.
+- **M3-S6 is queued, not built.** The Listings catalog auction-status extension prompt at `C:\Code\CritterBids\docs\prompts\implementations\M3-S6-listings-catalog-auction-status.md` (which will move to `implementations/` in Phase 1) hasn't run. **The narrative should be authored before M3-S6 runs.** If the narrative reshapes M3-S6's scope, M3-S6 is re-prompted as the first Phase 2.5 slice.
   - **Updated 2026-04-25 at execution start:** M3-S6 shipped before this hand-off prompt began executing (its retrospective is in `docs/retrospectives/`). M4-S1 and M4-S2 also shipped since this prompt was authored. The narrative session now audits lived M3-S6 / M4-S1 / M4-S2 code alongside M3-S5b. The "re-prompt M3-S6 as first Phase 2.5 slice" path is replaced by the standard finding-routing flow against shipped code.
 
 ### 4.6 Definition of done for Phase 2
@@ -603,11 +603,11 @@ Explicit non-goals to prevent scope drift:
 **Existing prompt and retro examples (the CritterBids style baseline):**
 - `C:\Code\CritterBids\docs\prompts\README.md`
 - `C:\Code\CritterBids\docs\prompts\WORKFLOW.md`
-- `C:\Code\CritterBids\docs\prompts\M3-S5b-auction-closing-saga-terminal-paths.md` — gold-standard recent prompt
+- `C:\Code\CritterBids\docs\prompts\implementations\M3-S5b-auction-closing-saga-terminal-paths.md` — gold-standard recent prompt
 - `C:\Code\CritterBids\docs\retrospectives\M3-S5b-auction-closing-saga-terminal-paths-retrospective.md` — gold-standard recent retro
 
 **Queued prompt (not yet executed; review in Phase 2):**
-- `C:\Code\CritterBids\docs\prompts\M3-S6-listings-catalog-auction-status.md` (will move to `implementations/` in Phase 1)
+- `C:\Code\CritterBids\docs\prompts\implementations\M3-S6-listings-catalog-auction-status.md` (will move to `implementations/` in Phase 1)
 
 **Upstream feedback ledger:**
 - `C:\Code\CritterBids\docs\jasperfx-open-questions.md`

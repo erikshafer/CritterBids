@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Slice:** S4b of 8 (follows S4; pair pre-emptively split from the originally-planned joint S4 per milestone doc §9)
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S4b-buy-now.md`
+**Prompt:** `docs/prompts/implementations/M3-S4b-buy-now.md`
 
 ---
 

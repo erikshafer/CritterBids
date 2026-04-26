@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S4 — Participants BC scaffold
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S4-participants-bc-scaffold.md`
+**Prompt:** `docs/prompts/implementations/M1-S4-participants-bc-scaffold.md`
 
 ## Baseline
 

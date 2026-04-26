@@ -197,7 +197,7 @@ No HTTP calls, no event stream operations. Boot and DI resolution only.
 ### `docs/milestones/M2-listings-pipeline.md` — doc fix
 
 Update §9 S2 row from the prompt filename placeholder to
-`docs/prompts/M2-S2-selling-bc-scaffold.md` (this file), if it is not already correct.
+`docs/prompts/implementations/M2-S2-selling-bc-scaffold.md` (this file), if it is not already correct.
 
 ## Explicitly out of scope
 

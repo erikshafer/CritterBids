@@ -3,7 +3,7 @@
 > **Audience:** humans driving CritterBids development. This file is operational
 > workflow, not agent instructions. **Agents should not load this file** — no
 > session prompt in `docs/prompts/` lists it in its context-load section, and
-> none should. Rule 9 in `README.md` (context load is finite and listed) is the
+> none should. Rule 9 in `AUTHORING.md` (context load is finite and listed) is the
 > mechanism that keeps it out of agent context; this note is the convention
 > that keeps it out intentionally.
 
@@ -27,8 +27,8 @@ ten minutes ago.
 
 ### 2. Point the agent at the prompt file
 
-Something like: *"Execute `docs/prompts/M1-S1-solution-baseline.md`"* or
-*"Read `docs/prompts/M1-S1-solution-baseline.md` and complete the session it
+Something like: *"Execute `docs/prompts/implementations/M1-S1-solution-baseline.md`"* or
+*"Read `docs/prompts/implementations/M1-S1-solution-baseline.md` and complete the session it
 describes."*
 
 That's the entire instruction. Do not add context, do not add "and also do
@@ -73,14 +73,15 @@ same:
 - Did the prompt give the agent everything it needed?
 - Did anything surface mid-session that should have been in the prompt?
 - Did any acceptance criterion turn out to be unverifiable or ambiguous?
-- Did the template itself (in `README.md`) feel like the right shape, or did
+- Did the template itself (in `AUTHORING.md`) feel like the right shape, or did
   you want sections it didn't have?
 - Did any of the ten rules chafe?
 
 If any answer is "yes, something's off," open a PR against
-`docs/prompts/README.md` with the change. M1 is explicitly the period where
-the template and the rules are expected to move — the "evolves through M1
-retrospectives" line in the README is load-bearing, not decorative.
+`docs/prompts/AUTHORING.md` with the change (or `docs/prompts/README.md` if the
+gap is in the index/subdirectory layout rather than the template/rules). M1 was
+the period where the template and the rules were expected to move; M2 onward
+treats them as stable until something breaks.
 
 Then draft the next session's prompt with whatever you learned baked in, and
 start the loop again.
@@ -124,7 +125,8 @@ have enough information yet.
 
 Update this file when the workflow itself changes — when you adopt a new
 tool, when the review step gets a new checklist, when the retro cadence
-shifts. Do not update it to add agent-facing guidance; that goes in
-`README.md` instead. The split is load-bearing: `README.md` is what agents
-read, `WORKFLOW.md` is what you read. Keep them separate and both stay
-useful.
+shifts. Do not update it to add agent-facing guidance; index/subdirectory
+guidance goes in `README.md`, prompt-authoring rules and templates go in
+`AUTHORING.md`. The split is load-bearing: `README.md` and `AUTHORING.md` are
+what agents read, `WORKFLOW.md` is what you read. Keep them separate and all
+three stay useful.

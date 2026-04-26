@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S5 — Slice 1.1: CreateDraftListing command, DraftListingCreated event, SellerListing aggregate (draft lifecycle), ListingValidator, POST endpoint with seller gate
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S5-slice-1-1-create-draft-listing.md`
+**Prompt:** `docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md`
 
 ---
 

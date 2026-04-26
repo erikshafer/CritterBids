@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S2 — Selling BC scaffold
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S2-selling-bc-scaffold.md`
+**Prompt:** `docs/prompts/implementations/M2-S2-selling-bc-scaffold.md`
 
 ## Baseline
 

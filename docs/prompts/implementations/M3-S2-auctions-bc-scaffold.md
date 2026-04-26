@@ -2,7 +2,7 @@
 
 **Milestone:** M3 — Auctions BC
 **Session:** S2 of 7
-**Prompt file:** `docs/prompts/M3-S2-auctions-bc-scaffold.md`
+**Prompt file:** `docs/prompts/implementations/M3-S2-auctions-bc-scaffold.md`
 **Baseline:** 44 tests passing · `dotnet build` 0 errors, 0 warnings · M3-S1 complete
 
 ---

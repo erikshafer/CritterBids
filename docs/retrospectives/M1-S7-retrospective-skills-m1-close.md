@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S7 — Retrospective skills, schema verification, M1 close
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S7-retrospective-skills-m1-close.md`
+**Prompt:** `docs/prompts/implementations/M1-S7-retrospective-skills-m1-close.md`
 
 ## Baseline
 

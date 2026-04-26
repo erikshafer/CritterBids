@@ -122,7 +122,7 @@ Document the result in the retrospective. If schemas are incorrect, do not merge
 
 ### `docs/milestones/M1-skeleton.md` §9 — doc fix
 
-Update the S6 row from `*TBD*` to `docs/prompts/M1-S6-slice-0-3-register-as-seller.md`.
+Update the S6 row from `*TBD*` to `docs/prompts/implementations/M1-S6-slice-0-3-register-as-seller.md`.
 
 ## Explicitly out of scope
 

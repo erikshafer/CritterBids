@@ -2,7 +2,7 @@
 
 **Milestone:** M4 — Auctions BC Completion
 **Session:** S2 of 7 (plus pre-drafted S4b and S5b split slots)
-**Prompt file:** `docs/prompts/M4-S2-selling-withdraw-listing.md`
+**Prompt file:** `docs/prompts/implementations/M4-S2-selling-withdraw-listing.md`
 **Baseline:** 86 tests passing · `dotnet build` 0 errors, 0 warnings · M4-S1 complete
 
 ---

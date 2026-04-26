@@ -35,7 +35,7 @@ Every retrospective file follows this structure:
 **Milestone:** M{n} — {name}
 **Slice:** S{n} — {slice name}
 **Agent:** @{PSA|QAE|PO|UXE|DOE}
-**Prompt:** `docs/prompts/M{n}-S{n}-{slug}.md`
+**Prompt:** `docs/prompts/implementations/M{n}-S{n}-{slug}.md`
 [**Duration:** ~Xh]
 
 ## Baseline

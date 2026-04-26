@@ -2,7 +2,7 @@
 
 **Milestone:** M4 — Auctions BC Completion
 **Session:** S1 of 7 (plus pre-drafted S4b and S5b split slots)
-**Prompt file:** `docs/prompts/M4-S1-auctions-completion-foundation-decisions.md`
+**Prompt file:** `docs/prompts/implementations/M4-S1-auctions-completion-foundation-decisions.md`
 **Baseline:** 86 tests passing · `dotnet build` 0 errors, 0 warnings · M3 complete
 
 ---

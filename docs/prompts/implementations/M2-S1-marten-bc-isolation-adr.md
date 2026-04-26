@@ -103,7 +103,7 @@ consistent with the Proposed ADR. Include a cross-reference to `0001-uuid-strate
 
 - Update §8 M2-D1 from "Resolved in S1 (ADR 0002). Working assumption..." to reflect whether the
   working assumption in §5 was confirmed or corrected.
-- Update §9 S1 row from the prompt filename placeholder to `docs/prompts/M2-S1-marten-bc-isolation-adr.md`
+- Update §9 S1 row from the prompt filename placeholder to `docs/prompts/implementations/M2-S1-marten-bc-isolation-adr.md`
   (this file). The milestone doc was written before the prompt file existed; the row needs the
   actual filename.
 
@@ -153,7 +153,7 @@ consistent with the Proposed ADR. Include a cross-reference to `0001-uuid-strate
 - [ ] `docs/milestones/M2-listings-pipeline.md` §8 M2-D1 disposition updated to reflect
       whether the working assumption in §5 was confirmed or corrected by the ADR.
 - [ ] `docs/milestones/M2-listings-pipeline.md` §9 S1 row updated to
-      `docs/prompts/M2-S1-marten-bc-isolation-adr.md`.
+      `docs/prompts/implementations/M2-S1-marten-bc-isolation-adr.md`.
 - [ ] No files created or modified outside `docs/decisions/0002-marten-bc-isolation.md`,
       `docs/milestones/M2-listings-pipeline.md`, and this session's retrospective.
 - [ ] No `.csproj`, `.slnx`, `.props`, or source files touched.

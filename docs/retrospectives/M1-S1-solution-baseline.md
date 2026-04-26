@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S1 — Solution baseline
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S1-solution-baseline.md`
+**Prompt:** `docs/prompts/implementations/M1-S1-solution-baseline.md`
 
 ## Baseline
 

@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Slice:** S4 of 8 (paired with S4b for BuyNow; this session covers PlaceBid only)
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S4-dcb-place-bid.md`
+**Prompt:** `docs/prompts/implementations/M3-S4-dcb-place-bid.md`
 
 ---
 
