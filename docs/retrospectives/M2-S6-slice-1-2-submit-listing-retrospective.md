@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S6 — Slice 1.2: SubmitListing handler (3-event atomic chain), ListingPublished integration contract, RabbitMQ publish rule, package upgrades
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S6-slice-1-2-submit-listing.md`
+**Prompt:** `docs/prompts/implementations/M2-S6-slice-1-2-submit-listing.md`
 
 ---
 

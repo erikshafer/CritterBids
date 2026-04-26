@@ -53,7 +53,7 @@ Produce four things in a single PR:
 3. **Three targeted skill doc updates** — propagate the most important north-star patterns from
    the CritterStackSamples analysis into the skill files that CritterBids agents load most often
 
-4. **`docs/prompts/M2-S5-slice-1-1-create-draft-listing.md`** — the implementation session prompt
+4. **`docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md`** — the implementation session prompt
    for CreateDraftListing, authored against the corrected architecture
 
 At session close: the production Aspire crash is architecturally resolved (though code changes for
@@ -274,7 +274,7 @@ Add or confirm the **canonical BC module pattern** as established by ADR 009 and
 previously S4–S7 to S5–S8. The original S4 content (CreateDraftListing) becomes S5. Update each
 row's prompt file reference accordingly.
 
-### 6. `docs/prompts/M2-S5-slice-1-1-create-draft-listing.md` — new prompt
+### 6. `docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md` — new prompt
 
 Author the implementation session prompt for what was previously M2-S4 (CreateDraftListing),
 now renumbered S5. Use the established CritterBids prompt template from `docs/prompts/README.md`.
@@ -368,7 +368,7 @@ M2-S5 prompt authored. Standard retrospective format per `docs/retrospectives/RE
       if Option A is chosen
 - [ ] `docs/milestones/M2-listings-pipeline.md` §9 session table updated with S4 (this session)
       and S5–S8 renumbering
-- [ ] `docs/prompts/M2-S5-slice-1-1-create-draft-listing.md` exists, follows the prompt template,
+- [ ] `docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md` exists, follows the prompt template,
       and references ADR 011 and the updated skill docs in its context-load section
 - [ ] `docs/retrospectives/M2-S4-north-star-alignment-retrospective.md` exists and covers all
       deliverables

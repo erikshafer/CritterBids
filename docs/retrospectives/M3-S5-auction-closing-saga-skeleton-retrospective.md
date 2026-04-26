@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Slice:** S5 of 8 (paired with S5b for close evaluation + terminal paths)
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S5-auction-closing-saga-skeleton.md`
+**Prompt:** `docs/prompts/implementations/M3-S5-auction-closing-saga-skeleton.md`
 
 ---
 

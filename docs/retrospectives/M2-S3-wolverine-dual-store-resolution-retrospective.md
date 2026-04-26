@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S3 — Production Aspire unblock; ADR 010; S3 close
 **Agent:** Claude (interactive session, explanatory output style)
-**Prompt:** `docs/prompts/M2-S3-wolverine-dual-store-resolution.md`
+**Prompt:** `docs/prompts/implementations/M2-S3-wolverine-dual-store-resolution.md`
 
 > **Session note:** The deliverables originally scoped to S3 (RegisteredSellers handler, projection,
 > `ISellerRegistrationService`, `Program.cs` routing, 4 projection tests) were completed in the
@@ -21,7 +21,7 @@
 - `dotnet test`: 13 passing (Selling 5, Participants 6, Api.Tests 1, Contracts.Tests 1).
 - `dotnet run --project src/CritterBids.AppHost`: throws `InvalidWolverineStorageConfigurationException`
   when both postgres and sqlserver connection strings are present.
-- `docs/prompts/M2-S3-registered-sellers-consumer.md`: already deleted in commit `1550907`
+- `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md`: already deleted in commit `1550907`
   (replaced by the current session's prompt as part of the post-S2 correction PR).
 - ADR index: next available number confirmed as 010.
 
@@ -35,7 +35,7 @@
 | S2 | Authored ADR 010 (`docs/decisions/010-wolverine-dual-store-resolution.md`) |
 | S3 | Added prominent ADR-010 comments to both `Program.cs` guard blocks |
 | S4 | Updated `docs/decisions/README.md` — ADR 010 row added |
-| S5 | `docs/prompts/M2-S3-registered-sellers-consumer.md` — already deleted; acceptance criterion satisfied |
+| S5 | `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md` — already deleted; acceptance criterion satisfied |
 
 ---
 
@@ -135,7 +135,7 @@ No code changes were made to handlers, modules, test fixtures, or configuration 
 - `InvalidWolverineStorageConfigurationException` at Aspire startup: **still present** — no fix implemented (Option C)
 - `IntegrateWithWolverine()` calls claiming "main": 2 (unchanged — `AddMarten()` and `AddPolecat()`)
 - ADR 010 status: Proposed — Pending JasperFx input
-- `docs/prompts/M2-S3-registered-sellers-consumer.md`: absent (deleted in commit `1550907` before session start)
+- `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md`: absent (deleted in commit `1550907` before session start)
 
 ---
 
@@ -161,7 +161,7 @@ No code changes were made to handlers, modules, test fixtures, or configuration 
    all public types, methods, and properties. This is sufficient to confirm whether an API exists without
    decompiling or running code.
 
-5. **`docs/prompts/M2-S3-registered-sellers-consumer.md` was already deleted before this session started.**
+5. **`docs/prompts/implementations/M2-S3-registered-sellers-consumer.md` was already deleted before this session started.**
    Commit `1550907` replaced it with the current session's prompt. The deletion acceptance criterion was
    satisfied before the session began; it required no action in this session.
 
@@ -176,7 +176,7 @@ No code changes were made to handlers, modules, test fixtures, or configuration 
 - [x] `docs/decisions/README.md` includes the ADR 010 row in the status ledger
 - [x] `docs/retrospectives/M2-S3-wolverine-dual-store-resolution-retrospective.md` exists
       and references `M2-postS2-adr0002-correction.md`
-- [x] `docs/prompts/M2-S3-registered-sellers-consumer.md` deleted — already absent at session start
+- [x] `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md` deleted — already absent at session start
 - [x] Files modified: `src/CritterBids.Api/Program.cs`, `docs/decisions/README.md`,
       `docs/decisions/010-wolverine-dual-store-resolution.md`,
       `docs/retrospectives/M2-S3-wolverine-dual-store-resolution-retrospective.md`

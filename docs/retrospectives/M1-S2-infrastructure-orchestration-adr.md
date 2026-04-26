@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S2 — Infrastructure orchestration decision
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S2-infrastructure-orchestration-adr.md`
+**Prompt:** `docs/prompts/implementations/M1-S2-infrastructure-orchestration-adr.md`
 
 ## Baseline
 

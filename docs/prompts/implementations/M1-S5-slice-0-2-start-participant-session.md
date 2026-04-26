@@ -177,7 +177,7 @@ Note the result in the retrospective.
 
 ### `docs/milestones/M1-skeleton.md` §9 — doc fix
 
-Update the S5 row from `*TBD*` to `docs/prompts/M1-S5-slice-0-2-start-participant-session.md`.
+Update the S5 row from `*TBD*` to `docs/prompts/implementations/M1-S5-slice-0-2-start-participant-session.md`.
 
 ## Explicitly out of scope
 

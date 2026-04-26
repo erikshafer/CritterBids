@@ -119,7 +119,7 @@ session and cross-reference `M2-postS2-adr0002-correction.md`.
 
 ### 5 — Remove the obsolete prompt file
 
-Delete `docs/prompts/M2-S3-registered-sellers-consumer.md`.
+Delete `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md`.
 
 The file was authored against ADR 008 (named stores). It references `ISellingDocumentStore`
 (deleted), `[MartenStore]` attributes (removed), and `AddMartenStore<T>()` (removed). Leaving
@@ -149,7 +149,7 @@ in git history; no information is lost by deleting it.
 - [ ] `docs/decisions/README.md` includes the ADR 010 row in the status ledger
 - [ ] `docs/retrospectives/M2-S3-wolverine-dual-store-resolution-retrospective.md` exists
       and references `M2-postS2-adr0002-correction.md` for the original S3 deliverables
-- [ ] `docs/prompts/M2-S3-registered-sellers-consumer.md` has been deleted
+- [ ] `docs/prompts/implementations/M2-S3-registered-sellers-consumer.md` has been deleted
 - [ ] No files modified outside: `src/CritterBids.Api/Program.cs` (if fix implemented),
       `docs/decisions/`, `docs/retrospectives/`, `docs/prompts/`
 - [ ] No `ISellingDocumentStore`, `AddMartenStore<T>()`, or `[MartenStore]` references

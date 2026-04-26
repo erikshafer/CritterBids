@@ -4,14 +4,14 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S1 — Marten BC isolation decision
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S1-marten-bc-isolation-adr.md`
+**Prompt:** `docs/prompts/implementations/M2-S1-marten-bc-isolation-adr.md`
 
 ## Baseline
 
 - Solution builds clean; 8 tests pass (M1 close state: Participants 4, Api 2, Contracts 2).
 - `docs/decisions/` contained `001-modular-monolith.md` through `006-infrastructure-orchestration.md` plus `0001-uuid-strategy.md`. No `0002-*` file existed.
 - `docs/milestones/M2-listings-pipeline.md` §8 M2-D1 disposition contained hedging language: "S1 may identify that named stores are needed." No ADR authored yet.
-- `docs/milestones/M2-listings-pipeline.md` §9 S1 row already carried the correct prompt filename (`docs/prompts/M2-S1-marten-bc-isolation-adr.md`) from the initial milestone commit; no update was required there.
+- `docs/milestones/M2-listings-pipeline.md` §9 S1 row already carried the correct prompt filename (`docs/prompts/implementations/M2-S1-marten-bc-isolation-adr.md`) from the initial milestone commit; no update was required there.
 - No `docs/retrospectives/M2-*` file existed.
 
 ## Items completed

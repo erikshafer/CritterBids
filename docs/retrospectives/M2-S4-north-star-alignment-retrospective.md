@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Slice:** S4 — Architecture pivot; north star alignment; skill + CLAUDE.md refresh
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S4-north-star-alignment.md`
+**Prompt:** `docs/prompts/implementations/M2-S4-north-star-alignment.md`
 
 ---
 
@@ -31,7 +31,7 @@
 | S4f | `docs/skills/marten-event-sourcing.md` — `ConfigureMarten()` per-BC note expanded; `AutoApplyTransactions()` placement clarified with north star evidence |
 | S4g | `docs/skills/README.md` — `polecat-event-sourcing.md` marked archived/inactive (ADR 011) |
 | S4h | `docs/milestones/M2-listings-pipeline.md` §9 — session table updated: S4 is this session; S5–S8 renumbered |
-| S4i | `docs/prompts/M2-S5-slice-1-1-create-draft-listing.md` — new implementation prompt authored |
+| S4i | `docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md` — new implementation prompt authored |
 
 ---
 
@@ -151,7 +151,7 @@ inaccurate per-BC mention (consequence of the S4f clarification).
 
 ## S4i: M2-S5 Prompt Authored
 
-`docs/prompts/M2-S5-slice-1-1-create-draft-listing.md` authored against the corrected all-Marten
+`docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md` authored against the corrected all-Marten
 architecture. Key elements:
 
 - Context references ADR 011, ADR 009, `marten-event-sourcing.md`, `wolverine-message-handlers.md`
@@ -211,7 +211,7 @@ architecture. Key elements:
 - [x] `docs/skills/marten-event-sourcing.md` confirms `ConfigureMarten()` per-BC pattern and `AutoApplyTransactions()` placement (with explicit correction of the M2 milestone doc discrepancy)
 - [x] `docs/skills/README.md` updated — `polecat-event-sourcing.md` marked archived/inactive
 - [x] `docs/milestones/M2-listings-pipeline.md` §9 session table updated with S4 (this session) and S5–S8 renumbering
-- [x] `docs/prompts/M2-S5-slice-1-1-create-draft-listing.md` exists, follows the prompt template, references ADR 011 and updated skill docs
+- [x] `docs/prompts/implementations/M2-S5-slice-1-1-create-draft-listing.md` exists, follows the prompt template, references ADR 011 and updated skill docs
 - [x] `dotnet build` passes with 0 errors, 0 warnings
 - [x] `dotnet test` passes with 13/13
 - [x] No `.csproj`, `.cs`, `.slnx`, `.props`, or source files created or modified

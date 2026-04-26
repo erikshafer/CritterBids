@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Session:** S1 of 7
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S1-auctions-foundation-decisions.md`
+**Prompt:** `docs/prompts/implementations/M3-S1-auctions-foundation-decisions.md`
 **Baseline:** 44 tests passing · `dotnet build` 0 errors, 0 warnings · M2.5 complete (tag `M2.5-close`)
 
 ---

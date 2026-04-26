@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Slice:** S5b of 9 (paired with S5; closes the auction closing saga scope per milestone doc §7 §3 scenarios 3.5–3.11)
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S5b-auction-closing-saga-terminal-paths.md`
+**Prompt:** `docs/prompts/implementations/M3-S5b-auction-closing-saga-terminal-paths.md`
 
 ---
 

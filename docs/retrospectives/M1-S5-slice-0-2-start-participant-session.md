@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S5 — Slice 0.2: `StartParticipantSession`
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S5-slice-0-2-start-participant-session.md`
+**Prompt:** `docs/prompts/implementations/M1-S5-slice-0-2-start-participant-session.md`
 
 ## Baseline
 

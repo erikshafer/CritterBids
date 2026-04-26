@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Session:** S3 of 7
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S3-bidding-opened-consumer.md`
+**Prompt:** `docs/prompts/implementations/M3-S3-bidding-opened-consumer.md`
 **Baseline:** 45 tests passing · `dotnet build` 0 errors, 0 warnings · M3-S2 complete
 
 ---

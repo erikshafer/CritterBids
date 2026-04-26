@@ -2,7 +2,7 @@
 
 **Milestone:** M2 — Listings Pipeline
 **Session:** S7 of 8
-**Prompt file:** `docs/prompts/M2-S7-listings-bc-and-read-paths.md`
+**Prompt file:** `docs/prompts/implementations/M2-S7-listings-bc-and-read-paths.md`
 **Agent:** @PSA
 **Baseline:** 38 tests passing (Selling: 30, Participants: 6, Api: 1, Contracts: 1) · `dotnet build` 0 errors, 0 warnings · WolverineFx 5.31.0 · Microsoft.NET.Test.Sdk 18.4.0
 

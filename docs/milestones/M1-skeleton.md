@@ -76,7 +76,7 @@ CritterBids/
     └── CritterBids.Participants.Tests/   # sibling of CritterBids.Participants
 ```
 
-**Test layout rationale (Layout 2 — one test project per production project):** Each production project gets a `{ProductionProject}.Tests` sibling under `tests/`. Test type (unit vs. integration) is organized by folder *inside* each test project, not by separate projects. This pins on M1-S1 and applies to every future production project — adding a new project to `src/` requires adding its `.Tests` sibling in the same PR. See `docs/prompts/M1-S1-solution-baseline.md` for the authoritative pinning.
+**Test layout rationale (Layout 2 — one test project per production project):** Each production project gets a `{ProductionProject}.Tests` sibling under `tests/`. Test type (unit vs. integration) is organized by folder *inside* each test project, not by separate projects. This pins on M1-S1 and applies to every future production project — adding a new project to `src/` requires adding its `.Tests` sibling in the same PR. See `docs/prompts/implementations/M1-S1-solution-baseline.md` for the authoritative pinning.
 
 `Participants` is the only BC project in M1. `CritterBids.Contracts` is created but holds only `SellerRegistrationCompleted` (needed for M2 consumer).
 
@@ -172,13 +172,13 @@ One session ≈ one PR ≈ one slice or clearly-bounded sub-slice. Every session
 
 | # | Prompt file | Scope summary |
 |---|---|---|
-| 1 | `docs/prompts/M1-S1-solution-baseline.md` | Solution file, `CritterBids.Api` + `CritterBids.Contracts` projects, Layout 2 test projects, `Directory.Packages.props` with minimal xUnit + Shouldly pins. **No Aspire, no Compose, no BCs.** |
-| 2 | `docs/prompts/M1-S2-infrastructure-orchestration-adr.md` | Infrastructure orchestration ADR — Aspire-vs-Compose decision resolved as ADR 006. Documentation only; no code, no projects created. |
-| 3 | `docs/prompts/M1-S3-infrastructure-baseline.md` | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
-| 4 | `docs/prompts/M1-S4-participants-bc-scaffold.md` | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
-| 5 | `docs/prompts/M1-S5-slice-0-2-start-participant-session.md` | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
-| 6 | `docs/prompts/M1-S6-slice-0-3-register-as-seller.md` | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
-| 7 | `docs/prompts/M1-S7-retrospective-skills-m1-close.md` | Retrospective skills + M1 close — `aspire.md` authored, `polecat-event-sourcing.md` 🟡 → ✅, S4-F4 schema verification confirmed, M1 retrospective written. |
+| 1 | `docs/prompts/implementations/M1-S1-solution-baseline.md` | Solution file, `CritterBids.Api` + `CritterBids.Contracts` projects, Layout 2 test projects, `Directory.Packages.props` with minimal xUnit + Shouldly pins. **No Aspire, no Compose, no BCs.** |
+| 2 | `docs/prompts/implementations/M1-S2-infrastructure-orchestration-adr.md` | Infrastructure orchestration ADR — Aspire-vs-Compose decision resolved as ADR 006. Documentation only; no code, no projects created. |
+| 3 | `docs/prompts/implementations/M1-S3-infrastructure-baseline.md` | Infrastructure baseline — `CritterBids.AppHost` project, Postgres + SQL Server + RabbitMQ wiring via Aspire, Wolverine + Polecat host configuration. |
+| 4 | `docs/prompts/implementations/M1-S4-participants-bc-scaffold.md` | Participants BC scaffold — Polecat config, empty `Participant` aggregate, `AddParticipantsModule()` extension, UUID v5 namespace constant (resolves M1-D4). |
+| 5 | `docs/prompts/implementations/M1-S5-slice-0-2-start-participant-session.md` | Slice 0.2 — `StartParticipantSession` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.2. |
+| 6 | `docs/prompts/implementations/M1-S6-slice-0-3-register-as-seller.md` | Slice 0.3 — `RegisterAsSeller` command, event, handler, endpoint, tests mapping to `001-scenarios.md` §0.3; `SellerRegistrationCompleted` published via `OutgoingMessages`. |
+| 7 | `docs/prompts/implementations/M1-S7-retrospective-skills-m1-close.md` | Retrospective skills + M1 close — `aspire.md` authored, `polecat-event-sourcing.md` 🟡 → ✅, S4-F4 schema verification confirmed, M1 retrospective written. |
 
 Sessions are intentionally small. Merging is discouraged — the ten rules treat "one prompt equals one PR" as the primary constraint. If a session's scope collapses during implementation, split work off rather than absorbing the next session's scope.
 

@@ -4,7 +4,7 @@
 **Milestone:** M2 — Listings Pipeline
 **Session:** S7 — Scaffold Listings BC, CatalogListingView document, ListingPublishedHandler, read endpoints, integration tests
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M2-S7-listings-bc-and-read-paths.md`
+**Prompt:** `docs/prompts/implementations/M2-S7-listings-bc-and-read-paths.md`
 
 ---
 

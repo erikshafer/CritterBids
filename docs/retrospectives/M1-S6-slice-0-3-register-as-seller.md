@@ -4,7 +4,7 @@
 **Milestone:** M1 — Skeleton
 **Slice:** S6 — Slice 0.3: `RegisterAsSeller`
 **Agent:** @PSA
-**Prompt:** `docs/prompts/M1-S6-slice-0-3-register-as-seller.md`
+**Prompt:** `docs/prompts/implementations/M1-S6-slice-0-3-register-as-seller.md`
 
 ## Baseline
 

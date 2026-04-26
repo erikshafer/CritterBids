@@ -4,7 +4,7 @@
 **Milestone:** M3 — Auctions BC
 **Slice:** S6 of 9 (penultimate M3 implementation slice; follows S5b close, precedes S7 retrospective + M3 close)
 **Agent:** @PSA (Claude, explanatory output style)
-**Prompt:** `docs/prompts/M3-S6-listings-catalog-auction-status.md`
+**Prompt:** `docs/prompts/implementations/M3-S6-listings-catalog-auction-status.md`
 
 ---
 
