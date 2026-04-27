@@ -8,7 +8,7 @@
 | **Target project** | CritterBids — `C:\Code\CritterBids` |
 | **Source project for methodology lifts** | CritterCab — `C:\Code\CritterCab` |
 | **Workflow position** | Multi-phase methodology refresh. Phase 1 is the agent's first actionable scope. |
-| **Total scope** | 4 phases (with a contingent Phase 2.5), each with its own session(s) |
+| **Total scope** | 5 phases (with a contingent Phase 2.5), each with its own session(s) |
 
 ---
 
@@ -126,8 +126,11 @@ The refresh also formally reorganizes the docs surface so the narrative-shaped a
 | **2.5** | Rework slices (contingent on Phase 2 findings) | One new implementation prompt under `docs/prompts/implementations/` per `code-update`-routed finding; M3-S6 reviewed/re-prompted if needed | All `code-update` findings closed via standard slice → retro flow |
 | **3** | Convention rollouts | Status frontmatter on workshop slices, retroactive `Narratives:` cross-references in W001, Cast/Setting blocks added to W001, per-BC Ubiquitous Language sections in W002–W004, named Klefter/Bruun patterns in event-modeling skill | All workshops carry the new conventions; bidirectional references close the workshop ↔ narrative graph |
 | **4** | Open questions resolved by ADR | ADR for Reqnroll position, ADR for glossary strategy, ADR for learnings-file scope | Each open question either has an ADR or is consciously parked with a trigger |
+| **5** | Operational adoption | Backfill narratives for the four lived BCs (Auctions, Settlement, Selling, Participants); amend `docs/prompts/AUTHORING.md` and `docs/retrospectives/README.md`; declare and cross the cutover gate | M5's first slice prompt cites a narrative as jointly authoritative scope alongside its milestone doc |
 
 The phases are linear with one exception: **Phase 2.5 is contingent.** If Phase 2 produces zero `code-update` findings, Phase 2.5 is empty and Phase 3 starts immediately. If it produces several, those slices run before Phase 3.
+
+Phase 5 was added 2026-04-26 after the original four phases were authored. See §15 and Document History v0.2 for context.
 
 ---
 
@@ -725,6 +728,72 @@ Confirm or correct each before starting.
 
 ---
 
+## 15. Phase 5 - Operational adoption
+
+**Scope:** Switch CritterBids from workshop-anchored implementation to NDD-informed narrative-anchored implementation as the default operating mode. Backfill the narrative coverage required for ongoing slice work, amend the prompt and retrospective contracts, declare a clean cutover gate.
+
+**Agent persona:** Architect leads, Domain Expert and Backend Developer on duty per item.
+
+**Gate to close Phase 5:** M5's first slice prompt cites a narrative as jointly authoritative scope alongside its milestone doc.
+
+### 15.1 Why this phase exists
+
+The original 4-phase plan plus contingent Phase 2.5 was scoped on 2026-04-25 as methodology *infrastructure*: build the framework, pilot one narrative, backfill conventions, resolve open questions. On 2026-04-26 the user clarified the broader intent: drop the workshop-anchored prompt-execute-retro loop, and operate under NDD-informed narrative-anchored implementation going forward.
+
+The original four phases land you with framework, pilot, conventions, and ADR resolutions. They do not, by themselves, switch the operational workflow. Phase 5 closes that gap.
+
+This is structurally the second half of the foundation refresh: Phases 1 to 4 establish the methodology layer; Phase 5 commits the operational layer to using it. Without Phase 5, CritterBids ends up where CritterCab is today (framework built, switch unproven). With Phase 5, CritterBids becomes the first project in the Critter Stack family to operationalise NDD-informed development end-to-end against lived code.
+
+### 15.2 Item 1 - Backfill narratives for the four lived BCs
+
+Phase 2 produces narrative 001 (Flash bidder happy-path against W001). Phase 5 backfills four additional narratives, each authored under the same discipline as Phase 2 (single narrative + findings file + audit + narrative-internal retro):
+
+- **Auctions BC narrative.** Seller- or operator-perspective on the auction lifecycle through W002. Specifically the auction-closing saga's terminal paths (M3-S5b ground), extended-bidding window mechanics, reserve-met threshold semantics. Most likely seller-perspective on a winning Flash auction with extended bidding.
+- **Settlement BC narrative.** Winner-perspective on the settlement saga happy path through W003. Companion to narrative 001's Moment 8 (which is bidder-perspective on the same flow). Settlement-internal grain: the saga's intermediate events and projections.
+- **Selling BC narrative.** Seller-perspective on listing creation, submission, publish, and withdrawal through W004. Includes the M4-S2 WithdrawListing flow.
+- **Participants BC narrative.** Bidder-perspective on anonymous session start through credit ceiling assignment. Companion to narrative 001's Moment 1 at finer grain.
+
+The order is left to Phase 5 execution. Each narrative authored runs the full Phase 2 discipline: orientation, Cast and Setting, Moment-by-Moment with sign-off, findings discipline against lived code. `code-update` findings absorb into the existing Phase 2.5 discipline (stub follow-up prompts; resolved in subsequent slice work).
+
+The four backfill narratives plus narrative 001 give M5 onward a five-perspective view of the four lived BCs, sufficient to anchor M5 (Settlement) and most of M6+ slice work.
+
+### 15.3 Item 2 - Amend `docs/prompts/AUTHORING.md`
+
+The ten rules are written for the workshop-anchored era. Phase 5 amends the contract:
+
+- **Rule 3 grows.** Current text: "The milestone doc is authoritative for scope." New text: "The milestone doc and the relevant narrative are jointly authoritative for scope. If no narrative covers the slice's journey at the bidder, seller, auctioneer, or operator perspective being implemented, author one before the slice runs."
+- **Implementation prompt template grows a `Narrative:` line** in its metadata block citing the narrative the slice implements.
+- **The narrative-prompt template** (canonical example: the Phase 2 narrative-authoring prompt) gets a brief reference in the AUTHORING.md "Adapting the template for non-implementation prompts" section.
+
+### 15.4 Item 3 - Amend `docs/retrospectives/README.md`
+
+The retrospective template grows a "Findings against narrative" section:
+
+- For slices anchored to a narrative, the section records: did the slice implement the narrative as drafted, or did the slice surface drift? Findings route to the four lanes per the standing discipline. Drift caught here either resolves in the slice's own scope (`narrative-update` if the narrative was wrong) or routes to a follow-up.
+- For the rare slice that does not anchor to a narrative (likely operator runbooks, infrastructure-only changes), the section explains why and notes whether a follow-up narrative is warranted.
+
+### 15.5 Item 4 - Declare and cross the cutover gate
+
+The foundation refresh closes when **M5's first slice prompt cites a narrative as jointly authoritative scope alongside its milestone doc.** That citation is the visible signal that the workflow has switched.
+
+Until that prompt lands, the foundation refresh is open. If M5 begins before Phase 5 closes, the M5 milestone doc records the cutover gate explicitly: backfill the relevant narrative first, then author the M5 slice prompt against it.
+
+The cutover is not a soft transition. The first M5 slice prompt under the new regime is the gate. Subsequent slice prompts inherit the new discipline.
+
+### 15.6 Phase 5 close
+
+Phase 5's retrospective answers:
+
+- Are the four backfill narratives sufficient to anchor M5 work, or do additional narratives need to be authored mid-M5?
+- Did the AUTHORING.md and retrospectives README amendments survive the first M5 slice prompt without further iteration?
+- What does the methodology log say about the operational adoption? Is it carrying its weight after the cutover?
+- What changes during the foundation refresh became candidates for upstream contribution back to CritterCab's methodology layer?
+
+Phase 5's retrospective is the foundation refresh's closing artifact. After it lands, CritterBids is fully on the new workflow and the next non-methodology prompt can run.
+
+---
+
 ## Document History
 
 - **v0.1** (2026-04-25): Authored as the hand-off artifact closing the prior comparison-and-planning session. Captures the four-phase plan with contingent Phase 2.5, the findings-discipline routing, the methodology-log primitive, the bounded narrative format, and the rules/guardrails distinction. Ready for a fresh agent to pick up at Phase 1.
+- **v0.2** (2026-04-26): Phase 5 added (Operational adoption). The original 4-phase plan was scoped as methodology infrastructure; on 2026-04-26 the user clarified the broader intent of dropping the workshop-anchored implementation loop in favor of NDD-informed narrative-anchored implementation. Phase 5 closes the operational gap that the original four phases did not reach. The §2 overview table was updated; Phase 5 detail was appended as new §15 (rather than inserted in sequence) to preserve existing section numbering, keeping cross-references in the Phase 1 retrospective and the Phase 2 narrative-authoring prompt stable.
