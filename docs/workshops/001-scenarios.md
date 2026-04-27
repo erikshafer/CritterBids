@@ -32,7 +32,7 @@ Then:   ParticipantSessionStarted {
         }
 ```
 
-**Scenario: Display name is unique within active sessions**
+**Scenario: Display names are probabilistically unique within active sessions**
 
 ```
 Given:  ParticipantSessionStarted { ParticipantId: "participant-001", DisplayName: "SwiftFerret42" }
@@ -41,10 +41,12 @@ When:   StartParticipantSession { }
 
 Then:   ParticipantSessionStarted {
           ParticipantId: "participant-002",
-          DisplayName: "BoldPenguin7",     // different from any active session
+          DisplayName: "BoldPenguin7",     // probabilistically distinct, derived from UUID v7 random bytes
           ...
         }
 ```
+
+> **Note on uniqueness:** DisplayName is derived from UUID v7 random bytes (~25 Adjectives × ~29 Animals × a 1-9999 suffix, roughly 7.25M tuples) with no active-session collision check. The MVP posture is probabilistic uniqueness; for the demo audience size (~40 concurrent bidders), collision probability is well below 0.001%. A uniqueness index becomes warranted only if collisions become practically observable in production usage. See narrative 001 Finding 002.
 
 > **Deferred to BC workshop:** What happens when a participant scans the QR code twice? Rejoin existing session, or new session? Credit ceiling range and distribution strategy.
 
