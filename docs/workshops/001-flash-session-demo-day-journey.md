@@ -118,6 +118,8 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 | 5.5 | Register proxy bid | `RegisterProxyBid` | `ProxyBidRegistered` | — | Auctions | P1 |
 | 5.6 | Proxy auto-bid | *(system, on competing bid)* | `BidPlaced` (isProxy: true) | Same as 3.1 | Auctions | P1 |
 
+> **Note (post-M3-S5, see narrative 001 Finding 010):** Slice 5.2's Auctions-side event production (`PlaceBidHandler` emits `ReserveMet` when a bid first crosses the reserve threshold) and saga consumption (`AuctionClosingSaga.Handle(ReserveMet)`) are fully shipped in M3 (M3-S4 and M3-S5). The slice retains P1 priority because its defining View - the bidder-facing `LiveBidOverlay` push from Relay's BiddingHub - remains M4 work. Until Relay ships, the reserve meeting is invisible to bidders even though the event and saga state both fire correctly.
+
 ### Tier 6 — Settlement
 
 | # | Slice | Command | Events | View | BC | Priority |

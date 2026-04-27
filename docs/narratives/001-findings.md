@@ -116,3 +116,15 @@ Findings surfaced while authoring `001-bidder-wins-flash-auction.md` against liv
 **Discrepancy.** Workshop slice 3.1 happy-path command shape in `docs/workshops/001-scenarios.md`: `PlaceBid { ListingId, BidderId, Amount }`. Workshop slice 3.2 ExceedsCreditCeiling rejection has the ceiling on `ParticipantSessionStarted { ParticipantId, CreditCeiling }`. Lived `src/CritterBids.Auctions/PlaceBid.cs:17-22` carries `CreditCeiling` on the command directly. The contract's docstring at `PlaceBid.cs:9-12` explains the M3 transitional shape: "Credit ceiling travels on the command in M3 because Participants does not yet emit a `ParticipantSessionStarted` event the Auctions boundary can load. M4's Session aggregate will carry the credit ceiling in its own stream, at which point this field drops off the command shape and is read from `BidConsistencyState`."
 
 **Resolution.** The workshop's command shape stands as the design target; lived M3 is the stepping stone. M4-S5+ work converges to the workshop's design when the Session aggregate ships and projects credit-ceiling state into the bid-acceptance DCB. Narrative Moment 4's Interaction paragraph names the M3 transitional shape and references this finding. No workshop edit needed; the convergence is a tracked work item alongside Finding 006's Flash session machinery.
+
+---
+
+### Finding 010 - Workshop slice 5.2 (`ReserveMet`) is marked P1, but the Auctions-side event production and saga consumption are fully shipped in M3
+
+**Routing:** workshop-update
+
+**Surfaced at:** Moment 6
+
+**Discrepancy.** W001 slice 5.2 ("Reserve met signal", events `ReserveMet`) is marked Priority P1 in the Tier 5 slice table at `docs/workshops/001-flash-session-demo-day-journey.md:113`. Lived `src/CritterBids.Auctions/PlaceBidHandler.cs:121-126` emits `ReserveMet` as a sibling acceptance event when the bid amount first crosses the reserve threshold. `src/CritterBids.Auctions/AuctionClosingSaga.cs:61-64` consumes it and updates `ReserveHasBeenMet` saga state; the saga's close evaluation depends on this state to choose `ListingSold` vs `ListingPassed`. The integration contract `src/CritterBids.Contracts/Auctions/ReserveMet.cs` exists. M3-S4 implemented the production path; M3-S5 implemented the saga consumption. The bidder-facing Relay push (the *signal* part of "reserve met signal", projected to `LiveBidOverlay` per the slice's View column) is what remains P1 - Relay doesn't exist yet - but the event itself and its saga consumption are P0-grade lived code.
+
+**Resolution.** Slice 5.2 retains priority P1 (since the slice's defining View is the BiddingHub push to `LiveBidOverlay`, which remains M4 work). A Note added below the Tier 5 table in W001 clarifies that the Auctions-side production path and saga consumption are fully shipped in M3 (M3-S4 + M3-S5); only the Relay-side BiddingHub push remains. This makes the partial shipment legible to future readers without changing priority semantics.

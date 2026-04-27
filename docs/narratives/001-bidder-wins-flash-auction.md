@@ -152,3 +152,33 @@ When BoldPenguin7's $35 lands, Relay's projection observes the high-bidder trans
 - Bid-feed time ordering and at-least-once delivery considerations. *(`implementation-detail`.)*
 - The `BidPlaced` integration contract's `IsProxy` flag and how Relay handles proxy-originated bids visually. *(`separate-narrative`; the proxy bidding journey is a P1 narrative candidate.)*
 - Relay's exact SignalR-group subscription semantics (one group per listing, opt-in by detail-page visit, etc.). *(`implementation-detail`.)*
+
+## Moment 6: SwiftFerret42 reclaims the high-bidder position in the trigger window
+
+**Implements:** slice 3.1 (return), slice 5.1.
+
+**Context.** SwiftFerret42 is on the keyboard's detail page. The Outbid banner from Moment 5 is still onscreen; her phone shows BoldPenguin7 atop at $35 with a close timer reading twenty seconds - within the keyboard's thirty-second extended-bidding trigger window. The Auctions BC's `BidConsistencyState` for the keyboard reads `CurrentHighBid: $35`, `BidCount: 2`, `ReserveThreshold: $50`, `ReserveMet: false`, `ScheduledCloseAt: session-start + 5m`, `BuyItNowAvailable: false`. The auction-closing saga's `AuctionClosingSaga` document has the same `ScheduledCloseAt` and an outstanding `CloseAuction` scheduled message in Wolverine's scheduled-message store, set to fire at the same instant.
+
+**Interaction.** SwiftFerret42 enters $55 in the Place Bid sheet and submits. Her client constructs a `PlaceBid` command carrying `ListingId`, a fresh `BidId`, her `BidderId`, `Amount: 55.00`, and `CreditCeiling: 500.00`. The command dispatches via the Wolverine bus to `PlaceBidHandler`.
+
+**Response.** `PlaceBidHandler` opens the DCB, fetches `BidConsistencyState`, runs `EvaluateRejection`. All checks pass: the listing is open, the close timer has not yet passed, GreyOwl12 is not the bidder, $55 fits inside the $500 ceiling, $55 meets the minimum bid (current high $35 plus $1 increment = $36). The bid is accepted.
+
+Acceptance emits a three-event cascade alongside `BidPlaced`. The handler appends `BidPlaced { Amount: 55.00, BidCount: 3 }` to the keyboard's stream. `BuyItNowAvailable` is already false (cleared in Moment 4) so no `BuyItNowOptionRemoved`. Because `state.ReserveThreshold = $50`, `state.ReserveMet = false`, and `command.Amount = $55 >= $50`, the handler appends `ReserveMet { ListingId, Amount: 55.00, MetAt }` - this is the first time the keyboard's reserve has been crossed (the Auctions-side production-path of slice 5.2 is fully shipped in M3 even though the workshop marks the slice P1; see Finding 010). And because `state.ExtendedBiddingEnabled = true`, `remaining = 20s`, and `triggerWindow = 30s`, the handler computes `newCloseAt = now + 15s` (the extension), checks it against `OriginalCloseAt + MaxDuration` (the safety cap, not exceeded), and appends `ExtendedBiddingTriggered { ListingId, PreviousCloseAt, NewCloseAt, TriggeredByBidderId: SwiftFerret42's BidderId, TriggeredAt }`. Four events written atomically through the DCB consistency assertion.
+
+The integration-event copies fan out. The `AuctionClosingSaga` for the keyboard receives all four. Its `Handle(BidPlaced)` updates `CurrentHighBid = 55`, `CurrentHighBidderId = SwiftFerret42's id`, `BidCount = 3`. Its `Handle(ReserveMet)` flips `ReserveHasBeenMet = true` - the saga now knows that its close evaluation will produce `ListingSold` rather than `ListingPassed`. Its `Handle(ExtendedBiddingTriggered)` cancels the pending `CloseAuction` scheduled message via `CancelPendingCloseAsync` (a narrow ±100ms window query that isolates the one pending `CloseAuction` for this listing without cross-listing collateral), schedules a new `CloseAuction(ListingId, NewCloseAt)` fifteen seconds out via `bus.ScheduleAsync`, updates `ScheduledCloseAt = NewCloseAt`, and flips status to `Extended`.
+
+The Listings BC's `AuctionStatusHandler` consumes `BidPlaced`, `ReserveMet`, and `ExtendedBiddingTriggered` and upserts `CatalogListingView`: `CurrentHighBid = 55.00`, `BidCount = 3`, `CurrentHighBidderId = SwiftFerret42's ParticipantId`, `ScheduledCloseAt = NewCloseAt`. Operations BC's BidFeed projection logs the bid; the LiveLotBoardView reflects the timer extension.
+
+SwiftFerret42's phone, connected to the keyboard's BiddingHub group, receives the `BidPlaced` echo of her own bid, and the close timer on her detail page resets from twenty seconds to thirty-five seconds. Her display name is back atop the keyboard at $55. When Relay ships, BoldPenguin7 will receive a targeted Outbid push and a `ReserveMet` push will go to the keyboard's BiddingHub group signaling that the reserve has been crossed (workshop slice 5.2's bidder-facing surface). In the M3 reality this Moment audits, the Auctions-side event production is fully implemented; only the Relay push surface remains M4 work.
+
+**Why this matters to the bidder.** SwiftFerret42 is back atop the keyboard at $55, and her bid bought her an additional fifteen seconds. The trigger-window mechanic is the Flash format's anti-snipe defense: had she bid a few seconds later (after the timer crossed zero) the auction would have closed on BoldPenguin7's $35; bidding inside the window converts a near-loss into a fresh contest. She has now committed $55 of her $500 ceiling, leaving $445 to defend the position if BoldPenguin7 escalates. She does not know that her bid just met the keyboard's reserve; the `ReserveMet` event was emitted, the saga state updated, but the bidder-facing signal that "you just made the reserve" lives in the unimplemented Relay push.
+
+### Things deliberately not included
+
+- Lived-code audit of the Relay-side `ReserveMet` and `ExtendedBiddingTriggered` SignalR pushes. *(`defer`; Relay BC not implemented.)*
+- BoldPenguin7's targeted Outbid receipt and his subsequent decision (escalate, abandon). *(`separate-narrative`; competitor-perspective.)*
+- The `MaxDuration` safety cap (extended bidding's outer limit). The narrative names it as a check that did not bind here. *(`alternate-path-failure`; the cap-bound case is its own narrative.)*
+- Multiple sequential extended-bidding triggers (W001 parked question 4). *(`alternate-path-failure`.)*
+- The `CancelPendingCloseAsync` query's ±100ms window choice and what happens if two listings share an exact scheduled close time. *(`implementation-detail`; saga skill file or M3-S5b retro is the home for this discussion.)*
+- The Wolverine scheduled-message store's redelivery semantics. The saga's static `NotFound(CloseAuction)` handler covers a `CloseAuction` that races cancellation. *(`implementation-detail`.)*
+- The bidder-facing UI for "auction extended" - banner, animation, audio cue. *(`UX-or-UI-detail`.)*
