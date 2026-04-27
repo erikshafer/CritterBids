@@ -44,9 +44,11 @@ Ops (`critterbids-ops`): SessionManagerScreen, LiveBoardScreen, BidFeedScreen, S
 
 **View Inventory (reference):**
 
-Listings BC (Marten): `CatalogListingView`, `ListingDetailView`, `WatchlistView`, `ParticipantBidHistoryView` (tentative)
+Listings BC (Marten): `CatalogListingView`, `WatchlistView`, `ParticipantBidHistoryView` (tentative)
 Operations BC (Polecat): `SessionManagementView`, `LiveLotBoardView`, `BidFeedView`, `SettlementProgressView`, `ObligationStatusView`
 Relay BC (SignalR): `LiveBidOverlay`
+
+> **Note (post-M3-S6):** The originally-planned `ListingDetailView` was unified into `CatalogListingView` during M3-S6 under OQ2 Path A (string `Status` field, symmetry with `Format`). The detail-read endpoint at `/api/listings/{id}` loads the same `CatalogListingView` document by primary key. See narrative 001 Finding 003.
 
 ---
 
@@ -55,6 +57,12 @@ Relay BC (SignalR): `LiveBidOverlay`
 *(Full slice tables, dependency graph, and milestone mapping retained below. This is the primary reference for implementation planning.)*
 
 Each slice is a vertical cut through the storyboard: Screen → Command → Event(s) → View. A slice is independently deliverable and testable. Slices are organized into dependency tiers — a tier cannot start until the tiers above it are complete.
+
+### Narrative Cross-References
+
+The following slices are implemented by published narratives. Each narrative cites its slices via `Implements:` lines on its Moments; this section is the inverse index per the narratives README v0.1 bidirectional-referencing convention. Phase 3 of the foundation refresh adds the broader retroactive backfill across all four CritterBids workshops; this section is populated only with the directly-implemented slices for each narrative as it lands.
+
+- **[Narrative 001 - Bidder Wins a Flash Auction (Happy Path)](../narratives/001-bidder-wins-flash-auction.md)** implements slices 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, and 6.1. Single-bidder perspective; happy-path; covers Tier 0 through Tier 6 P0 slices. Slices 2.3, 4.1, 4.3, and 6.1 are forward-spec because the Auctions-side Flash session aggregate (M4-S5/M4-S6), Relay BC (M4 Tier 4), and Settlement BC (M5) are unshipped at narrative authoring time.
 
 ### Slice Principles
 
@@ -78,7 +86,7 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 | 1.1 | Create draft listing | `CreateDraftListing` | `DraftListingCreated` | — | Selling | P0 |
 | 1.2 | Submit and publish listing | `SubmitListing` | `ListingSubmitted`, `ListingApproved`, `ListingPublished` | `CatalogListingView` | Selling + Listings | P0 |
 | 1.3 | Catalog browse (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
-| 1.4 | Listing detail (read path) | — (GET) | — | `ListingDetailView` | Listings | P0 |
+| 1.4 | Listing detail (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
 
 ### Tier 2 — Flash Session Setup
 
@@ -112,9 +120,11 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 | 5.1 | Extended bidding | `PlaceBid` (in trigger window) | `BidPlaced`, `ExtendedBiddingTriggered` | `LiveBidOverlay`, `LiveLotBoardView` | Auctions + Relay + Operations | P0 |
 | 5.2 | Reserve met signal | *(system, on threshold)* | `ReserveMet` | `LiveBidOverlay` | Auctions + Relay | P1 |
 | 5.3 | Buy It Now purchase | `BuyNow` | `BuyItNowPurchased` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P1 |
-| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `ListingDetailView`, `CatalogListingView` | Auctions + Listings | P1 |
+| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `CatalogListingView` | Auctions + Listings | P1 |
 | 5.5 | Register proxy bid | `RegisterProxyBid` | `ProxyBidRegistered` | — | Auctions | P1 |
 | 5.6 | Proxy auto-bid | *(system, on competing bid)* | `BidPlaced` (isProxy: true) | Same as 3.1 | Auctions | P1 |
+
+> **Note (post-M3-S5, see narrative 001 Finding 010):** Slice 5.2's Auctions-side event production (`PlaceBidHandler` emits `ReserveMet` when a bid first crosses the reserve threshold) and saga consumption (`AuctionClosingSaga.Handle(ReserveMet)`) are fully shipped in M3 (M3-S4 and M3-S5). The slice retains P1 priority because its defining View - the bidder-facing `LiveBidOverlay` push from Relay's BiddingHub - remains M4 work. Until Relay ships, the reserve meeting is invisible to bidders even though the event and saga state both fire correctly.
 
 ### Tier 6 — Settlement
 
@@ -188,13 +198,15 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 
 | Milestone | Scope | Deliverable |
 |---|---|---|
-| M1 — Skeleton | Tier 0 | `docker compose up`, participant session via API |
-| M2 — Listings Pipeline | Tier 1 | Listings appear in catalog via API |
-| M3 — Flash Session Core | Tiers 2 + 3 | Full auction lifecycle via API and tests |
-| M4 — Real-Time + Extended | Tier 4 + 5.1 | SignalR push, extended bidding, outbid alerts |
-| M5 — Settlement | Tier 6 | `ListingSold` → full settlement flow |
-| M6 — Frontend MVP | Tier 9 P0 | Both SPAs, core screens, demo-runnable from browser |
-| M7 — Polish | P1 slices | Buy It Now, proxy, obligations, remaining ops screens |
+| M1 - Skeleton | Tier 0 | `docker compose up`, participant session via API |
+| M2 - Listings Pipeline | Tier 1 | Listings appear in catalog via API |
+| M3 - Auctions Core | Tier 3 + Auctions Timed-only foundation | Bidding lifecycle for Timed listings via API and tests (Flash session aggregate deferred to M4-S5/M4-S6) |
+| M4 - Flash Sessions + Real-Time + Extended | Tier 2 (M4-S5/M4-S6) + Tier 4 + 5.1 | Flash session lifecycle, SignalR push, extended bidding, outbid alerts |
+| M5 - Settlement | Tier 6 | `ListingSold` → full settlement flow |
+| M6 - Frontend MVP | Tier 9 P0 | Both SPAs, core screens, demo-runnable from browser |
+| M7 - Polish | P1 slices | Buy It Now, proxy, obligations, remaining ops screens |
+
+> **Note (post-M4-S1, see narrative 001 Finding 006):** M3 originally scoped Tier 2 (Flash Session Setup) alongside Tier 3 (Core Bidding). Lived M3 shipped Tier 3 and the Auctions-side Timed-only foundation only - the `Listing` aggregate, the auction-closing saga, and the catalog status projections. The Flash session aggregate, `StartSession` command handler, `SessionStartedHandler` fan-out, and Listings-side `SessionMembershipHandler` were deferred to M4-S5 and M4-S6 respectively per the M4-S1 foundation-decisions retrospective.
 
 ---
 
