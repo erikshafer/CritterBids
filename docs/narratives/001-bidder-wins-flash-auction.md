@@ -1,6 +1,6 @@
 ---
 slug: 001-bidder-wins-flash-auction
-status: draft
+status: accepted
 journey: bidder
 perspective: single-bidder
 scope: happy-path
@@ -246,3 +246,155 @@ Relay's BiddingHub broadcasts a notification to SwiftFerret42's connection: `{ t
 - Seller-perspective on payout receipt (slice 6.3 `SellerPayoutIssued` push, P1). *(`separate-narrative`.)*
 - Demo-mode timeout configuration with a cap for the saga (workshop Phase 2 PO decision). *(`implementation-detail`.)*
 - The Tier 7 obligations saga that follows `SettlementCompleted` (shipping reminder, tracking, delivery confirmation). *(`separate-narrative`; out of scope per the prompt.)*
+
+## Deferred from this narrative
+
+The following were deliberately not narrated in this happy-path bidder spine. Each is named with its disposition so future sessions can pull from this list when scoping the next narrative, ADR, skill file, or implementation prompt. Items here are not bugs or omissions; they are consciously deferred and traceable. Items recorded in `001-findings.md` as `document-as-intentional` (settled design choices) are not duplicated here - the cumulative section is a backlog feeder, not a transparency footnote.
+
+### `defer` (revisit when trigger lands)
+
+- Rejoin-vs-new-session behavior on QR re-scan (Moment 1; trigger: production usage at scale revealing duplicate-scan patterns).
+- Lived-code audit of the Flash session-start cascade (Moment 3; trigger: M4-S5 ships the Auctions-side `SessionStartedHandler` fan-out and M4-S6 ships the Listings-side `SessionMembershipHandler`).
+- Bidder-facing HTTP endpoint and PlaceBidSheet UI for `PlaceBid` (Moment 4; trigger: M6 frontend MVP, when the `[AllowAnonymous]` posture lifts and the `/api/auctions/bids` endpoint is wired).
+- Lived-code audit of the Relay BC's BiddingHub, Outbid push, and connection projection (Moments 5 and 6; trigger: M4 Tier 4 ship).
+- Lived-code audit of the entire Settlement saga (Moment 8; trigger: M5 ship).
+
+### `post-MVP` (beyond v1 scope)
+
+- Authentication or account binding (Moment 1; M6 introduces real authentication and the `[AllowAnonymous]` posture lifts).
+- Watchlist add or remove, slice 8.1 P2 (Moment 2).
+
+### `separate-narrative` (other journey perspectives)
+
+- Selling BC's listing-publish lifecycle from the seller's perspective: draft, submit, approve, publish (Moment 2). Phase 5 Item 1's Selling-BC narrative covers this.
+- Current M3 Timed-only auction lifecycle (where `BiddingOpened` fires immediately on `ListingPublished` consumption rather than at session start) as a structurally distinct flow from Flash (Moment 3).
+- Operator-perspective on session creation, listing attach, and session start (Moment 3; slices 2.1, 2.2, 2.3 from operator vantage).
+- OperationsHub broadcasts to the ops dashboard across multiple Moments: `SessionStarted` cascade (Moment 3), `BidPlaced` ops feed (Moment 5), `BiddingClosed` and `ListingSold` ops view (Moment 7).
+- BoldPenguin7's competitor-perspective on placing the $35 outbid (Moment 5) and on receiving SwiftFerret42's $55 retaliation (Moment 6).
+- IsProxy flag and proxy bidding journey, slices 5.5 / 5.6 (Moment 5).
+- Settlement-from-`BuyItNowPurchased`, slice 6.2 P1 (Moment 8).
+- Seller-perspective on payout receipt, slice 6.3 P1 `SellerPayoutIssued` push (Moment 8). Phase 5 Item 1's Selling-BC narrative may cover this.
+- Tier 7 obligations saga that follows `SettlementCompleted`: shipping reminder, tracking provision, delivery confirmation, demo-mode timeout (Moment 8; out of scope per the prompt).
+
+### `separate-workshop` (BCs not yet event-modeled)
+
+None. CritterBids has all four lived BCs already workshopped (W001-W004); the four unshipped BCs (Settlement, Obligations, Relay, Operations) await their own workshops alongside their implementations.
+
+### `implementation-detail` (skill file or ADR territory)
+
+- Credit-ceiling distribution strategy (Moment 1; random-byte choice versus a more sophisticated approach).
+- `BidRejected` audit-stream design and its exclusion from the DCB query, W002-7 decision (Moment 4).
+- Bid-increment policy: $1 below $100, $5 at $100+ (Moment 4).
+- Relationship between `BidConsistencyState` (DCB tag-aggregate) and the `Listing` aggregate (live-aggregation) (Moment 4; DCB skill file).
+- `CurrentHighBidderId` privacy on `CatalogListingView` and M6 endpoint redaction, M3-S6 OQ5 Path C (Moment 4).
+- Relay's connection-management lifecycle: subscription, disconnect, reconnect (Moment 5).
+- Bid-feed time ordering and at-least-once delivery considerations (Moment 5).
+- Relay's SignalR group subscription semantics: one-group-per-listing, opt-in by detail-page visit (Moment 5).
+- `CancelPendingCloseAsync` ±100ms window choice and cross-listing collision risk (Moment 6; saga skill file).
+- Wolverine scheduled-message store redelivery semantics and the saga's `NotFound(CloseAuction)` static handler (Moments 6, 7).
+- Demo-mode timeout configuration with a cap for the saga (Moments 3, 8; workshop Phase 2 PO decision).
+- Two sequential `CatalogListingView` upserts (Closed, then Sold) versus a single combined apply on the terminal-event pair (Moment 7).
+- Idempotency under at-least-once redelivery of `ListingSold` to downstream consumers (Moment 7).
+- `BuyerNotified` event the workshop's Settlement scenario does not list but Settlement might emit (Moment 8).
+
+### `alternate-path-failure` (failure modes warranting their own narratives)
+
+- Bid rejection paths from slice 3.2: below minimum, exceeds credit ceiling, listing closed, seller-cannot-bid (Moment 4).
+- Concurrent bid races and DCB consistency-assertion mechanics (Moment 4).
+- Failure modes of the session-start cascade: partial fan-out, a listing whose `ListingPublished` never reached Auctions, a session with zero attached listings (Moment 3).
+- `MaxDuration` safety cap binding case (Moment 6; the bid-in-trigger-window-but-cap-exceeded path).
+- Multiple sequential extended-bidding triggers (Moment 6; W001 parked question 4).
+- Competing terminal paths: `ListingPassed` (ReserveNotMet, NoBids - slice 3.4), `BuyItNowPurchased` (slice 5.3 via M3-S4b) (Moment 7).
+- `ListingWithdrawn` terminal path from M4-S2 (Moment 7).
+- Settlement-payment failures: insufficient credit, payment-provider rejection, ledger-divergence (Moment 8).
+- Settlement reserve disagreement (Auctions-side reserve check passed but Settlement's check disagrees), W001 parked question 5 (Moment 8).
+- `ListingSold`-versus-`ListingPassed` branch on Settlement entry (Moment 8).
+
+### `UX-or-UI-detail` (app design)
+
+- Catalog search, filter, and sort UX (Moment 2).
+- The "auction extended" UI: banner, animation, audio cue (Moment 6).
+- The "Closing..." UI state during the small window between timer-zero and the saga's emission of `BiddingClosed` (Moment 7; W001 parked question 12).
+
+## Retrospective
+
+### Narrative intent vs. outcome
+
+Stated goal at session start: author the first NDD-informed narrative for CritterBids covering a single bidder's happy-path Flash auction journey from anonymous session start through settlement, audit lived M3 and M4 code against it, route every disagreement through the four-lane findings discipline.
+
+**Outcome.** Eight Moments covering W001 slices 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, and 6.1. Three Moments (3, 5, 8) authored as forward-spec because the Auctions-side Flash session aggregate, Relay BC, and Settlement BC respectively are unshipped. Twelve findings filed in `001-findings.md` across four routing lanes: 2 `narrative-update`, 5 `workshop-update`, 1 `code-update`, 4 `document-as-intentional`. Cast and Setting locked first; Moment-by-Moment sign-off cadence held throughout the eight Moments. Format dialect inherited from CritterCab v0.1; CritterBids-specific patterns established for the four Phase 5 backfill narratives. Goal met.
+
+### What worked
+
+- **Moment-by-Moment sign-off cadence** held for all eight Moments without slipping. Every Moment's draft prose plus its findings landed in one commit on the Phase 2 branch; no batched outputs, no speculative artifact content.
+- **Per-Moment "Things deliberately not included" subsection** captured authorial calls inline, then aggregated into the cumulative `## Deferred from this narrative` section at session close per the README convention.
+- **Setting carrying canonical numbers once** (reserve $50, hammer $55, fee 10%, credit ceiling $500) anchored each Moment without re-establishing the configuration. The single Setting-paragraph drift caught at Moment 1 (Finding 001) reinforced the lesson: read lived code before drafting Setting, not after.
+- **Findings discipline routed cleanly under user adjudication.** Twelve findings, four lanes; each finding's routing was either author-leaned-and-user-confirmed or user-redirected (Finding 004 routed `document-as-intentional` rather than `code-update`). The lane semantics held.
+- **Forward-spec routing for unshipped BCs** preserved the journey arc without inventing audit material. Moments 3, 5, and 8 narrated the system as designed to run, deferred lived-code audit under `defer`, and avoided spurious `code-update` findings against absent code.
+- **Multi-paragraph `Response.` convention** worked for the multi-slice Moments (5, 6) and the saga-arc Moment (8) per the README's multi-slice rule. Paragraphs grew, labels did not.
+- **Em-dash hygiene held** across all narrative and findings edits. Zero em dashes in any committed narrative-text the session authored. Pre-existing em dashes in workshops and scenarios were preserved per the convention's grandfather clause.
+- **Reading the slice's retrospective alongside its code** (M3-S5b retro for Moments 6 and 7; M3-S6 retro for Moment 2; M4-S1 retro for Moment 3) revealed design-time decisions the code alone did not show. The retros' OQ outcomes (Path A, Path B, Path C labels) became load-bearing finding evidence.
+
+### What was hard
+
+- **The `TryComputeExtension` bug (Finding 011) revealed itself only at Moment 7's prep, by reading the saga's `Handle(ExtendedBiddingTriggered)` defensive guard.** The PlaceBidHandler's extension calculation `candidate = now + extension` produces NewCloseAt earlier than ScheduledCloseAt for early-trigger-window bids; the saga's `if (NewCloseAt <= ScheduledCloseAt) return` guard prevents the broken reschedule but the broken event still commits to the stream and corrupts DCB boundary state. Recognizing the bug required reading the saga's reaction code, then reading back to PlaceBidHandler's emission code with the discrepancy in mind. Lesson: per-Moment retro reads catch bugs the per-Moment code reads alone might miss.
+- **Setting paragraph 3 was authored before reading the lived Participants code**, and the credit-ceiling-band claim ($200-$500) was a fabrication. Caught at Moment 1; patched. Lesson: lived-code orientation is per-Moment, but Cast and Setting still benefit from a quick code skim before drafting; otherwise the Setting's specific numbers may not match production.
+- **Three Moments turned out to be forward-spec, not two.** The intro paragraph at Cast-and-Setting time claimed "Two of the eight (5 and 8)"; Moment 3's audit revealed the Auctions-side Flash session aggregate is also M4-S5+. Caught at Moment 3 via Finding 007 and patched in the same commit. Lesson: pre-walk the BC inventory against the slices being narrated; do not assume "the Auctions BC has shipped" maps to "every Auctions slice has shipped."
+- **Spec-anchored framing for Moment 6.** The lived `TryComputeExtension` bug means SwiftFerret42's $55 re-bid does NOT actually extend the auction in M3 production. Two routings were available: render lived behavior (no extension; the timer doesn't reset) or render workshop intent (extension fires; the timer resets to 35 seconds). ADR 016's spec-anchored framing authorized the latter (narrative renders intent; code is authoritative for runtime; divergence routes to `code-update`). The narrative voice held; Phase 2.5 absorbs the fix.
+
+### Decisions about how to author (meta-decisions worth carrying forward)
+
+- Cast and Setting locked first; Moment-by-Moment sign-off cadence thereafter.
+- Findings surface as the draft is written, not retroactively. Resolution edits go in the same commit as the Moment.
+- Per-Moment "Things deliberately not included" subsections persist in the published narrative file (the prompt's interpretation of the README's "in its proposal phase" wording) and consolidate into the cumulative `## Deferred from this narrative` at session close.
+- Forward-spec Moments use the same prose shape as audited Moments; the difference shows up in the deferred subsection (`defer` disposition with code-not-yet-shipped justification) and in the absence of `code-update` findings.
+- Spec-anchored framing wins when narrative intent and lived code diverge: the narrative remains aligned with the workshop's design, the divergence routes to `code-update`, Phase 2.5 absorbs.
+- `document-as-intentional` is a finding-routing lane, not a deferral disposition. Items routed `document-as-intentional` are settled design choices documented in `001-findings.md`; they do not roll up into the cumulative deferred section (which is a backlog feeder).
+
+### Patterns established for future narratives
+
+CritterCab v0.1 patterns inherited unchanged: bounded frontmatter v1, prose-paragraph Moment body, multi-slice Moments grow in paragraphs, single-named-protagonist plus omniscient narrator, seven disposition tags for deferral, per-Moment plus cumulative deferral discipline, code-style backticks for events and projection names.
+
+CritterBids-specific patterns established for narratives 002-005 (the Phase 5 backfills):
+
+- **Forward-spec Moments are normal, not exceptional.** Future narratives will routinely audit shipped BCs and forward-spec unshipped ones. The Settlement-BC narrative will hit forward-spec for slice 6.1 until M5; the Auctions-BC narrative may hit it for the Flash session aggregate until M4-S5/M4-S6; the Selling-BC narrative may hit it for the manual seller-approval path; the Participants-BC narrative is fully audited (M1 only).
+- **Findings file as parallel artifact.** `00N-findings.md` next to the narrative file. Numbered findings with Routing / Surfaced at / Discrepancy / Resolution. The findings file is the audit evidence; the narrative is the journey.
+- **Stub follow-up prompts for `code-update` findings** at session close, named under `docs/prompts/implementations/<slug>.md`, deferred to Phase 2.5 for fleshing out. The session that authored the finding does not implement the fix.
+- **Pre-Moment lived-code reads include the relevant retro.** Reading M3-S5b retro alongside the saga code revealed the `Handle(CloseAuction)` SellerId-via-AggregateStreamAsync design (Finding 012); reading M3-S4 retro alongside `PlaceBidHandler.cs` revealed the `TryComputeExtension` bug (Finding 011). Code-only reads would have caught both, but slower.
+- **Workshop edits cascade from findings.** Workshop-update findings produce concrete W001 or `001-scenarios.md` edits in the same commit as the Moment that surfaced them; the workshop converges to lived code (or to the design decision the lived code embodies) within the narrative session, not at a future cleanup pass.
+- **Em-dash sweeping when editing existing prose.** Pre-existing em dashes in workshops are grandfathered, but rows being rewritten as part of a finding's resolution sweep their em dashes to hyphens to keep the table internally consistent.
+
+### Quality signal from the session
+
+User feedback was clean throughout: every Moment locked as proposed with no full revision rounds. Two minor amendments at sign-off (Finding 004's routing choice; Finding 010's note placement). All twelve findings' routings held under user adjudication. The `TryComputeExtension` bug (Finding 011) was acknowledged as a real bug worth fixing in Phase 2.5. The lean-opinions-on-questions practice inherited from prior CritterBids sessions continued to land.
+
+The narrative-as-spec-anchored-vs-lived-as-runtime tension surfaced exactly where ADR 016 predicted: at the one place where lived code diverged from design intent (the extension calculation). The discipline absorbed it cleanly.
+
+### Follow-ups generated
+
+- **Phase 2.5 stub follow-up prompt for Finding 011** committed at session close at `docs/prompts/implementations/phase2-5-extension-calculation-fix.md`. Slice scope: change `var candidate = now + extension` in `PlaceBidHandler.TryComputeExtension` to compute against `state.ScheduledCloseAt`, add a defensive guard against non-monotone reschedules, harden test coverage for early-trigger-window bids.
+- **Phase 5 backfill narratives 002-005** inherit this session's patterns: forward-spec routing, findings file convention, stub-prompt-on-close, retro-alongside-code reading.
+- **Methodology log Entry 001 considered and consciously skipped** at session close. The 5-`workshop-update`-to-1-`code-update` finding-lane ratio is interesting but the project has authored exactly one narrative session; one data point is not a load-bearing observation about drift accumulation. Defer Entry 001 to narrative #2's close, when a comparison ratio becomes available. The methodology log's entry-criteria gate held.
+- **W001 cross-references on directly-implemented slices** committed in the session-close PR via a consolidated Narrative Cross-References note at the start of W001 §"Phase 4 - Identify Slices", listing slices 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, and 6.1 as implemented by narrative 001.
+- **Narratives README Index row 001** committed in the session-close PR.
+
+### Narrative #2 candidate list
+
+Per Phase 5 Item 1, four backfill narratives are scoped, each authored under this session's discipline. In rough order of structural readiness:
+
+1. **Auctions-BC narrative** - seller- or operator-perspective on the auction lifecycle through W002 (auction-closing saga terminal paths from M3-S5b, extended-bidding mechanics from M3-S4, reserve-met semantics). Most likely seller-perspective on a winning Flash auction with extended bidding. Strongest candidate for narrative #2: highest density of lived M3 code; Phase 5 Item 1 scopes it explicitly.
+2. **Selling-BC narrative** - seller-perspective on listing creation, submission, automated approval, publish, and the M4-S2 WithdrawListing flow through W004.
+3. **Participants-BC narrative** - bidder-perspective on anonymous session start through credit-ceiling assignment. Companion to narrative 001's Moment 1 at finer grain. Lightest narrative; lived M1 code is small and stable.
+4. **Settlement-BC narrative** - winner-perspective on the settlement saga happy path through W003. Companion to narrative 001's Moment 8 at finer grain. Heavily forward-spec until M5 ships.
+
+The Auctions-BC narrative is the recommended next session, both for structural readiness and because Phase 5 Item 1's broader scope leans on the same lived-code audit muscle this session exercised.
+
+### Narrative status
+
+**Complete (v0.1, 2026-04-27).** Eight Moments, cumulative deferred section, retrospective. Format conventions inherited from CritterCab v0.1; CritterBids-specific patterns named for Phase 5 backfills. Status flipped to `accepted` in the session-close commit. The narrative is ready to serve as input to implementation prompt documents covering the directly-implemented slices.
+
+---
+
+## Document History
+
+- **v0.1** (2026-04-27): Initial authoring as foundation-refresh Phase 2 deliverable. Eight Moments covering W001 slices 0.2 / 1.3 / 1.4 / 2.3 / 3.1 / 3.3 / 4.1 / 4.3 / 5.1 / 6.1; three Moments (3, 5, 8) authored as forward-spec for unshipped BCs and slices. Twelve findings filed in `001-findings.md` across four routing lanes. Format dialect locked from CritterCab v0.1 with two guardrails (prose-paragraph Moment bodies; bounded frontmatter vocabulary). Single-bidder POV locked. Cumulative deferred section + narrative-internal retrospective + Document History committed at session close.
