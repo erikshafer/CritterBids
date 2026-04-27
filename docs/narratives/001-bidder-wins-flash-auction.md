@@ -57,3 +57,25 @@ This is the cleanest possible run through the system. SwiftFerret42's first bid 
 - Display-name uniqueness enforcement across active sessions. *(`workshop-update`; see Finding 002. The MVP posture is probabilistic uniqueness; a uniqueness index is a defer-grade follow-up if the bidder count grows beyond the band where collisions are practically unobservable.)*
 - The credit-ceiling distribution strategy (random-byte choice versus a more sophisticated approach). *(`implementation-detail`; skill-file territory if it ever lands.)*
 - Authentication or account binding. *(`post-MVP`; M6 introduces real authentication and the `[AllowAnonymous]` posture lifts at that point.)*
+
+## Moment 2: SwiftFerret42 browses the catalog and opens the keyboard's detail
+
+**Implements:** slices 1.3, 1.4.
+
+**Context.** SwiftFerret42 is on the catalog page with "SwiftFerret42" in the header. Her phone's session cookie carries the `ParticipantId`; her HTTP requests will not need to re-authenticate for the rest of the journey. Three published listings already exist in the system as `CatalogListingView` documents in Listings' Marten store, projected days ago when GreyOwl12 and the other two sellers finished their submit-and-publish flows. The auction operator's Flash session has not started; each listing's `Status` field on the view reads `"Published"` - the pre-bidding state.
+
+**Interaction.** Her phone GETs `/api/listings`. Wolverine routes to the `GetCatalog` endpoint. Then she taps the Vintage Mechanical Keyboard tile and her phone GETs `/api/listings/{listingId}` for the keyboard's UUID.
+
+**Response.** `GetCatalog` issues `session.Query<CatalogListingView>().OrderByDescending(x => x.PublishedAt).ToListAsync()` and returns three items: the keyboard, the Pokemon card, and the wooden bowl, in publish-recency order. Each tile carries `Title`, `StartingBid`, `BuyItNow` when present, the `Format` ("Flash"), and `Status: "Published"`. SwiftFerret42 reads the keyboard tile: title, starting bid $25.00, Buy It Now $100.00, format Flash. She taps it.
+
+The detail GET resolves to the same `CatalogListingView` document. There is no separate `ListingDetailView`; M3-S6 collapsed the Catalog and Detail Marten projections under OQ2 Path A symmetry with `Format`, and the detail endpoint just `LoadAsync`-es the document by primary key. The endpoint returns 200 with the document; SwiftFerret42's detail page renders the same fields she saw on the tile, plus whatever auction-status fields are populated. At this moment none of the auction-status fields are set: the listing has not yet been opened for bidding, `CurrentHighBid` is null, `BidCount` is zero, and `Status` is still `"Published"`. There is no reserve information on the page. SwiftFerret42 has no signal that GreyOwl12's confidential reserve of $50.00 exists; the lived view carries no reserve-related field.
+
+**Why this matters to the bidder.** SwiftFerret42 now knows what she's bidding on at the catalog grain: title, the $25 starting point, and the $100 Buy It Now ceiling. She does not know whether a reserve exists, much less its amount. This is by design: the system holds reserve existence and amount equally confidential between seller and Settlement until a bid first crosses the threshold, at which point the `ReserveMet` event signals the meeting moment to the bidder over the BiddingHub. SwiftFerret42 will cross her reserve at $55 in Moment 7. From the catalog view alone, she has no way to anticipate whether the keyboard's reserve sits above her starting interest or well below it.
+
+### Things deliberately not included
+
+- The `HasReserve` boolean signal the workshop scenarios formerly asserted. *(`document-as-intentional` per Finding 004; the design holds reserve existence confidential until crossed, signaled only via `ReserveMet`.)*
+- Watchlist add or remove (slice 8.1, P2). *(`post-MVP`.)*
+- The Selling BC's listing-publish lifecycle (draft, submit, approve, publish). *(`separate-narrative`; future seller-perspective narrative will dramatize it.)*
+- The Selling-domain `ListingPublished` (internal to Selling) versus the integration contract `CritterBids.Contracts.Selling.ListingPublished` (the cross-BC carrier). The narrative names only the integration contract; the domain event is not bidder-visible. *(`document-as-intentional`.)*
+- Catalog search, filter, and sort UX. *(`UX-or-UI-detail`.)*

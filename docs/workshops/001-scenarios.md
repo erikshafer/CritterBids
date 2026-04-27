@@ -166,9 +166,8 @@ View:   CatalogListingView {
           ListingId: "listing-A",
           Title: "Vintage Mechanical Keyboard",
           StartingBid: 25.00,
-          Status: "upcoming",              // not yet attached to a session or bidding open
-          HasBuyItNow: true,
-          HasReserve: true                 // boolean only — amount never exposed
+          Status: "Published",              // post-publish, pre-bidding state (M3-S6 vocabulary)
+          HasBuyItNow: true                 // reserve fields intentionally absent (see narrative 001 Finding 004)
         }
 ```
 
@@ -195,7 +194,7 @@ Given:  ListingPublished { ListingId: "listing-A", Title: "Vintage Mechanical Ke
 
 When:   GET /api/listings
 
-Then:   CatalogListingView[] containing both listings, each with Status: "upcoming"
+Then:   CatalogListingView[] containing both listings, each with Status: "Published"
 ```
 
 **Scenario: Listing detail returns full information**
@@ -206,18 +205,18 @@ Given:  ListingPublished { ListingId: "listing-A", Title: "Vintage Mechanical Ke
 
 When:   GET /api/listings/listing-A
 
-Then:   ListingDetailView {
+Then:   CatalogListingView {                      // post-M3-S6 unified view (see narrative 001 Finding 003)
           ListingId: "listing-A",
           Title: "Vintage Mechanical Keyboard",
           StartingBid: 25.00,
           BuyItNowPrice: 100.00,
-          Status: "upcoming",
+          Status: "Published",
           CurrentHighBid: null,
           BidCount: 0
         }
 ```
 
-> **Note:** Reserve price is NEVER included in catalog or detail views. Only `HasReserve: true/false`.
+> **Note on reserve invisibility:** The design intent is reserve-invisible-until-met. Reserve price and reserve existence are both confidential to the seller and Settlement until a bidder's offer crosses the threshold; the `ReserveMet` event (slice 5.2) signals existence to the bidder via the BiddingHub. The catalog and detail views carry no reserve-related field. See narrative 001 Finding 004.
 
 ---
 
@@ -271,7 +270,7 @@ Then:   ListingAttachedToSession {
         }
 
 View:   SessionManagementView { SessionId: "session-001", ListingCount: 1 }
-        CatalogListingView { ListingId: "listing-A", SessionId: "session-001", Status: "upcoming" }
+        CatalogListingView { ListingId: "listing-A", SessionId: "session-001", Status: "Published" }
 ```
 
 **Scenario: Reject — listing not published**
@@ -323,8 +322,8 @@ Then:   SessionStarted {
         BiddingOpened { ListingId: "listing-C", SessionId: "session-001",
           ScheduledCloseAt: "2026-04-09T14:05:00Z" }
 
-View:   LiveLotBoardView contains 3 listings, all Status: "open"
-        CatalogListingView for each listing: Status → "open"
+View:   LiveLotBoardView contains 3 listings, all Status: "Open"
+        CatalogListingView for each listing: Status → "Open"
 ```
 
 **Scenario: Reject — session has no listings**
@@ -480,8 +479,8 @@ Then:   BiddingClosed {
           SoldAt: "2026-04-09T14:05:00Z"
         }
 
-View:   CatalogListingView { ListingId: "listing-A", Status: "sold" }
-        LiveLotBoardView { ListingId: "listing-A", Status: "sold", Winner: "participant-001", HammerPrice: 55.00 }
+View:   CatalogListingView { ListingId: "listing-A", Status: "Sold" }
+        LiveLotBoardView { ListingId: "listing-A", Status: "Sold", Winner: "participant-001", HammerPrice: 55.00 }
 ```
 
 ---
@@ -507,8 +506,8 @@ Then:   BiddingClosed { ListingId: "listing-D", ClosedAt: ... }
           PassedAt: "2026-04-09T14:05:00Z"
         }
 
-View:   CatalogListingView { ListingId: "listing-D", Status: "passed" }
-        LiveLotBoardView { ListingId: "listing-D", Status: "passed" }
+View:   CatalogListingView { ListingId: "listing-D", Status: "Passed" }
+        LiveLotBoardView { ListingId: "listing-D", Status: "Passed" }
 ```
 
 **Scenario: No bids placed**

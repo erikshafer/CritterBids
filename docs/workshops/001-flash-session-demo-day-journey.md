@@ -44,9 +44,11 @@ Ops (`critterbids-ops`): SessionManagerScreen, LiveBoardScreen, BidFeedScreen, S
 
 **View Inventory (reference):**
 
-Listings BC (Marten): `CatalogListingView`, `ListingDetailView`, `WatchlistView`, `ParticipantBidHistoryView` (tentative)
+Listings BC (Marten): `CatalogListingView`, `WatchlistView`, `ParticipantBidHistoryView` (tentative)
 Operations BC (Polecat): `SessionManagementView`, `LiveLotBoardView`, `BidFeedView`, `SettlementProgressView`, `ObligationStatusView`
 Relay BC (SignalR): `LiveBidOverlay`
+
+> **Note (post-M3-S6):** The originally-planned `ListingDetailView` was unified into `CatalogListingView` during M3-S6 under OQ2 Path A (string `Status` field, symmetry with `Format`). The detail-read endpoint at `/api/listings/{id}` loads the same `CatalogListingView` document by primary key. See narrative 001 Finding 003.
 
 ---
 
@@ -78,7 +80,7 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 | 1.1 | Create draft listing | `CreateDraftListing` | `DraftListingCreated` | — | Selling | P0 |
 | 1.2 | Submit and publish listing | `SubmitListing` | `ListingSubmitted`, `ListingApproved`, `ListingPublished` | `CatalogListingView` | Selling + Listings | P0 |
 | 1.3 | Catalog browse (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
-| 1.4 | Listing detail (read path) | — (GET) | — | `ListingDetailView` | Listings | P0 |
+| 1.4 | Listing detail (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
 
 ### Tier 2 — Flash Session Setup
 
@@ -112,7 +114,7 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 | 5.1 | Extended bidding | `PlaceBid` (in trigger window) | `BidPlaced`, `ExtendedBiddingTriggered` | `LiveBidOverlay`, `LiveLotBoardView` | Auctions + Relay + Operations | P0 |
 | 5.2 | Reserve met signal | *(system, on threshold)* | `ReserveMet` | `LiveBidOverlay` | Auctions + Relay | P1 |
 | 5.3 | Buy It Now purchase | `BuyNow` | `BuyItNowPurchased` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P1 |
-| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `ListingDetailView`, `CatalogListingView` | Auctions + Listings | P1 |
+| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `CatalogListingView` | Auctions + Listings | P1 |
 | 5.5 | Register proxy bid | `RegisterProxyBid` | `ProxyBidRegistered` | — | Auctions | P1 |
 | 5.6 | Proxy auto-bid | *(system, on competing bid)* | `BidPlaced` (isProxy: true) | Same as 3.1 | Auctions | P1 |
 
