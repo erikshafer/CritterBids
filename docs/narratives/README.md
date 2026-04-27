@@ -177,7 +177,7 @@ Every narrative ships its retrospective in the same file, appended after the `##
 
 | # | Status | Journey | Scope | Slices |
 |---|---|---|---|---|
-| *(empty: Phase 2 of the foundation refresh authors narrative 001)* |  |  |  |  |
+| [001](./001-bidder-wins-flash-auction.md) | accepted | bidder | happy-path | 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, 6.1 |
 
 ## Document history
 

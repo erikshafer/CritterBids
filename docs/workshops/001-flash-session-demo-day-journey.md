@@ -58,6 +58,12 @@ Relay BC (SignalR): `LiveBidOverlay`
 
 Each slice is a vertical cut through the storyboard: Screen → Command → Event(s) → View. A slice is independently deliverable and testable. Slices are organized into dependency tiers — a tier cannot start until the tiers above it are complete.
 
+### Narrative Cross-References
+
+The following slices are implemented by published narratives. Each narrative cites its slices via `Implements:` lines on its Moments; this section is the inverse index per the narratives README v0.1 bidirectional-referencing convention. Phase 3 of the foundation refresh adds the broader retroactive backfill across all four CritterBids workshops; this section is populated only with the directly-implemented slices for each narrative as it lands.
+
+- **[Narrative 001 - Bidder Wins a Flash Auction (Happy Path)](../narratives/001-bidder-wins-flash-auction.md)** implements slices 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, and 6.1. Single-bidder perspective; happy-path; covers Tier 0 through Tier 6 P0 slices. Slices 2.3, 4.1, 4.3, and 6.1 are forward-spec because the Auctions-side Flash session aggregate (M4-S5/M4-S6), Relay BC (M4 Tier 4), and Settlement BC (M5) are unshipped at narrative authoring time.
+
 ### Slice Principles
 
 - **Backend-first.** Every slice can be implemented as API + events + tests before any frontend exists.
