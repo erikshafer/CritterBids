@@ -68,3 +68,27 @@ Findings surfaced while authoring `001-bidder-wins-flash-auction.md` against liv
 **Discrepancy.** Workshop scenarios across slices 1.2, 1.3, 1.4, 2.2, 2.3, 3.3, and 3.4 in `docs/workshops/001-scenarios.md` use lowercase status values: `"upcoming"`, `"open"`, `"sold"`, `"passed"`. Lived `src/CritterBids.Listings/CatalogListingView.cs` defaults `Status = "Published"` and the M3-S6 design comment documents transitions `"Published" → "Open" → "Closed" → "Sold"/"Passed"`. The workshop's `"upcoming"` is not a runtime status; `"Published"` is the equivalent post-publish pre-bidding state. The workshop also lacks `"Closed"` as the intermediate that M3-S6 uses on the BIN-and-bidding-close path. M3-S6 retrospective records the choice (OQ2 Path A symmetry with `Format` is `string`, PascalCase across the board).
 
 **Resolution.** Eight `Status` references in `001-scenarios.md` updated from lowercase to PascalCase across slices 1.2, 1.3, 1.4, 2.2, 2.3, 3.3, 3.4. The four `"upcoming"` occurrences (slices 1.2, 1.3, 1.4, 2.2) replaced with `"Published"` to match the lived initial-status value. The two `"open"` occurrences (slice 2.3) replaced with `"Open"`. The two `"sold"` occurrences (slice 3.3) replaced with `"Sold"`. The two `"passed"` occurrences (slice 3.4) replaced with `"Passed"`. The `"created"` (slice 2.1, `SessionManagementView`) and `"complete"` (slice 6.1, `SettlementProgressView`) values are left unchanged - those views have their own vocabularies and are out of `CatalogListingView`'s scope.
+
+---
+
+### Finding 006 - W001 milestone mapping says M3 delivers Tier 2 (Flash session setup); reality is M3 delivered Tier 3 plus Auctions Timed-only foundation. Tier 2 is M4-S5 and M4-S6
+
+**Routing:** workshop-update
+
+**Surfaced at:** Moment 3
+
+**Discrepancy.** W001 milestone-mapping table at `docs/workshops/001-flash-session-demo-day-journey.md:193` originally read (em dashes preserved as hyphens to honor the project's no-em-dash convention) `M3 - Flash Session Core | Tiers 2 + 3 | Full auction lifecycle via API and tests`. Lived M3 code at `src/CritterBids.Auctions/ListingPublishedHandler.cs:46-61` opens the bidding stream on `ListingPublished` consumption (Timed-only behavior); the handler comment explicitly states "M3 is Timed-listings-only per docs/milestones/M3-auctions-bc.md §3; the Flash path belongs to the M4 Session aggregate." The lived M3 has no `Session` aggregate, no `StartSession` handler, no `SessionStartedHandler` for the cascade. M4-S1 (foundation-decisions) created six contract stubs in `CritterBids.Contracts/Auctions/` (`SessionCreated`, `ListingAttachedToSession`, `SessionStarted`, `RegisterProxyBid`, `ProxyBidRegistered`, `ProxyBidExhausted`) but did not wire producers or consumers. The M4-S1 retro at `docs/retrospectives/M4-S1-auctions-completion-foundation-decisions-retrospective.md:167-168` names M4-S5 (`SessionStartedHandler` fan-out in Auctions BC) and M4-S6 (`SessionMembershipHandler` in Listings BC) as the slices that ship the Flash session machinery.
+
+**Resolution.** W001 milestone-mapping table edited: M3 row renamed from "Flash Session Core" to "Auctions Core" with scope clarified to "Tier 3 + Auctions Timed-only foundation" and a parenthetical noting Flash session aggregate deferred to M4-S5/M4-S6; M4 row renamed from "Real-Time + Extended" to "Flash Sessions + Real-Time + Extended" with scope updated to "Tier 2 (M4-S5/M4-S6) + Tier 4 + 5.1". A note block added below the table referencing this finding and the M4-S1 retrospective. Em dashes in the table swept to hyphens as a side effect since the rows were already being rewritten.
+
+---
+
+### Finding 007 - Narrative intro paragraph claims "Two of the eight Moments (5 and 8)" are forward-spec; reality is three Moments (3, 5, 8) are forward-spec
+
+**Routing:** narrative-update
+
+**Surfaced at:** Moment 3
+
+**Discrepancy.** The narrative's intro paragraph at `docs/narratives/001-bidder-wins-flash-auction.md:17` originally read "Two of the eight Moments (5 and 8) describe BCs that have not yet shipped lived implementation - Relay (Moment 5) and Settlement (Moment 8)". Moment 3 (the Flash session-start cascade) is also forward-spec because the Auctions-side Flash session aggregate, `StartSession` handler, and `SessionStartedHandler` fan-out are scheduled for M4-S5; the Listings-side `SessionMembershipHandler` is M4-S6. The intro framing under-represented the forward-spec scope of the narrative; readers would have inferred that Moments 1-4 and 6-7 all audit lived code, when in fact Moment 3 cannot.
+
+**Resolution.** Intro paragraph edited from "Two of the eight Moments (5 and 8)" to "Three of the eight Moments (3, 5, 8)"; the parenthetical extended to name the Auctions-BC Flash session machinery (M4-S5/M4-S6) as Moment 3's forward-spec scope alongside Relay (Moment 5) and Settlement (Moment 8).

@@ -190,13 +190,15 @@ Each slice is a vertical cut through the storyboard: Screen → Command → Even
 
 | Milestone | Scope | Deliverable |
 |---|---|---|
-| M1 — Skeleton | Tier 0 | `docker compose up`, participant session via API |
-| M2 — Listings Pipeline | Tier 1 | Listings appear in catalog via API |
-| M3 — Flash Session Core | Tiers 2 + 3 | Full auction lifecycle via API and tests |
-| M4 — Real-Time + Extended | Tier 4 + 5.1 | SignalR push, extended bidding, outbid alerts |
-| M5 — Settlement | Tier 6 | `ListingSold` → full settlement flow |
-| M6 — Frontend MVP | Tier 9 P0 | Both SPAs, core screens, demo-runnable from browser |
-| M7 — Polish | P1 slices | Buy It Now, proxy, obligations, remaining ops screens |
+| M1 - Skeleton | Tier 0 | `docker compose up`, participant session via API |
+| M2 - Listings Pipeline | Tier 1 | Listings appear in catalog via API |
+| M3 - Auctions Core | Tier 3 + Auctions Timed-only foundation | Bidding lifecycle for Timed listings via API and tests (Flash session aggregate deferred to M4-S5/M4-S6) |
+| M4 - Flash Sessions + Real-Time + Extended | Tier 2 (M4-S5/M4-S6) + Tier 4 + 5.1 | Flash session lifecycle, SignalR push, extended bidding, outbid alerts |
+| M5 - Settlement | Tier 6 | `ListingSold` → full settlement flow |
+| M6 - Frontend MVP | Tier 9 P0 | Both SPAs, core screens, demo-runnable from browser |
+| M7 - Polish | P1 slices | Buy It Now, proxy, obligations, remaining ops screens |
+
+> **Note (post-M4-S1, see narrative 001 Finding 006):** M3 originally scoped Tier 2 (Flash Session Setup) alongside Tier 3 (Core Bidding). Lived M3 shipped Tier 3 and the Auctions-side Timed-only foundation only - the `Listing` aggregate, the auction-closing saga, and the catalog status projections. The Flash session aggregate, `StartSession` command handler, `SessionStartedHandler` fan-out, and Listings-side `SessionMembershipHandler` were deferred to M4-S5 and M4-S6 respectively per the M4-S1 foundation-decisions retrospective.
 
 ---
 

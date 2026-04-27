@@ -14,7 +14,7 @@ canonical_id: ListingId
 
 A spine narrative. SwiftFerret42 scans a conference QR code, browses the catalog, watches a Flash session start, places a bid, gets outbid, claws back the high-bid position in the trigger window, and the gavel falls in her favor. Settlement runs end-to-end and her credit is charged. Single bidder, single listing, no rejected bids, no payment failures, no reserve miss. Failure paths - the rejected bid, the listing that passes, the payment that fails, the obligation that stalls - belong to subsequent narratives, not as branches inside this story.
 
-This narrative implements the happy-path P0 slices of the Flash demo journey (workshop 001, Tier 0 through Tier 6). It cites slice numbers; it does not restate the workshop's Given/When/Then scenarios. Two of the eight Moments (5 and 8) describe BCs that have not yet shipped lived implementation - Relay (Moment 5) and Settlement (Moment 8). Those Moments narrate the journey as the system is designed to run; their lived-code audit is deferred under the `defer` disposition until those BCs land.
+This narrative implements the happy-path P0 slices of the Flash demo journey (workshop 001, Tier 0 through Tier 6). It cites slice numbers; it does not restate the workshop's Given/When/Then scenarios. Three of the eight Moments (3, 5, 8) describe lifecycle features that have not yet shipped lived implementation: the Auctions-BC Flash session aggregate and `BiddingOpened` cascade scheduled for M4-S5/M4-S6 (Moment 3), the Relay BC's BiddingHub and Outbid pushes (Moment 5), and the Settlement BC's settlement saga (Moment 8). Those Moments narrate the journey as the system is designed to run; their lived-code audit is deferred under the `defer` disposition until those BCs and slices land.
 
 ## Cast
 
@@ -79,3 +79,26 @@ The detail GET resolves to the same `CatalogListingView` document. There is no s
 - The Selling BC's listing-publish lifecycle (draft, submit, approve, publish). *(`separate-narrative`; future seller-perspective narrative will dramatize it.)*
 - The Selling-domain `ListingPublished` (internal to Selling) versus the integration contract `CritterBids.Contracts.Selling.ListingPublished` (the cross-BC carrier). The narrative names only the integration contract; the domain event is not bidder-visible. *(`document-as-intentional`.)*
 - Catalog search, filter, and sort UX. *(`UX-or-UI-detail`.)*
+
+## Moment 3: The Flash session starts and the lot board comes alive
+
+**Implements:** slice 2.3.
+
+**Context.** SwiftFerret42 is on the keyboard's detail page. The clock has ticked the operator's two minutes down to zero. From her vantage the page has not changed; the keyboard's `Status` still reads `"Published"`. The operator, offstage, has finalized the session lineup at the SessionManager screen and is about to dispatch the start command. Three listings sit attached to `session-001`: the keyboard, the Pokemon card, and the wooden bowl. Each carries its `ListingAttachedToSession` fact in the operator-side state; none has yet been opened for bidding under Flash semantics.
+
+**Interaction.** The operator taps Start. The ops console POSTs `StartSession { SessionId: "session-001" }` to the Auctions BC.
+
+**Response.** Auctions opens a new Session stream keyed on the `SessionId` (UUID v7 per M4-D2) and appends `SessionStarted` carrying `SessionId, IReadOnlyList<Guid> ListingIds, StartedAt`. A `SessionStartedHandler` reads the listing IDs and emits one `BiddingOpened` per attached listing as a fan-out: three events, one per listing, each appending to the listing's own Auctions-side stream and carrying the per-listing policy fields the listing's `ListingPublished` originally supplied (`StartingBid`, `ReserveThreshold`, `BuyItNowPrice`, `ExtendedBiddingEnabled`, `ExtendedBiddingTriggerWindow`, `ExtendedBiddingExtension`, and a `ScheduledCloseAt` of session-start plus five minutes). The integration-event copies of the three `BiddingOpened` events flow over the `listings-auctions-events` queue to the Listings BC, where the `AuctionStatusHandler` consumes each one and tolerantly upserts `CatalogListingView.Status = "Open"` and `ScheduledCloseAt = startedAt + duration`. Operations BC's session-management projection records `SessionStarted` and the `LiveLotBoardView` populates with three open listings. Relay's BiddingHub broadcasts the open-event to all forty connected clients on each listing's group.
+
+SwiftFerret42's phone is connected to the keyboard's BiddingHub group. Her detail page reflects the change: the `Status` flips from `"Published"` to `"Open"`, the close timer appears showing four minutes fifty-something seconds remaining and counting, the Place Bid affordance becomes active. The other two listings, on her catalog tab, also show `"Open"` status simultaneously. The roughly forty bidders in the room all see the lot board come alive at the same instant.
+
+**Why this matters to the bidder.** SwiftFerret42 cannot bid until the listing's `Status` is `"Open"`. Up to this moment the listing has been a static catalog card; from this moment forward it is a live auction with five minutes on the clock. The transition is system-driven, not bidder-driven: she has no agency over when bidding opens, only over what she does once it is open. The simultaneity of all three listings opening at once is the Flash format's signature: the auction is collective, not individual, and the bidder enters a five-minute window that closes (modulo extended bidding) on a single shared deadline.
+
+### Things deliberately not included
+
+- Lived-code audit of the cascade. *(`defer`; the Flash session aggregate, `StartSession` command handler, `SessionStartedHandler` fan-out, and Listings-side `SessionMembershipHandler` are scheduled for M4-S5 and M4-S6 per the M4-S1 retro. Until those slices ship, the cascade as narrated is forward-spec only. See Finding 006.)*
+- The current M3 Timed-only behavior, where `BiddingOpened` fires immediately on `ListingPublished` consumption rather than on session start. *(`separate-narrative`; the Timed-listing journey deserves its own narrative since the lifecycle differs structurally from Flash.)*
+- The operator's perspective on creating the session, attaching listings, and dispatching Start (slices 2.1, 2.2, 2.3 from the operator vantage). *(`separate-narrative`.)*
+- The OperationsHub push of `SessionStarted` to the ops dashboard (slice 4.2). *(`separate-narrative`; ops-perspective.)*
+- Demo-mode timeout configuration with a cap (workshop Phase 2 PO decision). *(`implementation-detail`; saga skill-file territory.)*
+- Failure modes of the cascade: partial fan-out, a listing whose `ListingPublished` never reached Auctions, a session with zero attached listings (workshop scenario covers the rejection). *(`alternate-path-failure`.)*
