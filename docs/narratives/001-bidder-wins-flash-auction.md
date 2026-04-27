@@ -210,3 +210,39 @@ Relay's BiddingHub broadcasts `ListingSold` to the keyboard's group: `{ type: "L
 - Idempotency under at-least-once redelivery of `ListingSold` to downstream consumers. *(`implementation-detail`.)*
 - The frontend's "Closing..." UI state during the small window between timer-zero and the saga's actual emission of `BiddingClosed` (W001 parked question 12). *(`UX-or-UI-detail`.)*
 - The `ListingWithdrawn` terminal path (the M4-S2 flow). *(`alternate-path-failure`.)*
+
+## Moment 8: SwiftFerret42 is charged and the sale is complete
+
+**Implements:** slice 6.1.
+
+**Context.** SwiftFerret42's "You Won" banner from Moment 7 is still onscreen. The Auctions BC has just published `ListingSold` as an integration event over the cross-BC bus; Settlement subscribes to it. Her credit ceiling is $500 untouched; her provisional commitment to $55 has not yet hit her ledger. The keyboard's `CatalogListingView` reads `Status: "Sold"`, `WinnerId: SwiftFerret42's ParticipantId`, `HammerPrice: $55.00` - the read-side has already absorbed the auction's terminal outcome.
+
+**Interaction.** Settlement's saga handler consumes `ListingSold`. The saga is keyed on a fresh `SettlementId` (UUID v7) and a new stream opens on it. The start handler captures the inputs from `ListingSold`: `ListingId`, `WinnerId`, `SellerId`, `HammerPrice`, `BidCount`.
+
+**Response.** The saga emits `SettlementInitiated { SettlementId, ListingId, WinnerId: SwiftFerret42, SellerId: GreyOwl12, HammerPrice: $55.00, InitiatedAt }` as the saga's first event.
+
+The reserve check follows. Settlement reads the listing's reserve from the `ListingPublished` integration event Settlement consumed at publish time and stored in its own boundary state - the workshop's slice 1.2 view note ("ReservePrice: 50.00 - opaque - passed to Settlement") describes this contract. The saga compares HammerPrice ($55) against ReservePrice ($50), notes the threshold is met, and emits `ReserveCheckCompleted { SettlementId, HammerPrice: $55.00, ReservePrice: $50.00, Result: "Met", CompletedAt }`. For SwiftFerret42's journey the reserve was met at her bid moment in Moment 6; the saga's check is the final authoritative verification by the BC that owns reserve enforcement, not the first observation.
+
+The winner charge follows. The saga charges SwiftFerret42's credit ledger by the hammer price: `WinnerCharged { SettlementId, WinnerId: SwiftFerret42, AmountCharged: $55.00, RemainingCredit: $445.00, ChargedAt }`. Her credit ceiling was $500; after the charge, $445 remains. Settlement's bidder-credit projection is updated.
+
+The fee calculation follows. The saga reads the configured fee percentage (10% in the MVP defaults), computes $55 × 10% = $5.50, and the seller payout as $55 - $5.50 = $49.50. It emits `FinalValueFeeCalculated { SettlementId, HammerPrice: $55.00, FeePercentage: 10.0, FeeAmount: $5.50, SellerPayout: $49.50, CalculatedAt }`.
+
+The seller payout follows. The saga issues the payout to GreyOwl12 - for the demo, this is a ledger entry rather than a banking integration. `SellerPayoutIssued { SettlementId, SellerId: GreyOwl12, PayoutAmount: $49.50, FeeDeducted: $5.50, IssuedAt }`.
+
+The saga emits `SettlementCompleted { SettlementId, ListingId, WinnerId: SwiftFerret42, SellerId: GreyOwl12, HammerPrice: $55.00, FeeAmount: $5.50, SellerPayout: $49.50, CompletedAt }` and calls `MarkCompleted()`. The saga document is removed from the saga store. Settlement's `SettlementProgressView` records `Status: "complete"` for this settlement.
+
+Relay's BiddingHub broadcasts a notification to SwiftFerret42's connection: `{ type: "SettlementCompleted", listingId, hammerPrice: 55.00, remainingCredit: 445.00 }`. Her phone's "You Won" banner ticks forward to "Charged $55.00 to your credit. The keyboard is yours." Her credit balance display updates from $500 to $445. The journey arc closes.
+
+**Why this matters to the bidder.** SwiftFerret42 has now committed real (demo) money to the keyboard. The provisional ownership from Moment 7 has resolved into a definitive purchase: she has paid $55, the system has acknowledged the charge, the seller has been paid out. Her credit ceiling now reads $445 - what she has left to spend on any remaining listings in the session. The reserve she could not see has been verified one more time as part of the saga's authoritative check; if Settlement's reserve verification had disagreed with the Auctions-side acceptance, the listing would have rolled into a settlement-failure path (which is `alternate-path-failure` for a future narrative). For this happy path, all five intermediate saga events resolve cleanly and the sale completes.
+
+### Things deliberately not included
+
+- Lived-code audit of the entire Settlement saga. *(`defer`; the Settlement BC has not yet been implemented. M5 is the ship target per the W001 milestone mapping (post-Finding-006). Until Settlement ships, this Moment is forward-spec.)*
+- The `BuyerNotified` event the workshop's settlement scenario does not list but Settlement might emit. *(`implementation-detail`; Settlement skill or M5 design choice.)*
+- Settlement-payment failures: insufficient credit, payment-provider rejection, ledger-divergence. *(`alternate-path-failure`; future failure-path narrative.)*
+- Settlement reserve disagreement (Auctions-side reserve check passed but Settlement's check disagrees). The W001 parked question 5 names this. *(`alternate-path-failure`.)*
+- The `ListingSold`-versus-`ListingPassed` branch on Settlement entry. *(`alternate-path-failure`.)*
+- Settlement-from-`BuyItNowPurchased` (slice 6.2, P1). *(`separate-narrative`.)*
+- Seller-perspective on payout receipt (slice 6.3 `SellerPayoutIssued` push, P1). *(`separate-narrative`.)*
+- Demo-mode timeout configuration with a cap for the saga (workshop Phase 2 PO decision). *(`implementation-detail`.)*
+- The Tier 7 obligations saga that follows `SettlementCompleted` (shipping reminder, tracking, delivery confirmation). *(`separate-narrative`; out of scope per the prompt.)*
