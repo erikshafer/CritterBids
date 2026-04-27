@@ -296,8 +296,43 @@ public class PlaceBidHandlerTests : IAsyncLifetime
         events.OfType<BidPlaced>().Single().Amount.ShouldBe(35m);
         var triggered = events.OfType<ExtendedBiddingTriggered>().Single();
         triggered.PreviousCloseAt.ShouldBe(close);
-        triggered.NewCloseAt.ShouldBe(now.AddSeconds(15)); // T+4:55 per workshop formula
+        triggered.NewCloseAt.ShouldBe(close.AddSeconds(15)); // T+5:15 per workshop slice 5.1: NewCloseAt = PreviousCloseAt + extension
         triggered.TriggeredByBidderId.ShouldBe(bidderId);
+    }
+
+    // ─── Scenario 1.11b — regression defense for Finding 011 ──────────────────
+    // Bids in the *early* part of the trigger window (remaining = window) used to
+    // produce NewCloseAt = now + extension, which is *earlier* than PreviousCloseAt
+    // and shortens the auction. Fix anchors candidate = PreviousCloseAt + extension.
+
+    [Fact]
+    public async Task BidAtEarlyTriggerWindow_NewCloseAtIsMonotone()
+    {
+        var (listingId, sellerId) = (Guid.CreateVersion7(), Guid.CreateVersion7());
+        var bidderId = Guid.CreateVersion7();
+        var anchorT0 = DateTimeOffset.UtcNow;
+        var close = anchorT0.AddMinutes(5);                                 // T+5:00
+        var now = anchorT0.AddMinutes(4).AddSeconds(30);                    // T+4:30 — exactly remaining = 30s, the early edge of a 30s trigger window
+
+        await SeedListing(listingId, sellerId, startingBid: 25m, reserve: null, buyItNow: null,
+            scheduledCloseAt: close, originalCloseAt: close,
+            extendedEnabled: true,
+            triggerWindow: TimeSpan.FromSeconds(30),
+            extension: TimeSpan.FromSeconds(15),
+            maxDuration: TimeSpan.FromMinutes(5));
+        await SeedBidPlaced(listingId, bidderId: Guid.CreateVersion7(), amount: 30m, bidCount: 1);
+
+        var state = await LoadState(listingId);
+        var events = PlaceBidHandler.Decide(
+            new PlaceBid(listingId, Guid.CreateVersion7(), bidderId, 35m, CreditCeiling: 200m),
+            state,
+            new FixedTimeProvider(now));
+
+        var triggered = events.OfType<ExtendedBiddingTriggered>().Single();
+        triggered.PreviousCloseAt.ShouldBe(close);
+        triggered.NewCloseAt.ShouldBe(close.AddSeconds(15));        // T+5:15 (monotone — PreviousCloseAt + extension)
+        triggered.NewCloseAt.ShouldBeGreaterThan(triggered.PreviousCloseAt); // explicit monotone postcondition
+        triggered.NewCloseAt.ShouldNotBe(now.AddSeconds(15));       // T+4:45 — the broken pre-fix value, *earlier* than PreviousCloseAt
     }
 
     // ─── Scenario 1.12 ────────────────────────────────────────────────────────
@@ -363,10 +398,15 @@ public class PlaceBidHandlerTests : IAsyncLifetime
         var (listingId, sellerId) = (Guid.CreateVersion7(), Guid.CreateVersion7());
         var bidderId = Guid.CreateVersion7();
         var anchorT0 = DateTimeOffset.UtcNow;
-        var originalClose = anchorT0.AddMinutes(5); // T+5:00
-        // Current ScheduledCloseAt is T+9:50 (multiple prior extensions).
-        var currentClose = anchorT0.AddMinutes(9).AddSeconds(50);
-        var now = anchorT0.AddMinutes(9).AddSeconds(40); // T+9:40 — 10s before close
+        var originalClose = anchorT0.AddMinutes(5); // T+5:00; maxClose = T+10:00 (originalClose + maxDuration)
+        // Current ScheduledCloseAt is T+9:40 (multiple prior extensions). Under the monotone
+        // formula candidate = currentClose + extension = T+9:55, within maxClose T+10:00.
+        // Pre-fix this scenario seeded currentClose = T+9:50 because the old formula was
+        // candidate = now + extension; the new formula needed currentClose slid earlier so
+        // that candidate stays under maxClose and this scenario keeps asserting the
+        // within-max happy path (rather than colliding with scenario 1.15 below).
+        var currentClose = anchorT0.AddMinutes(9).AddSeconds(40);
+        var now = anchorT0.AddMinutes(9).AddSeconds(20); // T+9:20 — 20s before close, inside the 30s trigger window
 
         await SeedListing(listingId, sellerId, startingBid: 25m, reserve: null, buyItNow: null,
             scheduledCloseAt: currentClose, originalCloseAt: originalClose,
@@ -382,7 +422,7 @@ public class PlaceBidHandlerTests : IAsyncLifetime
             new FixedTimeProvider(now));
 
         var triggered = events.OfType<ExtendedBiddingTriggered>().Single();
-        triggered.NewCloseAt.ShouldBe(now.AddSeconds(15)); // T+9:55, within max close T+10:00
+        triggered.NewCloseAt.ShouldBe(currentClose.AddSeconds(15)); // T+9:55, within max close T+10:00
     }
 
     // ─── Scenario 1.15 ────────────────────────────────────────────────────────
@@ -411,7 +451,7 @@ public class PlaceBidHandlerTests : IAsyncLifetime
             new FixedTimeProvider(now));
 
         events.OfType<BidPlaced>().ShouldHaveSingleItem();
-        // newCloseAt would be T+10:05, exceeding maxClose T+10:00 (OriginalCloseAt + MaxDuration).
+        // candidate = currentClose + extension = T+10:10, exceeding maxClose T+10:00 (OriginalCloseAt + MaxDuration).
         events.OfType<ExtendedBiddingTriggered>().ShouldBeEmpty();
     }
 
