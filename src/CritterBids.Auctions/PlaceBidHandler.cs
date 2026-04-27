@@ -193,7 +193,13 @@ public static class PlaceBidHandler
         if (remaining <= TimeSpan.Zero || remaining > window)
             return false;
 
-        var candidate = now + extension;
+        // Workshop slice 5.1: NewCloseAt = PreviousCloseAt + extension. Anchoring to
+        // ScheduledCloseAt (not `now`) keeps the close monotone for any bid in the trigger
+        // window — `now + extension` would shorten the auction for early-window bids.
+        var candidate = state.ScheduledCloseAt + extension;
+        if (candidate <= state.ScheduledCloseAt)
+            return false;
+
         var maxClose = state.OriginalCloseAt + state.MaxDuration;
         if (candidate > maxClose)
             return false;

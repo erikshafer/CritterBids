@@ -77,6 +77,8 @@ public class BidConsistencyState
 
     public void Apply(ReserveMet @event) => this.ReserveMet = true;
 
+    // Unconditional update is sound because TryComputeExtension is monotone-by-construction
+    // (NewCloseAt > ScheduledCloseAt for every reachable producer).
     public void Apply(ExtendedBiddingTriggered @event) => ScheduledCloseAt = @event.NewCloseAt;
 
     public void Apply(BuyItNowPurchased @event)
