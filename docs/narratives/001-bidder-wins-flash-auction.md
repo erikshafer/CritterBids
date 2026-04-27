@@ -128,3 +128,27 @@ The two `BidPlaced` and `BuyItNowOptionRemoved` integration events flow over `li
 - The relationship between `BidConsistencyState` (the DCB tag-aggregate) and the `Listing` aggregate (live-aggregation). *(`implementation-detail`; the DCB skill file is the home for this discussion.)*
 - Concurrent bid races and DCB consistency-assertion mechanics. *(`alternate-path-failure`.)*
 - The current high bidder's identity exposure on `CatalogListingView.CurrentHighBidderId` (M3-S6 OQ5 Path C). *(`implementation-detail`; redacted at endpoint in M6.)*
+
+## Moment 5: SwiftFerret42 sees her bid echo back, then a competitor outbids her
+
+**Implements:** slices 4.1, 4.3.
+
+**Context.** SwiftFerret42 is on the keyboard's detail page. The lot board shows her display name atop the listing at $30.00, BidCount 1, and the close timer ticking down through four minutes thirty seconds. Her phone is connected to the BiddingHub group for the keyboard's listing ID; BoldPenguin7's phone is also connected to that group, having been watching the keyboard from before the session started. The Auctions BC has just published `BidPlaced` for SwiftFerret42's $30 bid as an integration event over the queue Relay subscribes to; Relay's BiddingHub handler is about to consume it.
+
+**Interaction.** Relay's BiddingHub handler consumes SwiftFerret42's `BidPlaced`. Relay's per-listing high-bidder projection (state Relay maintains internally, not queried from Auctions, per workshop slice 4.3) updates: the keyboard's high bidder is now SwiftFerret42 at $30. The handler broadcasts a SignalR message of shape `{ type: "BidPlaced", listingId, bidderDisplayName: "SwiftFerret42", amount: 30.00 }` to the keyboard's BiddingHub group. Eight seconds later, BoldPenguin7 places a $35 bid; the Auctions DCB accepts it (above SwiftFerret42's $30 by more than the $1 increment, his credit ceiling not exceeded, listing still open) and `BidPlaced { ListingId, BidId, BidderId: BoldPenguin7's id, Amount: 35.00, BidCount: 2, IsProxy: false, PlacedAt }` is committed. Relay's BiddingHub handler consumes the integration-event copy.
+
+**Response.** SwiftFerret42 receives her own $30 bid echoed back through the SignalR group; her phone's lot-board tile already showed $30 from the catalog-side update Moments ago, so the push is reinforcing rather than informing. No targeted Outbid fires on her own bid because there was no prior high bidder to displace.
+
+When BoldPenguin7's $35 lands, Relay's projection observes the high-bidder transition: SwiftFerret42 was the prior high bidder; BoldPenguin7 is the new one. The handler broadcasts a SignalR message `{ type: "BidPlaced", listingId, bidderDisplayName: "BoldPenguin7", amount: 35.00 }` to the keyboard's group. Both bidders receive it; the lot-board tile flips everywhere with BoldPenguin7's display name atop and $35.00 as the current bid. Then the handler issues a targeted SignalR push to SwiftFerret42's connection only: `{ type: "Outbid", listingId, newHighBid: 35.00, yourBid: 30.00 }`. SwiftFerret42's phone vibrates; an Outbid banner appears on her screen showing she was the prior high bidder at $30 and BoldPenguin7 just took her position at $35.
+
+**Why this matters to the bidder.** SwiftFerret42 has lost the high-bidder position on the keyboard and has been told so explicitly. The Outbid push is the system telling her: act if you want this. She has slightly more than four minutes to respond. Her credit ceiling is intact at $500, so financially she has room to bid up to $470 further. The strategic question - whether to bid again, and at what amount - is hers; the system has handed her the information and the decision.
+
+### Things deliberately not included
+
+- Lived-code audit. *(`defer`; the Relay BC has not yet been implemented. The BiddingHub, the per-listing high-bidder projection, the connection-tracking infrastructure, and the targeted-push routing are all scheduled for M4 per the W001 milestone mapping (post-Finding-006 edit). Until Relay ships, this Moment is forward-spec.)*
+- BoldPenguin7's perspective on placing the $35 bid. *(`separate-narrative`; future competitor-perspective narrative.)*
+- Relay's connection-management lifecycle (joining the BiddingHub group on subscription, leaving on disconnect, reconnect handling). *(`implementation-detail`; Relay skill file or a SignalR-specific narrative.)*
+- The OperationsHub broadcast of the same `BidPlaced` to the ops dashboard (slice 4.2). *(`separate-narrative`; ops-perspective.)*
+- Bid-feed time ordering and at-least-once delivery considerations. *(`implementation-detail`.)*
+- The `BidPlaced` integration contract's `IsProxy` flag and how Relay handles proxy-originated bids visually. *(`separate-narrative`; the proxy bidding journey is a P1 narrative candidate.)*
+- Relay's exact SignalR-group subscription semantics (one group per listing, opt-in by detail-page visit, etc.). *(`implementation-detail`.)*
