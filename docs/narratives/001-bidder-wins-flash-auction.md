@@ -182,3 +182,31 @@ SwiftFerret42's phone, connected to the keyboard's BiddingHub group, receives th
 - The `CancelPendingCloseAsync` query's ±100ms window choice and what happens if two listings share an exact scheduled close time. *(`implementation-detail`; saga skill file or M3-S5b retro is the home for this discussion.)*
 - The Wolverine scheduled-message store's redelivery semantics. The saga's static `NotFound(CloseAuction)` handler covers a `CloseAuction` that races cancellation. *(`implementation-detail`.)*
 - The bidder-facing UI for "auction extended" - banner, animation, audio cue. *(`UX-or-UI-detail`.)*
+
+## Moment 7: The gavel falls and SwiftFerret42 wins
+
+**Implements:** slice 3.3.
+
+**Context.** SwiftFerret42 watches the close timer count down through the keyboard's extended-bidding window. The saga's last reschedule scheduled `CloseAuction` for session-start + 5m15s; the Wolverine scheduled-message store holds it. The saga's state at this moment: `CurrentHighBid: $55`, `CurrentHighBidderId: SwiftFerret42's BidderId`, `BidCount: 3`, `ReserveHasBeenMet: true`, `Status: Extended`. No further bids have arrived during the extension. SwiftFerret42's phone shows $55, her name atop, and the timer ticking through the final seconds.
+
+**Interaction.** At session-start + 5m15s the scheduled `CloseAuction(ListingId, NewCloseAt)` message dispatches. Wolverine routes it to the saga via the `[SagaIdentityFrom(nameof(CloseAuction.ListingId))]` correlation: the saga document is loaded from the keyboard's listing id.
+
+**Response.** The saga's `Handle(CloseAuction)` evaluates. Status is `Extended` (not `Resolved`), so the handler proceeds rather than no-op'ing. It emits `BiddingClosed { ListingId, ClosedAt: now }` first - the workshop distinguishes `BiddingClosed` (the timer fired) from the outcome event (sold/passed) per slice 3.3's terminal-event sequence.
+
+Then the handler decides the outcome. `BidCount(3) > 0` and `ReserveHasBeenMet(true)`, so the listing is sold. The handler needs `SellerId` for the `ListingSold` event but the saga state does not carry it: `StartAuctionClosingSagaHandler` (frozen since M3-S5) doesn't capture `SellerId` on saga start. The handler loads the Auctions-side `Listing` aggregate via `session.Events.AggregateStreamAsync<Listing>(ListingId)`, which rebuilds the aggregate from its event stream; `Listing.Apply(BiddingOpened)` populated `SellerId = GreyOwl12's id` at open time, so the aggregate rebuild reads the seller cleanly (Finding 012 documents this design choice). The handler appends `ListingSold { ListingId, SellerId: GreyOwl12, WinnerId: SwiftFerret42, HammerPrice: $55.00, BidCount: 3, SoldAt: now }` to the `OutgoingMessages` collection.
+
+The saga's status flips to `Resolved` and `MarkCompleted()` removes the saga document from the saga store. The `OutgoingMessages` (BiddingClosed + ListingSold) commit atomically via Wolverine's outbox: both events arrive at their downstream consumers via the `listings-auctions-events` queue. The Listings BC's `AuctionStatusHandler` consumes both: `CatalogListingView.Status` flips from `"Open"` to `"Closed"` (on BiddingClosed) and immediately to `"Sold"` (on ListingSold), and the view also updates `ClosedAt`, `WinnerId = SwiftFerret42's ParticipantId`, and `HammerPrice = $55.00`. Operations BC's projections record both events; the LiveLotBoardView shows the keyboard as won by SwiftFerret42 at $55.
+
+Relay's BiddingHub broadcasts `ListingSold` to the keyboard's group: `{ type: "ListingSold", listingId, winnerDisplayName: "SwiftFerret42", hammerPrice: 55.00 }`. SwiftFerret42 sees a "You Won" banner on her detail page with the hammer price. BoldPenguin7, also in the group, sees the same broadcast: a "Sold to SwiftFerret42 at $55" notification.
+
+**Why this matters to the bidder.** The keyboard is hers. The provisional ownership from her $55 bid has resolved into a definitive sale; the gavel's fall is the system's commitment that no further bids can overturn the outcome. She has met the reserve she could not see, so the listing sells rather than passes. The hammer price of $55 is what she will be charged in Moment 8; until Settlement runs, the charge has not yet hit her credit ceiling - but the price is locked. The auction is over for the keyboard; the lot board still shows the Pokemon card and the wooden bowl in their own resolutions, but those are other bidders' stories.
+
+### Things deliberately not included
+
+- The competing terminal paths: `ListingPassed` (ReserveNotMet, NoBids - slice 3.4), `BuyItNowPurchased` (slice 5.3 via M3-S4b). *(`alternate-path-failure`; each is its own narrative.)*
+- The saga's `NotFound(CloseAuction)` static handler. *(`implementation-detail`; covers a `CloseAuction` that races cancellation when a terminal (BIN purchased, withdrawn) preempts the scheduled close.)*
+- The Listings BC's status transition through `"Closed"` to `"Sold"` in two sequential upserts versus a single combined apply. *(`implementation-detail`; the M3-S6 retro covers OQ4 Path II tolerant upsert.)*
+- The OperationsHub broadcast of `BiddingClosed`/`ListingSold` to the ops dashboard. *(`separate-narrative`; ops-perspective.)*
+- Idempotency under at-least-once redelivery of `ListingSold` to downstream consumers. *(`implementation-detail`.)*
+- The frontend's "Closing..." UI state during the small window between timer-zero and the saga's actual emission of `BiddingClosed` (W001 parked question 12). *(`UX-or-UI-detail`.)*
+- The `ListingWithdrawn` terminal path (the M4-S2 flow). *(`alternate-path-failure`.)*
