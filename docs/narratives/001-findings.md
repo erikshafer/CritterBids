@@ -92,3 +92,27 @@ Findings surfaced while authoring `001-bidder-wins-flash-auction.md` against liv
 **Discrepancy.** The narrative's intro paragraph at `docs/narratives/001-bidder-wins-flash-auction.md:17` originally read "Two of the eight Moments (5 and 8) describe BCs that have not yet shipped lived implementation - Relay (Moment 5) and Settlement (Moment 8)". Moment 3 (the Flash session-start cascade) is also forward-spec because the Auctions-side Flash session aggregate, `StartSession` handler, and `SessionStartedHandler` fan-out are scheduled for M4-S5; the Listings-side `SessionMembershipHandler` is M4-S6. The intro framing under-represented the forward-spec scope of the narrative; readers would have inferred that Moments 1-4 and 6-7 all audit lived code, when in fact Moment 3 cannot.
 
 **Resolution.** Intro paragraph edited from "Two of the eight Moments (5 and 8)" to "Three of the eight Moments (3, 5, 8)"; the parenthetical extended to name the Auctions-BC Flash session machinery (M4-S5/M4-S6) as Moment 3's forward-spec scope alongside Relay (Moment 5) and Settlement (Moment 8).
+
+---
+
+### Finding 008 - `BuyItNowOptionRemoved` is emitted atomically with `BidPlaced` on the first bid; workshop separates them as slices 3.1 (P0) and 5.4 (P1)
+
+**Routing:** document-as-intentional
+
+**Surfaced at:** Moment 4
+
+**Discrepancy.** Workshop slice 3.1 (P0) at `docs/workshops/001-flash-session-demo-day-journey.md:95` names only `BidPlaced` in its events column. Workshop slice 5.4 (P1) at line 115 names `BuyItNowOptionRemoved` "*(system, on first bid)*" as a separate slice with its own dependency on slice 3.1. Lived `src/CritterBids.Auctions/PlaceBidHandler.cs:117-119` emits both events atomically inside the same DCB acceptance write when `state.BuyItNowAvailable` is true and this is the first acceptance. M3-S4 implemented slice 3.1 and slice 5.4 in the same handler.
+
+**Resolution.** Two valid expressions of the domain coexist. The workshop's slice-table separation is design intent: "BIN removal is a thing that happens on first bid" stands as a discrete journey beat. The lived implementation merges both into one atomic acceptance write, which is correct because the events share a DCB transactional envelope and any partial commit would corrupt boundary state. Narrative Moment 4 renders BIN removal as a side-effect of the first acceptance, atomic with `BidPlaced`, and references this finding inline. No workshop edit needed; readers comparing the slice table to the code will find the design history in this finding.
+
+---
+
+### Finding 009 - `PlaceBid` command carries `CreditCeiling` directly in M3; workshop scenarios show the ceiling on `ParticipantSessionStarted`, not on the command
+
+**Routing:** document-as-intentional
+
+**Surfaced at:** Moment 4
+
+**Discrepancy.** Workshop slice 3.1 happy-path command shape in `docs/workshops/001-scenarios.md`: `PlaceBid { ListingId, BidderId, Amount }`. Workshop slice 3.2 ExceedsCreditCeiling rejection has the ceiling on `ParticipantSessionStarted { ParticipantId, CreditCeiling }`. Lived `src/CritterBids.Auctions/PlaceBid.cs:17-22` carries `CreditCeiling` on the command directly. The contract's docstring at `PlaceBid.cs:9-12` explains the M3 transitional shape: "Credit ceiling travels on the command in M3 because Participants does not yet emit a `ParticipantSessionStarted` event the Auctions boundary can load. M4's Session aggregate will carry the credit ceiling in its own stream, at which point this field drops off the command shape and is read from `BidConsistencyState`."
+
+**Resolution.** The workshop's command shape stands as the design target; lived M3 is the stepping stone. M4-S5+ work converges to the workshop's design when the Session aggregate ships and projects credit-ceiling state into the bid-acceptance DCB. Narrative Moment 4's Interaction paragraph names the M3 transitional shape and references this finding. No workshop edit needed; the convergence is a tracked work item alongside Finding 006's Flash session machinery.
