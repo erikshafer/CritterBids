@@ -12,6 +12,32 @@
 
 ---
 
+## Ubiquitous Language
+
+The Selling BC owns the pre-publish listing lifecycle: from `DraftListingCreated` through `ListingPublished`, plus post-publish revision (`ListingRevised`) and end-of-life (`ListingEndedEarly`, `ListingWithdrawn`, `ListingRelisted`). The in-flight bidding lifecycle is owned by Auctions ([W002 §3](./002-auctions-bc-deep-dive.md#ubiquitous-language)); post-resolution settlement is owned by Settlement ([W003 §3](./003-settlement-bc-deep-dive.md#ubiquitous-language)).
+
+Each term carries a one-line definition with optional cross-references and "what it is *not*" notes. Domain events are catalogued in [`docs/vision/domain-events.md`](../vision/domain-events.md) and in this workshop's Phase 1 architecture summary; events are not duplicated here.
+
+| Term | Definition | Notes |
+|---|---|---|
+| **Listing** | The auctionable unit, identified by `ListingId`. From the Selling BC perspective, the lifecycle runs from Draft through Submitted, Approved, Published, Revised, EndedEarly. | Post-publish bidding lifecycle (`BiddingOpened` through resolution) is owned by Auctions BC; see W002 §3. |
+| **SellerListing Aggregate** | The Marten event-sourced aggregate that enforces the listing state machine. One per listing. | States: Draft, Submitted, Approved, Published, Revised (stays Published), EndedEarly (terminal), Rejected (back to Draft). |
+| **Draft Listing** | A listing that has been created but not yet submitted for approval. Editable freely. | Created via `CreateDraftListing`; updates via `UpdateDraftListing`. |
+| **Listing Submission** | The seller's act of submitting a complete draft for approval. Triggers the validator. | Single command (`SubmitListing`). On validation pass in MVP, atomically produces `ListingSubmitted`, `ListingApproved`, `ListingPublished` in one transaction (W001 #14 resolution; single-handler-chain with planned post-MVP split). |
+| **Listing Publish** | The state transition that makes the listing visible in the catalog and eligible for session attachment or timed open. Recorded as `ListingPublished`. | The integration boundary between Selling and downstream BCs (Listings, Auctions, Settlement). Carries `FeePercentage`, `Format`, reserve, and BIN price. |
+| **Listing Revision** | A post-publish edit. Restricted to Title, Description, ShippingTerms - not price, reserve, or format. Recorded as `ListingRevised`. | During an active Flash session, Listings BC's catalog projection filters revisions out (W004 Phase 2 Q6 resolution). |
+| **End Early** | The seller's act of pulling a published listing before it would otherwise close. Recorded as `ListingEndedEarly`. | Distinct from `ListingWithdrawn` (different business context, same saga handling). Sellers ending early after bids do not receive payment (W004 Phase 2 Design Refinement 5). |
+| **Relist** | Creating a fresh listing aggregate from a previously ended-early or expired one. New aggregate, new agreement at current rates. | Carries `ListingRelisted` linking `OriginalListingId` and `NewListingId` (W004 Phase 2 Q5 resolution). |
+| **Auction Format** | The listing's selling format: `Timed` or `Flash`. Set at draft time; immutable after publish. | Enum `ListingFormat`; carried on `ListingPublished`. See W002 §3 for downstream behavior per format. |
+| **Reserve** | The minimum hammer price below which the listing does not sell at auction. May be null. | Defined in W002 §3 from the bidding perspective. Selling owns the seller-side capture and the upstream invariant `BuyItNowPrice >= ReservePrice`. |
+| **Buy It Now Price** | The fixed-price purchase amount for the listing, presented alongside auction bidding. | Defined in W002 §3 from the bidding perspective. Invariant: `BuyItNowPrice >= ReservePrice` enforced at submission (W004 §5 rule 7). |
+| **Seller** | The participant who creates and owns the listing. Identified by `SellerId`. | Same `SellerId` as in Participants BC. Validated via the `RegisteredSellers` projection before draft creation. |
+| **RegisteredSellers Projection** | A Marten-backed projection enumerating all participants who have completed seller registration. Used by Selling BC pre-checks and the API gateway. | Built from `SellerRegistrationCompleted` events. Defense in depth: also checked at API layer (W004 §7) and at command time inside Selling. |
+| **Validation Service** | A pure-function module enforcing 14 invariants across listing fields, numeric constraints, extended-bidding parameters, and format-specific rules. | Pure function - testable without framework or harness. 14 of W004's 41 scenarios are pure-function tests of this module. Full unit-test coverage is the implication of the W004 §5 status `in progress`. |
+| **API Gateway Cross-BC Validation** | A pattern: pre-checks at the HTTP API layer prevent commands that would create state divergence between BCs. | First emerged in W004 (seller registration race; end-early-after-sold). Returns HTTP 409. Distinct from in-BC validation. |
+
+---
+
 ## Phase 1 — Brain Dump: Internal Structure
 
 *(Condensed. See git history for full Phase 1 output with aggregate code sketches, validation rule enumeration, both approval-chain options, and detailed reasoning.)*
