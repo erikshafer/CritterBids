@@ -49,7 +49,7 @@ The narrow scope is the entire scope. This is a Phase 2.5 contingency that exist
 
 8. **`docs/narratives/001-findings.md` — mark Finding 011 resolved.** Append a `**Resolved at:** <commit-sha>` line to Finding 011's body in the same PR. Use the commit SHA of the production-code-fix commit (item 1 + 2), not the retrospective commit. The narrative document body itself does not need amendment per the stub's note — Moments 6–7 already render the workshop-intended behaviour.
 
-9. **`docs/retrospectives/phase2-5-extension-calculation-fix-retrospective.md` — written last, gates on green build + test.** See "Retrospective gate" below.
+9. **`docs/retrospectives/foundation-refresh-phase-2-5-retrospective.md` — written last, gates on green build + test.** See "Retrospective gate" below.
 
 ## Explicitly out of scope
 
@@ -91,7 +91,7 @@ One working-practice convention this session also exercises:
 - [ ] No other production file in `src/CritterBids.Auctions/` is modified
 - [ ] No file outside `src/CritterBids.Auctions/`, `tests/CritterBids.Auctions.Tests/`, `docs/narratives/001-findings.md`, and `docs/retrospectives/` is modified
 - [ ] `docs/narratives/001-findings.md` Finding 011 carries a `**Resolved at:** <commit-sha>` line pointing at the item-1+2 commit
-- [ ] `docs/retrospectives/phase2-5-extension-calculation-fix-retrospective.md` exists and meets the retrospective content requirements below
+- [ ] `docs/retrospectives/foundation-refresh-phase-2-5-retrospective.md` exists and meets the retrospective content requirements below
 
 ## Retrospective gate (REQUIRED)
 

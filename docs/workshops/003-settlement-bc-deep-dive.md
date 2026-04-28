@@ -10,6 +10,8 @@
 
 **Prerequisites:** Workshops 001 and 002 completed. This workshop closes the loop on the reserve check authority decision from W002 by addressing Settlement's side of it.
 
+**Implementation status:** The W001 slices this workshop deep-dives - 6.1 (Settlement saga happy path), 6.2 (Settlement from Buy It Now), and 6.3 (Seller payout notification) - all carry status `planned` per W001's slice tables (M5 milestone allocation; no implementation prompts yet). Per-slice status using the four-vocabulary (`design | planned | in progress | done`) lands here when W003's Phase 4 slice walk is authored; until then, the workshop's own title-block "Status" line is workshop-grain, not slice-grain.
+
 **Parked questions from prior workshops targeting this BC:**
 
 | # | Source | Question |
@@ -35,6 +37,31 @@ From the vision docs and earlier workshops, Settlement has:
 **Key role established in prior workshops:** Settlement is financially authoritative. Auctions publishes `ReserveMet` as a real-time UX signal. Settlement performs the binding reserve comparison. Same source data, different authority. If they ever disagreed (shouldn't in practice), Settlement wins.
 
 **One P0 slice assigned in W001:** Slice 6.1 (Settlement saga happy path from `ListingSold`). Two P1 slices: 6.2 (settlement from Buy It Now) and 6.3 (seller payout notification via Relay).
+
+---
+
+## Ubiquitous Language
+
+The Settlement BC owns the post-resolution financial workflow: from `ListingSold` or `BuyItNowPurchased` through `SettlementCompleted`. The in-flight bidding lifecycle is owned by Auctions ([W002 §3](./002-auctions-bc-deep-dive.md#ubiquitous-language)); the pre-publish listing lifecycle is owned by Selling ([W004 §3](./004-selling-bc-deep-dive.md#ubiquitous-language)).
+
+Each term carries a one-line definition with optional cross-references and "what it is *not*" notes. Domain events are catalogued in [`docs/vision/domain-events.md`](../vision/domain-events.md) and in this workshop's Phase 1 architecture overview; events are not duplicated here.
+
+| Term | Definition | Notes |
+|---|---|---|
+| **Settlement** | The financial workflow that runs after a listing resolves to a sale. Settles the buyer charge, fee calculation, and seller payout. Identified by `SettlementId`. | Distinct from Auction Closing - Auctions resolves the bidding outcome; Settlement moves the money. |
+| **SettlementId** | A deterministic UUID v5 derived from `ListingId` (`UuidV5(AuctionsNamespace, $"settlement:{ListingId}")`). Idempotent by construction. | Per W003 Phase 1 Part 6 decision. Distinct from `ListingId`; allows tracing a settlement back to its source listing without conflating identities. |
+| **PendingSettlement** | A Polecat document projection built from `ListingPublished` events. Cached so the Settlement workflow has reserve, fee, and seller data when `ListingSold` arrives without crossing the BC boundary. | Lifecycle states: Pending, Consumed, Expired. Settlement workflow retries with backoff if not found at workflow-start time (W003 Phase 1 Part 1 decision). |
+| **Settlement Workflow** | The seven-phase progression: Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed. Failure exit at any phase via `PaymentFailed`. | Implementation choice deferred - Wolverine Saga or `ProcessManager<TState>` decider. Same business logic, only hosting differs (W003 Phase 1 Part 2 decision). |
+| **Reserve** | The minimum hammer price below which the listing does not sell at auction. May be null. | Defined in W002 §3 from the bidding-time perspective. Settlement is the financial authority for the binding comparison via `ReserveCheckCompleted`; Auctions' `ReserveMet` is a real-time UX signal only. |
+| **Hammer Price** | The final accepted bid amount when bidding closes. | Defined in W002 §3; carried into Settlement via `ListingSold`. |
+| **Reserve Check** | The Settlement workflow phase that compares hammer price to reserve and decides whether settlement proceeds or fails. | Skipped for Buy It Now settlements (BIN price is the agreed price; W003 Phase 1 Part 5 decision). |
+| **Winner Charge** | The phase that debits the winning bidder by the hammer price. First side effect that moves real money. | MVP: virtual credit, no real payment processor. Post-MVP wires real payment integration; compensation design also post-MVP. |
+| **Final Value Fee** | The platform's percentage cut of the hammer price. CritterBids default: 10%. Computed as `Math.Round(HammerPrice * (FeePercentage / 100), 2)`. | `FeePercentage` is carried on `PendingSettlement`, set at `ListingPublished` time. |
+| **Seller Payout** | The amount transferred to the seller after fee deduction (`HammerPrice - FeeAmount`). Issued via `SellerPayoutIssued`. | Pushed to seller via Relay BC (W001 slice 6.3). |
+| **Buy It Now Settlement Path** | The variant Settlement workflow triggered by `BuyItNowPurchased` (vs. `ListingSold`). Starts in `ReserveChecked(WasMet: true)` to skip the reserve comparison. | Per W003 Phase 1 Part 5 decision. The `BuyItNowPrice >= ReservePrice` invariant in Selling BC (W004 §3) is the upstream guarantee that makes this safe. |
+| **Financial Event Stream** | The append-only audit log of every event in a settlement's lifecycle. One stream per `SettlementId`. | Polecat-backed; never deleted; persists for compliance and audit. |
+| **Bidder** | A participant who has placed at least one bid. The settlement's "buyer" when they win. Identified by `BidderId` (= `WinnerId` on `ListingSold`). | Same `BidderId` as in W002 §3 and Participants BC. |
+| **Seller** | The participant who originally listed the item. Identified by `SellerId`, cached on `PendingSettlement` from `ListingPublished`. | Same `SellerId` as in W004 §3 and Participants BC. |
 
 ---
 

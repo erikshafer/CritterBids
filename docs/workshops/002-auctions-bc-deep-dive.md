@@ -12,6 +12,33 @@
 
 ---
 
+## Ubiquitous Language
+
+The Auctions BC owns the in-flight bidding lifecycle: from `BiddingOpened` through resolution (`ListingSold` / `ListingPassed` / `BuyItNowPurchased`). Pre-publish lifecycle is owned by Selling ([W004 §3](./004-selling-bc-deep-dive.md#ubiquitous-language)); post-resolution settlement is owned by Settlement ([W003 §3](./003-settlement-bc-deep-dive.md#ubiquitous-language)).
+
+Each term carries a one-line definition with optional cross-references and "what it is *not*" notes. Domain events are catalogued in [`docs/vision/domain-events.md`](../vision/domain-events.md) and in this workshop's Phase 1 architecture summary; events are not duplicated here.
+
+| Term | Definition | Notes |
+|---|---|---|
+| **Listing** | The auctionable unit, identified by `ListingId`. From the Auctions BC perspective, the lifecycle runs from `BiddingOpened` through `ListingSold`, `ListingPassed`, `BuyItNowPurchased`, or `ListingWithdrawn`. | Pre-publish lifecycle (Draft, Submitted, Approved, Published, Revised) is owned by Selling BC; see W004 §3. |
+| **Bidder** | A participant placing bids, identified by `BidderId`. | Same `BidderId` is the `ParticipantId` from Participants BC. |
+| **Flash Session** | A short, session-bounded auction format (5-10 minute hot phase) where multiple listings open and close around the same window. The conference-demo vehicle. | Distinct from Timed Auction. Owns the `SessionAggregate` lifecycle (`SessionCreated`, `ListingAttachedToSession`, `SessionStarted`). M3 ships the Timed-only foundation; Flash session machinery deferred to M4-S5/M4-S6. |
+| **Timed Auction** | An eBay-style days-long auction format. Listings open and close independently. | Distinct from Flash Session. The Auctions BC's Timed-only path is fully shipped in M3. |
+| **Reserve** | The minimum hammer price below which the listing does not sell at auction. Carried as `ReservePrice` on the listing; may be null (no reserve). | Settlement BC (W003 §3) is the financial authority for the binding reserve comparison; Auctions emits `ReserveMet` as a real-time UX signal only. Same source data, different roles. |
+| **Hammer Price** | The final accepted bid amount when bidding closes; the price at which the listing sells. Recorded on `ListingSold`. | If hammer price is below reserve at close, `ListingPassed` fires instead. |
+| **Buy It Now** | A fixed-price sale option presented alongside auction bidding. The first regular bid invalidates BIN (`BuyItNowOptionRemoved`); a buyer may purchase at the BIN price (`BuyItNowPurchased`). | BIN price must be >= reserve per the Selling BC invariant (W004 §3); Settlement skips reserve check on BIN settlements. |
+| **Extended Bidding** | A timer-extension mechanism that pushes the auction's scheduled close forward when a bid lands inside the trigger window. | Producer-monotone after Phase 2.5 (Finding 011). Chains until `MaxDuration` cap. Proxy bids can trigger extension (W002 Phase 1 #4). |
+| **MaxDuration** | A platform-level cap on how long extended bidding can stretch a listing's total close time. | Platform default for MVP; not seller-configurable until post-MVP. Workshop scenarios 1.14 / 1.15 demonstrate the boundary. |
+| **Trigger Window** | The time interval before the scheduled close during which a bid triggers extended bidding. | Carried on the listing's `BiddingOpened` payload at session start. |
+| **Credit Ceiling** | A per-bid maximum carried on the bidder's session, enforced by the DCB at bid placement. | Per-bid maximum, not a running balance - see W003 §3 for the Settlement-side rationale (W003 Phase 1 Part 4). |
+| **Bid Increment** | The minimum amount above the current high bid that the next bid must meet. CritterBids policy: $1 under $100, $5 at $100+. | Platform default, not per-listing. |
+| **BidConsistencyState (DCB)** | The Dynamic Consistency Boundary state object loaded from listing-stream + bidder-stream events at bid placement. Stateless per request: loads, validates, produces events, forgets. | The DCB is the authority for bid acceptance/rejection. See [`docs/skills/dynamic-consistency-boundary.md`](../skills/dynamic-consistency-boundary.md). |
+| **Auction Closing Saga** | A Marten-document saga, one per listing, that schedules the `CloseAuction` timer at `BiddingOpened` and resolves the auction at close to `ListingSold` or `ListingPassed`. | States: AwaitingBids, Active, Extended, Closing, Resolved. Terminates on `ListingWithdrawn`. |
+| **Proxy Bid Manager Saga** | A Marten-document saga, one per (listing, bidder), that watches `BidPlaced` events and re-bids automatically up to the proxy's max amount. | Composite key: UUID v5 from `ListingId` + `BidderId`. Reactive - registration alone does not bid; waits for the next competing bid. |
+| **Session Aggregate** | The Marten event-sourced aggregate owning the Flash Session lifecycle (`SessionCreated`, `ListingAttachedToSession`, `SessionStarted`). | Deferred to M4-S5/M4-S6 per the post-M4-S1 Note in W001. |
+
+---
+
 ## Phase 1 — Brain Dump: Internal Structure
 
 *(Condensed. See git history for full Phase 1 output with code sketches.)*
@@ -83,13 +110,13 @@ Full scenarios in companion file: **[`002-scenarios.md`](./002-scenarios.md)**
 
 ### Coverage by Component
 
-| Component | Scenarios | Happy Path | Edge/Rejection |
-|---|---|---|---|
-| DCB — PlaceBid | 15 | 4 | 11 |
-| DCB — BuyNow | 4 | 1 | 3 |
-| Auction Closing Saga | 11 | 4 | 7 |
-| Proxy Bid Manager | 11 | 4 | 7 |
-| Session Aggregate | 7 | 3 | 4 |
+| Component | Scenarios | Happy Path | Edge/Rejection | Status |
+|---|---|---|---|---|
+| DCB - PlaceBid | 15 | 4 | 11 | done |
+| DCB - BuyNow | 4 | 1 | 3 | done |
+| Auction Closing Saga | 11 | 4 | 7 | done |
+| Proxy Bid Manager | 11 | 4 | 7 | planned |
+| Session Aggregate | 7 | 3 | 4 | planned |
 
 ### Key Scenario Highlights
 
