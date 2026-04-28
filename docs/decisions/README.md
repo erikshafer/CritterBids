@@ -84,3 +84,4 @@ Write one when a decision is:
 
 - `CLAUDE.md` — documentation hierarchy and routing
 - `docs/skills/README.md` — skill index (implementation patterns)
+- [`PARKED.md`](./PARKED.md) — methodology-grade decisions deliberately deferred with explicit triggers
