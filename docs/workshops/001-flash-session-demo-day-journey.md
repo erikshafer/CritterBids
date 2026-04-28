@@ -14,6 +14,47 @@
 
 ---
 
+## Cast
+
+The Flash demo journey is a multi-actor scenario. Specific named protagonists belong to narratives that implement subsets of this workshop; this Cast names the workshop-grain roles and the bounded contexts each role exercises. See [Narrative 001](../narratives/001-bidder-wins-flash-auction.md) §"Cast" for one canonical instantiation (single bidder, happy path) with named protagonists.
+
+**Human actors:**
+
+- **The bidder** - any participant placing bids. Anonymous, system-named via the `<Adjective><Animal><Number>` convention, system-assigned `BidderId`, hidden credit ceiling drawn from the band $200-$1000 in $100 steps. Multiple bidders may compete on the same listing concurrently. Onstage in Tiers 0, 3-5, and 8-9.
+- **The seller** - any participant who has completed seller registration and published one or more listings to the operator's Flash session. Identified by `SellerId`. Onstage in Tier 1; offstage during the auction lifecycle.
+- **The Buy It Now purchaser** - a bidder variant who exercises the BIN option (slice 5.3) rather than placing competing bids. Same anonymous-bidder profile as the regular bidder.
+- **The proxy bidder** - a bidder who registers a proxy bid (slice 5.5) with a maximum amount and lets the system bid on their behalf (slice 5.6). Same anonymous-bidder profile.
+- **The auction operator** - the human running the demo. Creates Flash sessions (slice 2.1), attaches listings (slice 2.2), starts the session (slice 2.3), and monitors via the ops dashboard. Distinct from bidders and sellers; uses the ops SPA (Tier 9 P0 slices 9.6-9.7).
+
+**Bounded contexts:**
+
+- **Participants** - owns anonymous-bidder session lifecycle, `BidderId`, hidden credit ceiling. Onstage in Tier 0.
+- **Selling** - owns the listing's pre-publish lifecycle (draft, submit, approve, publish, revise, end-early). Onstage in Tier 1.
+- **Auctions** - owns the in-flight bidding lifecycle: `BiddingOpened`, `BidPlaced`, the bid-placement DCB, `ExtendedBiddingTriggered`, the Auction Closing saga, terminal `ListingSold` / `ListingPassed` / `BuyItNowPurchased`. Onstage in Tiers 2, 3, and 5.
+- **Listings** - owns the read-side: `CatalogListingView`, catalog browse, listing detail. Bidders read from Listings throughout. Onstage in Tiers 1, 3, and 8.
+- **Relay** - owns SignalR pushes: BiddingHub for participants, OperationsHub for ops, Outbid notifications. Onstage in Tier 4.
+- **Settlement** - owns the post-resolution financial workflow. Onstage in Tier 6.
+- **Obligations** - owns the post-sale coordination saga: tracking, delivery, fulfillment. Onstage in Tier 7.
+- **Operations** - owns the ops-facing read models: `LiveLotBoardView`, `BidFeedView`, `SettlementProgressView`, `ObligationStatusView`, `SessionManagementView`. Onstage in Tiers 2-7 alongside the BC owning each event.
+
+Onstage/offstage status per slice or per Moment is finer-grained than the workshop tracks; each named narrative implementing a subset of W001 dramatizes specific protagonists at that grain. Consult the implementing narrative for per-Moment Cast detail.
+
+## Setting
+
+The workshop covers the complete Flash demo journey from QR-code scan through obligation fulfillment. The Setting establishes the policy posture inherited by every slice; specific numerical examples (reserve amounts, hammer prices, fee percentages, named bidders) belong to narratives that dramatize specific journeys.
+
+**The Flash demo session.** The conference-demo vehicle. Sessions are session-bounded auctions where multiple listings open and close around the same five-to-ten-minute hot-phase window. Distinct from the eBay-style Timed Auction format (days-long; listings open and close independently). Operators create sessions, attach published listings, and start the session manually; bidders join anonymously via QR scan. The MVP default Flash session duration is five minutes from start; the operator may set the duration at session-create time.
+
+**Auction policy posture.** Bid increments are two-tier: $1 under $100, $5 at $100+. Platform default; not seller-configurable. Extended bidding is enabled per-listing at publish time, with a per-listing trigger window (default 30 seconds) and extension (default 15 seconds); chains until the platform-level `MaxDuration` cap. Reserve existence and value remain confidential between seller and Settlement until a bid first crosses the threshold; the bidder learns of the reserve only via the `ReserveMet` push from Relay. Buy It Now is invalidated by the first regular bid (`BuyItNowOptionRemoved`); the BIN price is constrained at submission to be greater than or equal to the reserve.
+
+**Bidder policy posture.** Anonymous bidder sessions are created on QR scan via `StartParticipantSession`; no email, no password. The bidder receives a system-assigned `BidderId` and a system-named display name (e.g., `SwiftFerret42`). Each bidder receives a hidden credit ceiling drawn at session-mint time from the band $200-$1000 in $100 steps; the ceiling is enforced per-bid by the bid-placement DCB and is not displayed to the bidder. Credit ceiling is a per-bid maximum, not a running balance, so multiple wins do not exhaust it.
+
+**Seller policy posture.** Sellers register via `RegisterAsSeller` (slice 0.3); the registration is verified by the API gateway pattern before subsequent listing operations. Listings progress through Draft → Submitted → Approved → Published in MVP via a single `SubmitListing` command (atomic three-event chain; auto-approval). Post-publish revisions are restricted to Title, Description, and ShippingTerms; the price, reserve, format, and BIN price are immutable after publish. Sellers ending early after bids do not receive payment.
+
+**Settlement and infrastructure posture.** MVP runs virtual credit: no real payment processor, no chargebacks, no fraud reversals. Settlement records financial events for audit but no real money moves. SignalR delivery to all connected clients is healthy; the BiddingHub and OperationsHub are both reachable. RabbitMQ is up; the Wolverine outbox drains cleanly. There are no rate limits in play, no surge effects, and no manual operator interventions during the demo. All endpoints carry `[AllowAnonymous]` through M6 per the project's intentional pre-auth posture.
+
+---
+
 ## Phase 1 — Verification Brain Dump
 
 *(Condensed. See git history for full Phase 1 output.)*
