@@ -71,100 +71,100 @@ The following slices are implemented by published narratives. Each narrative cit
 - **Slices produce testable facts.** Each slice has a Given/When/Then scenario in `001-scenarios.md`.
 - **Frontend slices are separate.** "Build the ListingDetailScreen" is a frontend slice. "Place a bid" is a backend slice.
 
-### Tier 0 — Foundation
+### Tier 0 - Foundation
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 0.1 | Project scaffolding | — | — | — | All | P0 |
-| 0.2 | Start anonymous session | `StartParticipantSession` | `ParticipantSessionStarted` | — | Participants | P0 |
-| 0.3 | Register as seller | `RegisterAsSeller` | `SellerRegistrationCompleted` | — | Participants | P0 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 0.1 | Project scaffolding | - | - | - | All | P0 | done |
+| 0.2 | Start anonymous session | `StartParticipantSession` | `ParticipantSessionStarted` | - | Participants | P0 | done |
+| 0.3 | Register as seller | `RegisterAsSeller` | `SellerRegistrationCompleted` | - | Participants | P0 | done |
 
-### Tier 1 — Listing Lifecycle
+### Tier 1 - Listing Lifecycle
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 1.1 | Create draft listing | `CreateDraftListing` | `DraftListingCreated` | — | Selling | P0 |
-| 1.2 | Submit and publish listing | `SubmitListing` | `ListingSubmitted`, `ListingApproved`, `ListingPublished` | `CatalogListingView` | Selling + Listings | P0 |
-| 1.3 | Catalog browse (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
-| 1.4 | Listing detail (read path) | — (GET) | — | `CatalogListingView` | Listings | P0 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 1.1 | Create draft listing | `CreateDraftListing` | `DraftListingCreated` | - | Selling | P0 | done |
+| 1.2 | Submit and publish listing | `SubmitListing` | `ListingSubmitted`, `ListingApproved`, `ListingPublished` | `CatalogListingView` | Selling + Listings | P0 | done |
+| 1.3 | Catalog browse (read path) | - (GET) | - | `CatalogListingView` | Listings | P0 | done |
+| 1.4 | Listing detail (read path) | - (GET) | - | `CatalogListingView` | Listings | P0 | done |
 
-### Tier 2 — Flash Session Setup
+### Tier 2 - Flash Session Setup
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 2.1 | Create Flash Session | `CreateSession` | `SessionCreated` | `SessionManagementView` | Auctions + Operations | P0 |
-| 2.2 | Attach listing to session | `AttachListingToSession` | `ListingAttachedToSession` | `SessionManagementView`, `CatalogListingView` | Auctions + Listings + Operations | P0 |
-| 2.3 | Start session (the cascade) | `StartSession` | `SessionStarted`, `BiddingOpened` (×N) | `LiveLotBoardView`, `CatalogListingView` | Auctions + Listings + Operations | P0 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 2.1 | Create Flash Session | `CreateSession` | `SessionCreated` | `SessionManagementView` | Auctions + Operations | P0 | planned |
+| 2.2 | Attach listing to session | `AttachListingToSession` | `ListingAttachedToSession` | `SessionManagementView`, `CatalogListingView` | Auctions + Listings + Operations | P0 | planned |
+| 2.3 | Start session (the cascade) | `StartSession` | `SessionStarted`, `BiddingOpened` (×N) | `LiveLotBoardView`, `CatalogListingView` | Auctions + Listings + Operations | P0 | planned |
 
-### Tier 3 — Core Bidding
+### Tier 3 - Core Bidding
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 3.1 | Place a bid (happy path) | `PlaceBid` | `BidPlaced` | `LiveLotBoardView`, `BidFeedView` | Auctions + Operations | P0 |
-| 3.2 | Reject a bid | `PlaceBid` | `BidRejected` | — | Auctions | P0 |
-| 3.3 | Close listing — sold | *(scheduled)* | `BiddingClosed`, `ListingSold` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P0 |
-| 3.4 | Close listing — passed | *(scheduled)* | `BiddingClosed`, `ListingPassed` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P0 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 3.1 | Place a bid (happy path) | `PlaceBid` | `BidPlaced` | `LiveLotBoardView`, `BidFeedView` | Auctions + Operations | P0 | done |
+| 3.2 | Reject a bid | `PlaceBid` | `BidRejected` | - | Auctions | P0 | done |
+| 3.3 | Close listing - sold | *(scheduled)* | `BiddingClosed`, `ListingSold` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P0 | done |
+| 3.4 | Close listing - passed | *(scheduled)* | `BiddingClosed`, `ListingPassed` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P0 | done |
 
-### Tier 4 — Real-Time Layer
+### Tier 4 - Real-Time Layer
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 4.1 | BiddingHub — participant SignalR | — | `BidPlaced`, `ListingSold`, `ListingPassed` | `LiveBidOverlay` | Relay | P0 |
-| 4.2 | OperationsHub — ops SignalR | — | All integration events | `LiveLotBoardView` (real-time) | Relay | P0 |
-| 4.3 | Outbid notification | — | `BidPlaced` | — (push to previous high bidder) | Relay | P0 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 4.1 | BiddingHub - participant SignalR | - | `BidPlaced`, `ListingSold`, `ListingPassed` | `LiveBidOverlay` | Relay | P0 | planned |
+| 4.2 | OperationsHub - ops SignalR | - | All integration events | `LiveLotBoardView` (real-time) | Relay | P0 | planned |
+| 4.3 | Outbid notification | - | `BidPlaced` | - (push to previous high bidder) | Relay | P0 | planned |
 
-### Tier 5 — Auction Mechanics
+### Tier 5 - Auction Mechanics
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 5.1 | Extended bidding | `PlaceBid` (in trigger window) | `BidPlaced`, `ExtendedBiddingTriggered` | `LiveBidOverlay`, `LiveLotBoardView` | Auctions + Relay + Operations | P0 |
-| 5.2 | Reserve met signal | *(system, on threshold)* | `ReserveMet` | `LiveBidOverlay` | Auctions + Relay | P1 |
-| 5.3 | Buy It Now purchase | `BuyNow` | `BuyItNowPurchased` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P1 |
-| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `CatalogListingView` | Auctions + Listings | P1 |
-| 5.5 | Register proxy bid | `RegisterProxyBid` | `ProxyBidRegistered` | — | Auctions | P1 |
-| 5.6 | Proxy auto-bid | *(system, on competing bid)* | `BidPlaced` (isProxy: true) | Same as 3.1 | Auctions | P1 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 5.1 | Extended bidding | `PlaceBid` (in trigger window) | `BidPlaced`, `ExtendedBiddingTriggered` | `LiveBidOverlay`, `LiveLotBoardView` | Auctions + Relay + Operations | P0 | done |
+| 5.2 | Reserve met signal | *(system, on threshold)* | `ReserveMet` | `LiveBidOverlay` | Auctions + Relay | P1 | in progress |
+| 5.3 | Buy It Now purchase | `BuyNow` | `BuyItNowPurchased` | `CatalogListingView`, `LiveLotBoardView` | Auctions + Listings + Operations | P1 | done |
+| 5.4 | Buy It Now removal | *(system, on first bid)* | `BuyItNowOptionRemoved` | `CatalogListingView` | Auctions + Listings | P1 | done |
+| 5.5 | Register proxy bid | `RegisterProxyBid` | `ProxyBidRegistered` | - | Auctions | P1 | planned |
+| 5.6 | Proxy auto-bid | *(system, on competing bid)* | `BidPlaced` (isProxy: true) | Same as 3.1 | Auctions | P1 | planned |
 
 > **Note (post-M3-S5, see narrative 001 Finding 010):** Slice 5.2's Auctions-side event production (`PlaceBidHandler` emits `ReserveMet` when a bid first crosses the reserve threshold) and saga consumption (`AuctionClosingSaga.Handle(ReserveMet)`) are fully shipped in M3 (M3-S4 and M3-S5). The slice retains P1 priority because its defining View - the bidder-facing `LiveBidOverlay` push from Relay's BiddingHub - remains M4 work. Until Relay ships, the reserve meeting is invisible to bidders even though the event and saga state both fire correctly.
 
-### Tier 6 — Settlement
+### Tier 6 - Settlement
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 6.1 | Settlement saga (happy path) | *(system, on ListingSold)* | `SettlementInitiated` → `SettlementCompleted` | `SettlementProgressView` | Settlement + Operations | P0 |
-| 6.2 | Settlement from Buy It Now | *(system, on BuyItNowPurchased)* | Same as 6.1 | Same as 6.1 | Settlement | P1 |
-| 6.3 | Seller payout notification | — | `SellerPayoutIssued` | — (push to seller) | Relay | P1 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 6.1 | Settlement saga (happy path) | *(system, on ListingSold)* | `SettlementInitiated` → `SettlementCompleted` | `SettlementProgressView` | Settlement + Operations | P0 | planned |
+| 6.2 | Settlement from Buy It Now | *(system, on BuyItNowPurchased)* | Same as 6.1 | Same as 6.1 | Settlement | P1 | planned |
+| 6.3 | Seller payout notification | - | `SellerPayoutIssued` | - (push to seller) | Relay | P1 | planned |
 
-### Tier 7 — Obligations
+### Tier 7 - Obligations
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 7.1 | Obligations saga start | *(system, on SettlementCompleted)* | `PostSaleCoordinationStarted`, `ShippingReminderSent` | `ObligationStatusView` | Obligations + Operations | P1 |
-| 7.2 | Provide tracking | `ProvideTracking` | `TrackingInfoProvided` | `ObligationStatusView` | Obligations + Relay | P1 |
-| 7.3 | Obligation fulfilled | *(system, on delivery)* | `DeliveryConfirmed`, `ObligationFulfilled` | `ObligationStatusView` | Obligations + Operations | P1 |
-| 7.4 | Demo-mode timeout config | — | — | — | Obligations | P1 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 7.1 | Obligations saga start | *(system, on SettlementCompleted)* | `PostSaleCoordinationStarted`, `ShippingReminderSent` | `ObligationStatusView` | Obligations + Operations | P1 | planned |
+| 7.2 | Provide tracking | `ProvideTracking` | `TrackingInfoProvided` | `ObligationStatusView` | Obligations + Relay | P1 | planned |
+| 7.3 | Obligation fulfilled | *(system, on delivery)* | `DeliveryConfirmed`, `ObligationFulfilled` | `ObligationStatusView` | Obligations + Operations | P1 | planned |
+| 7.4 | Demo-mode timeout config | - | - | - | Obligations | P1 | planned |
 
-### Tier 8 — Participant Experience Polish
+### Tier 8 - Participant Experience Polish
 
-| # | Slice | Command | Events | View | BC | Priority |
-|---|-------|---------|--------|------|----|----------|
-| 8.1 | Watchlist — add/remove | `AddToWatchlist` / `RemoveFromWatchlist` | `LotWatchAdded` / `LotWatchRemoved` | `WatchlistView` | Listings + Relay | P2 |
-| 8.2 | Participant bid history | — (GET) | — | `ParticipantBidHistoryView` | Listings (tentative) | P1 |
-| 8.3 | MyActivityScreen | — | — | Composite of 8.1 + 8.2 | Frontend | P1 |
+| # | Slice | Command | Events | View | BC | Priority | Status |
+|---|-------|---------|--------|------|----|----------|--------|
+| 8.1 | Watchlist - add/remove | `AddToWatchlist` / `RemoveFromWatchlist` | `LotWatchAdded` / `LotWatchRemoved` | `WatchlistView` | Listings + Relay | P2 | design |
+| 8.2 | Participant bid history | - (GET) | - | `ParticipantBidHistoryView` | Listings (tentative) | P1 | planned |
+| 8.3 | MyActivityScreen | - | - | Composite of 8.1 + 8.2 | Frontend | P1 | planned |
 
-### Tier 9 — Frontend
+### Tier 9 - Frontend
 
-| # | Slice | Screen | Depends on Backend Slices | Priority |
-|---|-------|--------|--------------------------|----------|
-| 9.1 | Participant LandingScreen | LandingScreen | 0.2 | P0 |
-| 9.2 | Participant CatalogScreen | CatalogScreen | 1.3, 1.4 | P0 |
-| 9.3 | Participant ListingDetailScreen + PlaceBidSheet | ListingDetailScreen | 3.1, 4.1 | P0 |
-| 9.4 | Participant ProxyBidSheet | ProxyBidSheet | 5.5 | P1 |
-| 9.5 | Participant MyActivityScreen | MyActivityScreen | 8.2, 8.3 | P1 |
-| 9.6 | Ops SessionManagerScreen | SessionManagerScreen | 2.1, 2.2, 2.3 | P0 |
-| 9.7 | Ops LiveBoardScreen | LiveBoardScreen | 3.1, 4.2 | P0 |
-| 9.8 | Ops BidFeedScreen | BidFeedScreen | 3.1, 4.2 | P1 |
-| 9.9 | Ops SettlementScreen | SettlementScreen | 6.1 | P1 |
-| 9.10 | Ops ObligationsScreen | ObligationsScreen | 7.1 | P2 |
+| # | Slice | Screen | Depends on Backend Slices | Priority | Status |
+|---|-------|--------|--------------------------|----------|--------|
+| 9.1 | Participant LandingScreen | LandingScreen | 0.2 | P0 | planned |
+| 9.2 | Participant CatalogScreen | CatalogScreen | 1.3, 1.4 | P0 | planned |
+| 9.3 | Participant ListingDetailScreen + PlaceBidSheet | ListingDetailScreen | 3.1, 4.1 | P0 | planned |
+| 9.4 | Participant ProxyBidSheet | ProxyBidSheet | 5.5 | P1 | planned |
+| 9.5 | Participant MyActivityScreen | MyActivityScreen | 8.2, 8.3 | P1 | planned |
+| 9.6 | Ops SessionManagerScreen | SessionManagerScreen | 2.1, 2.2, 2.3 | P0 | planned |
+| 9.7 | Ops LiveBoardScreen | LiveBoardScreen | 3.1, 4.2 | P0 | planned |
+| 9.8 | Ops BidFeedScreen | BidFeedScreen | 3.1, 4.2 | P1 | planned |
+| 9.9 | Ops SettlementScreen | SettlementScreen | 6.1 | P1 | planned |
+| 9.10 | Ops ObligationsScreen | ObligationsScreen | 7.1 | P2 | design |
 
 ### Slice Summary
 

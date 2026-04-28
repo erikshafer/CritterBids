@@ -83,13 +83,13 @@ Full scenarios in companion file: **[`002-scenarios.md`](./002-scenarios.md)**
 
 ### Coverage by Component
 
-| Component | Scenarios | Happy Path | Edge/Rejection |
-|---|---|---|---|
-| DCB — PlaceBid | 15 | 4 | 11 |
-| DCB — BuyNow | 4 | 1 | 3 |
-| Auction Closing Saga | 11 | 4 | 7 |
-| Proxy Bid Manager | 11 | 4 | 7 |
-| Session Aggregate | 7 | 3 | 4 |
+| Component | Scenarios | Happy Path | Edge/Rejection | Status |
+|---|---|---|---|---|
+| DCB - PlaceBid | 15 | 4 | 11 | done |
+| DCB - BuyNow | 4 | 1 | 3 | done |
+| Auction Closing Saga | 11 | 4 | 7 | done |
+| Proxy Bid Manager | 11 | 4 | 7 | planned |
+| Session Aggregate | 7 | 3 | 4 | planned |
 
 ### Key Scenario Highlights
 

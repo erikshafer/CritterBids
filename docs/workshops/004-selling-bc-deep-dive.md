@@ -81,15 +81,15 @@ Validation Service (pure functions)
 
 ### Coverage by Component
 
-| Section | Component | Scenarios | Type |
-|---|---|---|---|
-| 1 | Draft lifecycle | 5 | Aggregate (Marten harness) |
-| 2 | Submission & publication | 4 | Aggregate |
-| 3 | Post-publication revision | 4 | Aggregate |
-| 4 | End early & relist | 4 | Aggregate |
-| 5 | Validation rules | 14 | Pure function |
-| 6 | RegisteredSellers projection | 4 | Marten integration |
-| 7 | API gateway cross-BC checks | 6 | HTTP-level |
+| Section | Component | Scenarios | Type | Status |
+|---|---|---|---|---|
+| 1 | Draft lifecycle | 5 | Aggregate (Marten harness) | done |
+| 2 | Submission and publication | 4 | Aggregate | done |
+| 3 | Post-publication revision | 4 | Aggregate | design |
+| 4 | End early and relist | 4 | Aggregate | in progress |
+| 5 | Validation rules | 14 | Pure function | in progress |
+| 6 | RegisteredSellers projection | 4 | Marten integration | done |
+| 7 | API gateway cross-BC checks | 6 | HTTP-level | planned |
 
 **14 of 41 scenarios (34%) are pure-function tests** of the validator — no framework, no harness, no I/O. Every validation rule has at least one scenario.
 

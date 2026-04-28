@@ -10,6 +10,8 @@
 
 **Prerequisites:** Workshops 001 and 002 completed. This workshop closes the loop on the reserve check authority decision from W002 by addressing Settlement's side of it.
 
+**Implementation status:** The W001 slices this workshop deep-dives - 6.1 (Settlement saga happy path), 6.2 (Settlement from Buy It Now), and 6.3 (Seller payout notification) - all carry status `planned` per W001's slice tables (M5 milestone allocation; no implementation prompts yet). Per-slice status using the four-vocabulary (`design | planned | in progress | done`) lands here when W003's Phase 4 slice walk is authored; until then, the workshop's own title-block "Status" line is workshop-grain, not slice-grain.
+
 **Parked questions from prior workshops targeting this BC:**
 
 | # | Source | Question |
