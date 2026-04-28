@@ -14,7 +14,7 @@ docs/decisions/0007-uuid-strategy.md     ❌ four-digit — do not use
 docs/decisions/7-uuid-strategy.md        ❌ no padding — do not use
 ```
 
-The next unreserved ADR number is **`018-<slug>.md`**. ADR 014 is reserved for M4-S6 authorship
+The next unreserved ADR number is **`019-<slug>.md`**. ADR 014 is reserved for M4-S6 authorship
 (Cross-BC read-model extension shape — draft body lands alongside the second lived Path A
 application). ADR 015 is reserved for conditional authorship at M4-S7 or earlier if M4-S1
 resolved M4-D4 to the cross-BC read option (Cross-BC read access from handlers). Check this
@@ -42,6 +42,7 @@ index before creating one to confirm the next available number.
 | 014 | Cross-BC Read-Model Extension Shape | 🔒 Reserved for M4-S6 authorship | — | Reserved in M4-S1. ADR body authored at M4-S6 alongside the second lived application of the M3-D2 Path A pattern (Listings `CatalogListingView` extended with session-membership and withdrawn fields). Do not draft before M4-S6 — the lived second application is the evidence. |
 | [016](016-spec-anchored-development.md) | Spec-Anchored Development | ✅ Accepted | 2026-04-25 | Event Model + narratives in `docs/narratives/` are the architectural reference; code is authoritative for runtime behavior; drift caught at retrospective time. Applies to lived M1 to M4 code retroactively via the Phase 2 findings discipline (foundation refresh). |
 | [017](017-design-phase-workflow-sequence.md) | Design-Phase Workflow Sequence | ✅ Accepted | 2026-04-26 | Six-step sequence (Context Mapping → Domain Storytelling → Event Modeling → Narratives → Prompts → Implementation + Retrospective) for new BCs and substantial feature work. Lived BCs absorb the absence of Steps 1-2; future BCs (Settlement, Obligations, Relay, Operations) opt in per-BC at design opening. |
+| [018](018-reqnroll-position.md) | Reqnroll Position | ✅ Accepted | 2026-04-27 | Decline executable specifications at MVP; convention-based linkage between workshop scenarios and tests holds. Workshop scenarios remain prose markdown; tests cite scenarios by name and number; narrative-vs-code audits catch drift via ADR-016's four finding lanes. Trigger for revisit: 3+ `workshop-update` findings per narrative attributable to absence of mechanical generation, or cumulative PR rework from convention-linkage breakage. |
 
 **Status key:** ✅ Accepted · 🟡 Proposed (acceptance gates open) · ⏸ Deferred (trigger set) · 🔒 Reserved (number held; body authored later) · ~~Superseded~~
 
