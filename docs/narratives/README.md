@@ -112,9 +112,18 @@ Every Moment cites the workshop slice(s) it implements via the `Implements:` lin
 
 **Do not restate the workshop's Given/When/Then scenarios.** The workshop is the test specification; the narrative is the journey. Restating GWT in narrative form duplicates the workshop and pulls the narrative into the wrong artifact layer.
 
-### Bidirectional referencing (forward-looking)
+### Bidirectional referencing
 
-Workshop slices may cite the narratives that implement them via a `Narratives:` cross-reference line, mirroring the slice-citation discipline in reverse. All four CritterBids workshops (W001 through W004) were authored before any narrative existed; their slices do not yet carry narrative back-references. Phase 3 of the foundation refresh adds retroactive `Narratives:` cross-references where appropriate. Workshops authored after the first narrative ships should adopt the convention from authoring time.
+Workshop slices may cite the narratives that implement them via a `Narratives:` cross-reference, mirroring the narrative's `Implements:` discipline in reverse. All four CritterBids workshops (W001 through W004) were authored before any narrative existed; Phase 2 of the foundation refresh added the first round of retroactive cross-references on W001 during the narrative 001 session.
+
+Two forms are valid; the choice is by workshop grain:
+
+- **Per-row form** (`Narratives: [<slug>]` line on each implemented slice). Default for BC-focused workshops where a given narrative implements one or two slices. Each cited slice carries its own back-reference inline, keeping the relationship visible at the slice's natural reading position.
+- **Consolidated form** (a single `Narrative Cross-References` block at the start of the slice section, listing all narrative-implemented slices). Default for journey-grain workshops where a given narrative implements many slices. Narrative 001 implements ten W001 slices; the consolidated form keeps W001's tightly-formatted slice tables clean and avoids ten visual fragmentations.
+
+The trade-off: per-row is more legible per-slice but visually fragments tightly-formatted slice tables; consolidated keeps tables clean but requires the reader to look in two places. When in doubt, the implementing narrative's slice count is the deciding heuristic - one or two slices per workshop, per-row; many slices per workshop, consolidated. Phase 5's BC-perspective backfill narratives (Auctions, Settlement, Selling, Participants) each implement a focused slice subset, so they will land per-row references on their respective workshops; the W001 consolidated form remains the canonical example for journey-grain workshops.
+
+Workshops authored after the first narrative ships adopt whichever form fits the workshop's grain from authoring time.
 
 ## Notation conventions
 
