@@ -139,6 +139,42 @@ horizontal map, then run BC-focused workshops to fill in vertical depth before i
 
 ---
 
+## Adjunct Patterns
+
+Beyond the four core building blocks, CritterBids' workshops and lived code surface three named event-modeling patterns. Naming them here lets workshop prose, narrative authoring, and ADRs refer to each pattern by its published-literature name rather than re-deriving the shape each time.
+
+Sources: Adam Dymitruk (Adaptech Group, the core method), Filip Klefter (translation-decision events), and Anders Bruun Olsen (temporal-automation slice pattern, configuration-as-events).
+
+### Klefter Translation-Decision Events
+
+When a slice coordinates with an external system AND a decision is made locally based on the external input, the local decision is captured as a first-class event in the BC's stream. Names the BC's authority over the decision even though the input came from outside; the event is the audit trail of "I asked X, got Y, decided Z."
+
+**Pattern signal:** an outbound query whose result the BC commits as a local event before any further processing.
+
+**CritterBids example:** the Auctions BC emits `ReserveMet` as a Klefter translation-decision. The DCB reads the listing's reserve value (via tag query against the listing stream) and decides whether the new high bid meets the reserve; the decision lands as `ReserveMet`, which the Relay BC consumes as a real-time UX signal. Settlement BC's authoritative `ReserveCheckCompleted` is a separate event with different authority - same source data, different role. See [W002 §"Ubiquitous Language"](../../workshops/002-auctions-bc-deep-dive.md#ubiquitous-language) and [W003 §"Ubiquitous Language"](../../workshops/003-settlement-bc-deep-dive.md#ubiquitous-language) for the cross-BC vocabulary.
+
+A second candidate in CritterBids: a future Settlement-to-Participants credit-ceiling check would commit the result as a local Settlement event (`CreditCheckCompleted` or similar) before the workflow proceeds, making the input visible in the audit log without coupling Settlement to Participants' internal projection shape.
+
+### Bruun Temporal-Automation Slice Pattern
+
+A slice whose trigger is the passage of time, not an incoming domain event. The slice fires when a clock condition is met (`now() >= scheduledFor`) on a row in a todo-list read model. Boards render the pattern with two distinguishing marks: a clock-rewind glyph on the gear (automation) sticky, and an asterisk suffix on the read model's name (e.g., `OffersAwaitingExpiry*`, `AuctionsAwaitingClose*`).
+
+**Pattern signal:** an automation whose trigger is clock state, consuming a todo-list read model whose rows self-remove when the work completes.
+
+**CritterBids example:** the Auction Closing Saga's scheduled `CloseAuction` timer is a temporal-automation slice. The saga schedules the timer at `BiddingOpened`; when the timer fires, the saga reads the listing's current state and resolves to `ListingSold` or `ListingPassed`. A candidate todo-list projection `AuctionsAwaitingClose*` would carry rows added on `BiddingOpened` and removed on resolution. The asterisk convention is preserved in narratives per [`docs/narratives/README.md`](../../narratives/README.md) §"Notation conventions"; this section names the underlying pattern.
+
+### Configuration-as-Events (Bruun)
+
+Operator-tunable policy parameters represented as events on a singleton stream rather than rows in a settings table. Each configuration change is an event; the current policy is the latest event's payload. Provides audit trail, version history, and natural integration with event-driven downstream consumers.
+
+**Pattern signal:** policy that needs an audit trail and version history, where downstream consumers should react to changes rather than periodically re-read a settings table.
+
+**CritterBids candidate:** the Auction Closing Saga's `triggerWindow`, `extension`, and `maxDuration` parameters are constants today. If the project decides to make them operator-tunable (post-MVP), they would land as `AuctionPolicyConfigured` events on a singleton stream. The Auctions BC's `BiddingOpened` payload would carry the policy version governing the listing's lifecycle, so a mid-listing policy change would not retroactively affect in-flight auctions.
+
+This section names patterns; it does not commit CritterBids to refactor existing code. Naming makes the model legible when the project encounters these patterns elsewhere or when a future ADR proposes adopting one for a specific BC.
+
+---
+
 ## Output Artifacts
 
 - **The Event Model** — the full visual blueprint (primary deliverable)

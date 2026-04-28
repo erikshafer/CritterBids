@@ -120,7 +120,7 @@ Workshop slices may cite the narratives that implement them via a `Narratives:` 
 
 - **Code-style backticks** for domain event names and named projection/view names: `BiddingOpened`, `BidPlaced`, `BiddingClosed`, `ListingSold`, `ListingPassed`, `BuyItNowPurchased`, `CatalogListingView`, `AuctionsAwaitingClose*`.
 - **Plain text** for ordinary domain nouns from the workshop's Ubiquitous Language: Listing, Bid, Bidder Session, Reserve, Hammer Price, Buy It Now, Flash Session, Timed Auction, Extended Bidding.
-- The `*` suffix on todo-list projections (Bruun convention) is preserved in narratives. Phase 3 Item 5 of the foundation refresh names this pattern in the Event Modeling skill.
+- The `*` suffix on todo-list projections (Bruun convention) is preserved in narratives. The pattern itself is named in [`docs/skills/event-modeling/SKILL.md`](../skills/event-modeling/SKILL.md) §"Adjunct Patterns".
 
 Domain language uses the workshop's Ubiquitous Language. Drift into generic software vocabulary is a smell.
 
