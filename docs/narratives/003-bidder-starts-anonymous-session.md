@@ -91,3 +91,96 @@ The `Participant` aggregate's `Apply` for `ParticipantSessionStarted` runs again
 - The catalog-page UI rendering itself: how listings are laid out, what fields are shown per listing, what happens when she taps one. *(`UX-or-UI-detail`; design artifact territory.)*
 - The display-name source for the catalog-page header. The frontend somehow renders "BoldPenguin7" but the system has no `GET /api/participants/{id}` endpoint today; the UI claim is forward-spec for M6's frontend MVP and surfaces the backend gap as Finding 002 at session close. *(`defer`; trigger is M6 frontend ship.)*
 - Pre-session catalog interactions: tapping into a listing's detail, watchlist actions, filter-and-sort. *(`separate-narrative`; covered in narrative 001 Moments 2-3 from SwiftFerret42's window.)*
+
+## Deferred from this narrative
+
+The following were deliberately not narrated in this Participants-perspective happy-path narrative. Each is named with its disposition so future sessions can pull from this list when scoping the next narrative, ADR, skill file, or implementation prompt. Items here are not bugs or omissions; they are consciously deferred and traceable. Items recorded in `003-findings.md` (whether `code-update` resolved in-PR or routed to a stub follow-up) are not duplicated here.
+
+### `defer` (revisit when trigger lands)
+
+- Rejoin-vs-new-session behavior on QR re-scan (Moment 1; trigger: production usage at scale revealing duplicate-scan patterns).
+- Display-name source for the catalog-page header / `GET /api/participants/{id}` endpoint backing the UI claim (Moment 3; trigger: M6 frontend MVP ship; the backend-gap component routes as Finding 002).
+
+### `post-MVP` (beyond v1 scope)
+
+- Authentication or account binding (Moment 1; M6 introduces real authentication and the `[AllowAnonymous]` posture lifts at that point).
+
+### `separate-narrative` (other journey perspectives)
+
+- The aggregate's `Apply` for `SellerRegistered` and the slice 0.3 `RegisterAsSeller` flow (Moment 2; candidate for narrative 004 Selling BC backfill or a future seller-perspective narrative).
+- Pre-session catalog interactions: tapping into a listing's detail, watchlist actions, filter-and-sort (Moment 3; covered in narrative 001 Moments 2-3 from SwiftFerret42's window at finer journey grain).
+
+### `UX-or-UI-detail` (app design)
+
+- The catalog-page UI rendering itself: layout, per-listing fields, tap interactions (Moment 3).
+
+### `alternate-path-failure` (failure modes warranting their own narratives)
+
+- Failure modes for the QR-scan request: lost Wi-Fi connectivity, rate limit (none configured at MVP), API-host downtime (Moment 1).
+- Failure modes during the Marten commit: transaction failure, PostgreSQL connection drop, UUID v7 collision (Moment 2; collision probability vanishingly small but non-zero).
+
+## Retrospective
+
+### Narrative intent vs. outcome
+
+Stated goal at session start: author the Participants BC's backfill narrative covering BoldPenguin7's experience as her phone scans the QR code, the system mints her anonymous session and identity, and she lands on the catalog page. Audit W001 §"Tier 0 — Bidder onboarding" and lived `src/CritterBids.Participants/` code; route disagreements through the four-lane findings discipline; add per-row narrative back-references on W001's slice 0.2 entry.
+
+**Outcome.** Three Moments covering W001 slice 0.2. One Moment fully bidder-visible (Moment 1's QR scan), one Moment fully narrator-led (Moment 2's mint cascade), one Moment landing the bidder-visible response (Moment 3's catalog landing). Two findings filed in `003-findings.md`: F001 (`StartParticipantSession.cs` line 12 + line 48 comment misclaims about display-name uniqueness) routed `code-update` and resolved in-PR; F002 (missing `GET /api/participants/{id}` endpoint backing the catalog-header display-name UI) routed `code-update` and routed to a stub follow-up implementation prompt per Phase 2.5 discipline. BoldPenguin7's anchored cross-narrative values (BidderId "Bidder 4523", credit ceiling $700) established as canonical from this narrative since narrative 001 left them unspecified. Cast and Setting locked first; Moment-by-Moment sign-off cadence held throughout. Goal met.
+
+### What worked
+
+- **Lived-code audit posture flipped cleanly from narrative 002's forward-spec.** Two `code-update` findings surfaced naturally; the audit floor (shipped Participants code) made every Moment's claim verifiable against `StartParticipantSession.cs` and `Participant.cs`. The findings-lane mix matched the prompt's heads-up section: `code-update` as a real lane, `narrative-update` and `workshop-update` not surfaced (slice 0.2's prior Finding 002 from narrative 001 had already corrected the workshop-side; nothing fresh to surface there).
+- **Pre-Moment lived-code reads surfaced both findings.** F001 (the line-12 / line-48 comment misclaims) was caught by reading the handler before drafting Moment 2. F002 (missing GET endpoint) was caught by searching the Features directory for any GET registration before drafting Moment 3. Lesson: read the code path *plus* the surrounding directory before drafting the bidder-visible Moments; a single-handler read may not surface adjacent gaps.
+- **Anchored cross-narrative values established at the right narrative.** BoldPenguin7's `BidderId "Bidder 4523"` and `$700` credit ceiling are canonical from this narrative onward. Narrative 001 left them unspecified; narrative 003 is the natural place to anchor them because it dramatises the mint cascade that produces them.
+- **Em-dash hygiene drop unblocked cleaner prose.** Em-dashes used naturally for parentheticals throughout; no audit overhead. Pre-existing convention from narratives 001 and 002 ( ` - ` for parentheticals) was preserved where it already existed but not enforced for new prose.
+- **Multi-paragraph `Response.` worked for the dense Moment 2.** Five paragraphs walked the saga of UUID v7 → byte derivations → event construction → MartenOps commit → aggregate Apply, all without crossing into implementation prose. The README's multi-slice convention extends naturally to multi-system-phase Moments at finer grain.
+- **The fold-into-one-PR pattern (inherited from narrative 002) carried clean.** Prompt and narrative session co-landed on the same branch with per-commit cadence. Eight commits between the prompt and the closing arc; each commit served one beat.
+
+### What was hard
+
+- **The catalog-header display-name UI claim had no backing GET endpoint.** Narrative 001 Moment 1 made the claim ("the catalog page transitions with display name in header") without auditing the backend. Narrative 003's audit revealed the gap — no `GET /api/participants/{id}` exists. The decision surface: (a) route as `narrative-update` against narrative 001 Moment 1 per Phase 5 §7 cite-and-edit; (b) route as `code-update` Finding 002 with stub follow-up; (c) document as forward-spec UI deferral only. Chose (b): the gap is real, the resolution is a real code addition, and the lived narrative authoring it surfaces is the right place to file. Lesson: forward-spec UI claims inherited from earlier narratives should be re-audited at the BC-narrative grain, not assumed.
+- **Slice 0.3's mixed BC ownership.** The `RegisterAsSeller` feature lives in `Features/RegisterAsSeller/` *inside* the Participants BC, but its event is `SellerRegistered` (Selling-domain semantics). The `Participant` aggregate has an `Apply` for both `ParticipantSessionStarted` and `SellerRegistered`; the second is half-Participants-half-Selling structurally. Narrative 003 chose to scope to slice 0.2 only and route the seller-side surface as `separate-narrative` deferred. Narrative 004 (Selling BC) will need to navigate the same mixed-ownership question from the seller side.
+- **F001 and F002 needed different resolution scopes despite both being `code-update`.** F001 is a one-line comment edit; in-PR resolution per session-start lean. F002 is a real code addition (new endpoint, GET handler, response shape decision); stub follow-up per Phase 2.5 discipline. Routing-and-resolution are separate decisions even when the lane is the same.
+
+### Decisions about how to author (meta-decisions worth carrying forward)
+
+- **Em-dash hygiene applies to external prose only.** Memory updated at narrative 002 close (2026-04-29); narrative 003 is the first session to author with the corrected scope. Em-dashes are fine in narratives, workshops, retros, ADRs, prompts, and commit messages.
+- **`code-update` resolution scope splits by edit size.** Comment-only fixes land in-PR. Non-trivial additions (new endpoints, new handlers, new aggregates) get stub follow-up prompts under `docs/prompts/implementations/<slug>.md` per Phase 2.5 discipline.
+- **Anchored cross-narrative values land in the canonical-anchor narrative.** BoldPenguin7's specifics anchor here, not in narrative 001 (which left them unspecified). When narrative 004 dramatises GreyOwl12's seller-side specifics, those anchor in narrative 004. Subsequent references inherit; the canonical narrative is the source of truth for the anchored value.
+- **Pre-Moment audit reads include the surrounding directory, not just the handler.** F002 was caught by searching `Features/` for any GET registration; a handler-only read would have missed it.
+- **Forward-spec UI claims inherited from earlier narratives are re-auditable at BC-narrative grain.** Narrative 001's catalog-header-display-name claim turned out to have no backend backing; narrative 003 surfaced the gap as Finding 002 rather than papering over it. Phase 5 §7's cite-and-edit allowance against earlier narratives is available but not always the best surface — the lived BC narrative is often a better home for the finding because that's where the audit naturally happens.
+
+### Patterns refined for narratives 004-005
+
+Inherited from narratives 001 and 002 unchanged: bounded frontmatter v1, prose-paragraph Moment body, multi-slice / multi-saga-phase / multi-system-phase Moments grow in paragraphs, single-named-protagonist plus omniscient narrator, seven disposition tags for deferral, per-Moment plus cumulative deferral discipline, code-style backticks for events and projection names.
+
+CritterBids-specific patterns refined this session:
+
+- **Lived-code BC narratives surface real `code-update` findings.** Forward-spec narratives (like narrative 002) have zero by structural impossibility; lived BCs (like narratives 003-005) will routinely produce them. The `code-update` resolution-scope split (in-PR vs stub follow-up) becomes a per-finding routing decision.
+- **Anchored cross-narrative values establish canonical specifics at the right narrative.** Narratives 004 and 005 should anchor GreyOwl12 (seller specifics, including listing details and seller-side credit/payout posture) and a TBD bidder/auctioneer (depending on protagonist choice). The canonical anchor is the narrative that naturally dramatises the value's first appearance.
+- **Forward-spec UI gaps inherited from narrative 001 are re-auditable.** Narrative 004 (Selling BC) and narrative 005 (Auctions BC) may surface analogous UI gaps (seller dashboard, auction operator console) where narrative 001 made claims without backend backing. The audit at the BC-narrative grain is the right place to file.
+- **Em-dash hygiene drop is permanent.** Memory `feedback_em_dash_scope.md` carries forward. Narratives 004-005 use em-dashes naturally; no audit step.
+
+### Quality signal from the session
+
+User feedback was clean throughout. Zero Moment titles needed revision (vs narrative 002's "Settlement claims the keyboard" → "The keyboard enters Settlement" pivot). Both findings' routings held under user adjudication; the in-PR-vs-stub resolution split for F001 vs F002 was author-leaned-and-user-confirmed. Em-dash hygiene drop was a smooth transition; the memory update mid-session (rather than at session start) did not destabilise the working pattern.
+
+### Follow-ups generated
+
+- **F001** (lived `StartParticipantSession.cs` line 12 + line 48 comment misclaims about display-name uniqueness) **resolved in this PR** via comment-only edits to the handler file. `dotnet build` and `dotnet test` verified per the standard `.cs`-touch discipline.
+- **F002** (missing `GET /api/participants/{id}` endpoint to back the catalog-header display-name UI claim) **stub follow-up prompt** authored at `docs/prompts/implementations/<slug>.md` per Phase 2.5 discipline. Slice scope: add a GET endpoint on the Participants BC returning the participant's `DisplayName` and `BidderId` (not the credit ceiling). Resolution runs in subsequent product work.
+- **Methodology log Entry 001 considered and consciously skipped** at session close. Two of the three lived-BC narratives have surfaced findings (narrative 003 today, narrative 002 a few hours ago); the cross-cutting observations are accumulating but remain narrative-grain rather than methodology-grain. Narratives 004 and 005 will be the final lived chances before Phase 5 closes.
+
+### Narrative #4 candidate
+
+Per Phase 5 prompt §2.3, narrative 004 is the Selling BC backfill (`004-seller-publishes-and-withdraws-listing`). Medium lived surface: M2 listing pipeline (draft, submit, automated approval, publish) plus M4-S2 WithdrawListing flow. Default protagonist: GreyOwl12 (offstage seller in narrative 001). Narrative 003's discipline hands off cleanly: lived-code audit posture, pre-Moment surrounding-directory reads, anchored cross-narrative values for GreyOwl12 if narrative 004 dramatises seller-specific specifics (seller-side credit / payout configuration, listing-draft vs published-listing payload differences).
+
+### Narrative status
+
+**Complete (v0.1, 2026-04-29).** Three Moments, cumulative deferred section, retrospective. Format conventions inherited from narratives 001 and 002. Status flipped to `accepted` in the session-close commit.
+
+---
+
+## Document History
+
+- **v0.1** (2026-04-29): Initial authoring as foundation-refresh Phase 5 Item 1b deliverable. Three Moments covering W001 slice 0.2: BoldPenguin7's QR scan (Moment 1), the system's mint cascade (Moment 2, multi-paragraph Response), the catalog-page landing (Moment 3, surfacing the missing GET endpoint as Finding 002). Two findings filed: F001 lived comment-misclaim fix in-PR, F002 missing GET endpoint stub follow-up. BoldPenguin7's cross-narrative values anchored: `BidderId "Bidder 4523"`, credit ceiling `$700`. First session to author with the em-dash hygiene drop in effect (per memory clarification at narrative 002 close); em-dashes used naturally throughout. Slice 0.3 (RegisterAsSeller) routed `separate-narrative` deferred, deferring its mixed-Participants-Selling-ownership question to narrative 004.
