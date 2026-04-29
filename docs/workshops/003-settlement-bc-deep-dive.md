@@ -50,7 +50,7 @@ Each term carries a one-line definition with optional cross-references and "what
 |---|---|---|
 | **Settlement** | The financial workflow that runs after a listing resolves to a sale. Settles the buyer charge, fee calculation, and seller payout. Identified by `SettlementId`. | Distinct from Auction Closing - Auctions resolves the bidding outcome; Settlement moves the money. |
 | **SettlementId** | A deterministic UUID v5 derived from `ListingId` (`UuidV5(AuctionsNamespace, $"settlement:{ListingId}")`). Idempotent by construction. | Per W003 Phase 1 Part 6 decision. Distinct from `ListingId`; allows tracing a settlement back to its source listing without conflating identities. |
-| **PendingSettlement** | A Polecat document projection built from `ListingPublished` events. Cached so the Settlement workflow has reserve, fee, and seller data when `ListingSold` arrives without crossing the BC boundary. | Lifecycle states: Pending, Consumed, Expired. Settlement workflow retries with backoff if not found at workflow-start time (W003 Phase 1 Part 1 decision). |
+| **PendingSettlement** | A Marten document projection built from `ListingPublished` events. Cached so the Settlement workflow has reserve, fee, and seller data when `ListingSold` arrives without crossing the BC boundary. | Lifecycle states: Pending, Consumed, Expired. Settlement workflow retries with backoff if not found at workflow-start time (W003 Phase 1 Part 1 decision). |
 | **Settlement Workflow** | The seven-phase progression: Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed. Failure exit at any phase via `PaymentFailed`. | Implementation choice deferred - Wolverine Saga or `ProcessManager<TState>` decider. Same business logic, only hosting differs (W003 Phase 1 Part 2 decision). |
 | **Reserve** | The minimum hammer price below which the listing does not sell at auction. May be null. | Defined in W002 §3 from the bidding-time perspective. Settlement is the financial authority for the binding comparison via `ReserveCheckCompleted`; Auctions' `ReserveMet` is a real-time UX signal only. |
 | **Hammer Price** | The final accepted bid amount when bidding closes. | Defined in W002 §3; carried into Settlement via `ListingSold`. |
@@ -59,7 +59,7 @@ Each term carries a one-line definition with optional cross-references and "what
 | **Final Value Fee** | The platform's percentage cut of the hammer price. CritterBids default: 10%. Computed as `Math.Round(HammerPrice * (FeePercentage / 100), 2)`. | `FeePercentage` is carried on `PendingSettlement`, set at `ListingPublished` time. |
 | **Seller Payout** | The amount transferred to the seller after fee deduction (`HammerPrice - FeeAmount`). Issued via `SellerPayoutIssued`. | Pushed to seller via Relay BC (W001 slice 6.3). |
 | **Buy It Now Settlement Path** | The variant Settlement workflow triggered by `BuyItNowPurchased` (vs. `ListingSold`). Starts in `ReserveChecked(WasMet: true)` to skip the reserve comparison. | Per W003 Phase 1 Part 5 decision. The `BuyItNowPrice >= ReservePrice` invariant in Selling BC (W004 §3) is the upstream guarantee that makes this safe. |
-| **Financial Event Stream** | The append-only audit log of every event in a settlement's lifecycle. One stream per `SettlementId`. | Polecat-backed; never deleted; persists for compliance and audit. |
+| **Financial Event Stream** | The append-only audit log of every event in a settlement's lifecycle. One stream per `SettlementId`. | Marten-backed (PostgreSQL) per ADR 011 All-Marten Pivot; never deleted; persists for compliance and audit. |
 | **Bidder** | A participant who has placed at least one bid. The settlement's "buyer" when they win. Identified by `BidderId` (= `WinnerId` on `ListingSold`). | Same `BidderId` as in W002 §3 and Participants BC. |
 | **Seller** | The participant who originally listed the item. Identified by `SellerId`, cached on `PendingSettlement` from `ListingPublished`. | Same `SellerId` as in W004 §3 and Participants BC. |
 
@@ -76,7 +76,7 @@ The Settlement BC is simpler than Auctions in component count (one workflow, one
 │ Settlement BC                                               │
 │                                                             │
 │  ┌────────────────────────────┐                             │
-│  │ PendingSettlement           │ ← Polecat projection       │
+│  │ PendingSettlement           │ ← Marten projection        │
 │  │ Projection                  │   (built from              │
 │  │ (SellerId, ReservePrice,    │    ListingPublished)       │
 │  │  BuyItNowPrice, FeePct)     │                            │
@@ -94,7 +94,7 @@ The Settlement BC is simpler than Auctions in component count (one workflow, one
 │                                                              │
 │  ┌────────────────────────────┐                              │
 │  │ Financial Event Stream      │ ← append-only audit log    │
-│  │ (all settlement events      │   (Polecat event store)    │
+│  │ (all settlement events      │   (Marten event store)     │
 │  │  per settlement instance)   │                             │
 │  └────────────────────────────┘                              │
 │                                                              │
@@ -107,7 +107,7 @@ Three concerns: (1) preparing settlement data from published listings, (2) runni
 
 **The problem it solves:** Settlement needs the reserve value, fee percentage, and seller identity when `ListingSold` arrives. That data was established way back at `ListingPublished`, possibly days earlier. Settlement can't reach back into the Selling BC to fetch it at resolution time — that's a BC boundary violation.
 
-**The solution:** Settlement maintains its own projection built from `ListingPublished` events. When `ListingPublished` arrives over the bus, Settlement's projection handler writes a row to a `pending_settlements` table in SQL Server (Polecat).
+**The solution:** Settlement maintains its own projection built from `ListingPublished` events. When `ListingPublished` arrives over the bus, Settlement's projection handler writes a row to a `pending_settlements` document store in PostgreSQL (Marten) per ADR 011's All-Marten Pivot.
 
 **Schema sketch:**
 
@@ -140,9 +140,9 @@ public enum PendingSettlementStatus
 
 **`@Architect` — why a projection, not an event-sourced aggregate?**
 
-A PendingSettlement isn't a business entity with a lifecycle the domain cares about. It's a derived read model — a convenient lookup that lets Settlement avoid querying across BC boundaries. A plain Polecat document projection is the right primitive. If we used an event-sourced aggregate here, we'd be inventing domain events for something that's really just "I saw a ListingPublished event and cached the parts I need."
+A PendingSettlement isn't a business entity with a lifecycle the domain cares about. It's a derived read model - a convenient lookup that lets Settlement avoid querying across BC boundaries. A plain Marten document projection is the right primitive. If we used an event-sourced aggregate here, we'd be inventing domain events for something that's really just "I saw a ListingPublished event and cached the parts I need."
 
-**`@BackendDeveloper` note on Polecat:** Marten and Polecat have feature parity for projections. The projection class looks essentially identical; only the session type and configuration differ. No special Polecat patterns needed here.
+**`@BackendDeveloper` note (post-ADR-011):** ADR 011's All-Marten Pivot makes the earlier Polecat-vs-Marten projection comparison moot for Settlement. The PendingSettlement projection is a standard Marten document projection; the Financial Event Stream is a Marten event-sourced stream. No cross-BC storage heterogeneity remains; the projection class follows the standard Marten patterns established by the other seven BCs.
 
 **`@QA` — race condition question:** What if `ListingSold` arrives before the `PendingSettlement` projection has caught up from `ListingPublished`?
 
