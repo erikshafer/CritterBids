@@ -90,7 +90,7 @@ Auction-system policy is at MVP defaults inherited from narrative 001 unchanged.
 
 - The `PaymentFailed` branch from charge failure (insufficient credit, payment-provider rejection, ledger-divergence). *(`alternate-path-failure`.)*
 - Invalid-transition paths for `ChargeWinner` from `Initiated` (W003 §3.4; reserve check skipped) and from `WinnerCharged` (W003 §3.3; double-charge prevention). *(`alternate-path-failure`.)*
-- The bidder-credit projection's lifecycle and read-model shape. *(W003 does not define a named bidder-credit projection - see Finding 005 candidate at session close.)*
+- The bidder-credit projection's lifecycle and read-model shape. *(`implementation-detail`; W003 does not define a named bidder-credit projection - see Finding 005 at session close.)*
 
 ## Moment 4: GreyOwl12's payout clears
 
@@ -131,3 +131,114 @@ Relay's BiddingHub broadcasts the completion to SwiftFerret42's connection: `{ t
 - The `CompleteSettlement` from `FeeCalculated` invalid-transition (W003 §6.2; payout not issued). *(`alternate-path-failure`.)*
 - The Wolverine Saga primitive's `MarkCompleted()` and saga-document-removal mechanics. *(`implementation-detail`; W003 Phase 1 Part 2 hosting territory.)*
 - The Operations BC's dashboard view of the settlement closing for the auction operator. *(`separate-narrative`; operator-perspective.)*
+
+## Deferred from this narrative
+
+The following were deliberately not narrated in this Settlement-perspective happy-path narrative. Each is named with its disposition so future sessions can pull from this list when scoping the next narrative, ADR, skill file, or implementation prompt. Items here are not bugs or omissions; they are consciously deferred and traceable. Items recorded in `002-findings.md` as `document-as-intentional` (settled design choices) are not duplicated here - the cumulative section is a backlog feeder, not a transparency footnote.
+
+### `defer` (revisit when trigger lands)
+
+- Lived-code audit of the Settlement BC saga across all five Moments (trigger: M5 ship target. The narrative renders the design from W003; the lived-code audit lane reactivates when Settlement BC ships and the M5-S1 slice's retrospective surfaces concrete divergence between W003's spec and the implementation).
+- Lived-code audit of the Relay BC's BiddingHub broadcast (Moment 5; trigger: M4 Tier 4 ship target. The Moment renders the broadcast as the system is designed to run).
+
+### `post-MVP` (beyond v1 scope)
+
+- Compensation paths if the seller payout fails to land (Moment 4; W003 Phase 1 Part 3 explicitly defers compensation design beyond MVP).
+
+### `separate-narrative` (other journey perspectives)
+
+- BIN settlement entry path (`Source: BuyItNow`; Moments 1 and 2 reference; W003 §1.2 and Phase 1 Part 5 cover the structurally-distinct flow).
+- The Operations BC's dashboard view of the settlement closing for the auction operator (Moment 5; operator-perspective).
+- The seller's experience of receiving the payout notification (Moment 4 and Moment 5; candidate for narrative 004 Selling-BC backfill or a future seller-perspective Settlement narrative).
+
+### `implementation-detail` (skill file or ADR territory)
+
+- The bidder-credit projection's lifecycle and read-model shape (Moment 3; W003 does not define a named bidder-credit projection - see Finding 005).
+- Banker's rounding edge cases for fractional-cent prices (Moment 4; W003 §4.2; the keyboard's $55.00 lands on a clean $5.50 fee with no rounding ambiguity).
+- The Wolverine Saga primitive's `MarkCompleted()` and saga-document-removal mechanics (Moment 5; W003 Phase 1 Part 2 hosting choice between Wolverine Saga and `ProcessManager<TState>` decider remains deferred).
+- Wolverine inbox deduplication mechanics underpinning the deterministic-`SettlementId` idempotence story (Moment 1).
+
+### `alternate-path-failure` (failure modes warranting their own narratives)
+
+- The `PendingSettlement` "row not found" retry path (Moment 1; W003 Phase 1 Part 1 Option A: Wolverine retry with backoff).
+- Re-initiation rejection from a non-null state (Moment 1; W003 §1.3).
+- The `WasMet: false` (sale-fails) branch from non-met reserve (Moment 2).
+- Reserve disagreement between Auctions' `ReserveMet` and Settlement's `ReserveCheckCompleted` (Moment 2; W001 parked question 5).
+- The `PaymentFailed` branch from charge failure (Moment 3; insufficient credit, payment-provider rejection, ledger-divergence).
+- Invalid-transition paths for `ChargeWinner` from `Initiated` (Moment 3; W003 §3.4) and from `WinnerCharged` (Moment 3; W003 §3.3).
+- Invalid-transition paths for `CalculateFee` from `FeeCalculated` (Moment 4; W003 §4.3) and `IssueSellerPayout` from `WinnerCharged` (Moment 4; W003 §5.2).
+- The `CompleteSettlement` from `FeeCalculated` invalid-transition (Moment 5; W003 §6.2; payout not issued).
+
+## Retrospective
+
+### Narrative intent vs. outcome
+
+Stated goal at session start: author the Settlement BC's backfill narrative covering SwiftFerret42's experience as the saga charges her credit, calculates the platform fee, pays GreyOwl12 the seller payout, and emits `SettlementCompleted`. Audit W003 and `003-scenarios.md` against the narrative as drafted, route every disagreement through the four-lane findings discipline, surface the W003 storage-layer staleness against ADR 011 (All-Marten Pivot), add per-row narrative back-references on the W003 slices the narrative implements.
+
+**Outcome.** Five Moments covering W001 slices 6.1 and 6.3. Bidder-visible bookends (Moments 3 and 5; the credit-debit and the closing banner update) frame three narrator-led Moments (1, 2, 4) where SwiftFerret42 is offstage and the narrator carries the saga state. Five findings filed in `002-findings.md` across three routing lanes: 1 `narrative-update` (F001, against narrative 001 Moment 8), 3 `workshop-update` (F003 storage-staleness, F004 §1.1-vs-§7.1 payload mismatch, F005 missing bidder-credit projection), 1 `document-as-intentional` (F002 Price/HammerPrice rename across initiation). Zero `code-update` findings against Settlement itself, by structural impossibility - Settlement BC is unshipped. Cast and Setting locked first; Moment-by-Moment sign-off cadence held through all five Moments. Forward-spec posture handled cleanly. Goal met.
+
+### What worked
+
+- **Forward-spec posture handled cleanly.** Zero `code-update` findings; no spurious shoehorning of "Settlement code is wrong" claims against absent code. The narrator-renders-design framing held throughout.
+- **Findings-during-drafting cadence** carried over from narrative 001 unchanged. Five findings surfaced as Moments were drafted, not retroactively at session close. F002's mid-session character shift (from `workshop-update` to `document-as-intentional` once the §7.1 evolver evidence surfaced) demonstrated that the lane semantics tolerate routing revision when new evidence lands.
+- **Multi-phase Moment 4 worked at the multi-paragraph `Response.` level.** The README's multi-slice convention (paragraphs grow, labels do not) extends naturally to multi-saga-phase Moments. Moment 4's `Response.` block dramatised the fee calculation and the seller payout as two paragraphs under one label; no new structural pattern was needed.
+- **Cross-narrative continuity carried clean.** Narrative 001's terminal state (the "You Won" banner inherited at narrative 002 entry) flowed into narrative 002's opening Setting paragraph and remained the bidder's onscreen anchor through Moments 1 and 2. The phone-banner state-machine (You Won → Charged $55.00 → Charged $55.00 to your credit. The keyboard is yours.) became a per-Moment journey-grain through-line.
+- **Title-ambiguity check caught a misnamed Moment 1 before commit.** The user-flagged ambiguity in "Settlement claims the keyboard" (the natural English parse misplaces SwiftFerret42 as the subject) led to a pivot to "The keyboard enters Settlement". Lesson: title verbs need an ambiguity-check pass that asks "does the natural English subject match the intended subject?".
+- **Per-Moment deferred lists trimmed to three entries** after the user redirected from heavier per-Moment lists. The trim discipline (deferred shouldn't restate body content; narrative-level dispositions consolidate at the narrative level) held across Moments 2 through 5. Moment 1's revision provided the calibration; subsequent Moments matched it.
+- **Em-dash hygiene held.** Zero em dashes in any committed prose authored this session. The `grep $'—'` audit ran clean before every commit. Pre-existing em dashes in W003 were grandfathered per the convention's grandfather clause.
+- **PR-shape fold honoured the Cast/Setting/Moment cadence.** When the user folded the prompt PR and the narrative session into a single branch mid-session, the per-Moment commit discipline carried straight through; the PR boundary changed but the working pattern did not.
+
+### What was hard
+
+- **Moment 3's missing disposition tag** on the bidder-credit projection deferred entry was caught only at the consolidation step (`## Deferred from this narrative`), not at the per-Moment commit. Lesson: per-Moment "Things deliberately not included" lists should always carry an explicit disposition tag at draft time, not at consolidation time. Narrative 001 caught this consistently; narrative 002 missed it once. Future narratives should treat the tag as a checklist item before sign-off.
+- **F002's character shifted mid-session** from `workshop-update` to `document-as-intentional` once §7.1's evolver scenarios revealed that the `Price` → `HammerPrice` rename across initiation is intentional (source-agnostic at command time, semantically `HammerPrice` post-initiation), not an inconsistency. Lesson: read the full scenarios section - including evolver and projection - before routing field-naming findings; an apparent inconsistency in §1 may dissolve once §7's evolver evidence is in hand.
+- **Forward-spec narrating amplifies workshop-fragility.** When the audit floor isn't there, the narrative inherits W003's gaps wholesale. F004 (the §1.1-vs-§7.1 SettlementInitiated payload mismatch) and F005 (the missing bidder-credit projection name) both surfaced because the narrator had to commit to specific event payloads and projection names that W003 either truncated or never named. Lesson: forward-spec narratives surface workshop gaps the lived-code audit would have masked, because the narrator has nowhere else to look.
+
+### Decisions about how to author (meta-decisions worth carrying forward)
+
+- **For forward-spec narratives, lived-code-audit defer is narrative-level, not per-Moment.** Five identical "lived-code audit deferred to M5" entries would be noise; one consolidated `defer` entry in the narrative-level `## Deferred from this narrative` section is correct.
+- **Field names render verbatim from scenarios.** When scenarios use `Price` on initiation events and `HammerPrice` on later events, the narrative preserves that asymmetry. Smoothing field names in prose would mask findings that should surface.
+- **Multi-phase Moments use multi-paragraph `Response.` blocks.** Same convention as multi-slice Moments per the README; extending the convention to per-saga-phase grouping does not require a README amendment.
+- **Narrator-led Moments use `Why this matters to the bidder.` as load-bearing.** When the protagonist is offstage for an entire Moment (Moments 1, 2, and 4), the Why-paragraph anchors the bidder's journey arc by naming the invariant the saga's offscreen work establishes for her.
+- **Cite-and-edit fixes across narratives are constrained to single paragraphs (Phase 5 §7) and bundled into one parent finding.** F001 covers three narrative 001 Moment 8 corrections in one parent finding because all three live in the same `Response.` paragraph; splitting into F001a/b/c would have proliferated findings without changing the resolution scope.
+- **Title verbs need an ambiguity-check pass.** The Moment 1 title revision is the canonical example for narratives 003-005: "claims the keyboard" → "enters Settlement" because the natural English subject of "claims" is a person, not a system, and SwiftFerret42 was the wrong person.
+
+### Patterns established for narratives 003-005
+
+Inherited from narrative 001 unchanged: bounded frontmatter v1, prose-paragraph Moment body, multi-slice (and now multi-saga-phase) Moments grow in paragraphs, single-named-protagonist plus omniscient narrator, seven disposition tags for deferral, per-Moment plus cumulative deferral discipline, code-style backticks for events and projection names.
+
+CritterBids-specific patterns established or refined this session:
+
+- **Forward-spec posture is its own discipline.** Future narratives that hit forward-spec slices apply this session's playbook: render the workshop's design, route absent code as `defer` at the narrative level, expect zero `code-update` findings against the absent BC, expect elevated `workshop-update` findings as the narrator forces W003 (or its analogue) to commit on payloads and projections it may have left ambiguous.
+- **Disposition tag at draft time, not at consolidation time.** Every per-Moment "Things deliberately not included" entry carries an explicit tag. Narrative 002's Moment 3 missed one and the consolidation step caught it; narratives 003-005 should not need the consolidation-step catch.
+- **F002-class findings (`document-as-intentional` for intentional-but-undocumented W003 conventions) are real.** When a workshop's prose underspecifies a deliberate convention, the routing is `document-as-intentional` against the workshop, not `workshop-update`. The convention is not wrong; the documentation is incomplete. The resolution is a workshop edit that names the convention, not a behavioral change.
+- **W003 minimum-scope sweep approach is reusable for narratives 003-005.** When a narrative's findings discipline routes a `workshop-update` against its source workshop, the minimum-scope sweep edits only the framing the narrative directly touches; the broader sweep is a follow-up. This held for narrative 002's F003 (Polecat / SQL Server staleness) and is the recommended posture for narratives 003 (W001), 004 (W004), and 005 (W002).
+
+### Quality signal from the session
+
+User feedback was clean throughout. Two minor amendments at sign-off (Moment 1 title revision after the "claims" ambiguity flag; Moment 1 deferred-list trim from five entries to three). All five findings' routings held under user adjudication, including F002's mid-session re-routing once the evolver evidence surfaced. The lean-opinions-on-questions practice continued to land. The fold-into-one-PR decision did not destabilise the per-Moment cadence.
+
+The forward-spec narrative-as-design-rendering posture surfaced exactly where the prompt's "Heads-up sources of likely findings" anticipated: at W003's Polecat staleness (F003), at the Price/HammerPrice convention (F002), at the §1.1-vs-§7.1 payload mismatch (F004), and at the missing bidder-credit projection name (F005). The discipline absorbed all four cleanly.
+
+### Follow-ups generated
+
+- **F001** (narrative 001 Moment 8 saga-event payload corrections: `SettlementInitiated` `HammerPrice` → `Price`; `ReserveCheckCompleted` `Result: "Met"` → `WasMet: true`; `WinnerCharged` `AmountCharged` → `Amount` and drop `RemainingCredit`) **resolved in this PR** via single-paragraph edit to narrative 001 Moment 8's `Response.` block.
+- **F003** (W003 storage-layer staleness against ADR 011) **resolved in this PR** via minimum-scope edit to W003 Phase 1 Part 1 PendingSettlement framing and the Ubiquitous Language Financial Event Stream entry. Polecat / SQL Server references replaced with Marten / PostgreSQL.
+- **F002, F004, F005 deferred to a W003 follow-up PR.** The follow-up authors a coordinated W003 edit covering the Price/HammerPrice convention documentation (F002), the §1.1-vs-§7.1 SettlementInitiated payload reconciliation (F004), and the named bidder-credit projection (F005). Stub follow-up prompt is not authored this session because none of the three findings is `code-update`; the W003 follow-up is workshop-edit territory and is its own session.
+- **W003 broader storage-staleness sweep** (beyond minimum-scope F003 fix) deferred per the user's Q4 minimum-scope lean. A future session may sweep the remaining Polecat references in W003 Phase 2 storytelling, Phase 3 scenarios cross-references, and the @BackendDeveloper notes; that sweep is not narrative-driven and can run as its own workshop-cleanup session.
+- **M5 milestone doc and M5-S1 prompt** are Phase 5 Item 4 territory (later session). Narrative 002 enables them: it is now the canonical Settlement narrative the M5-S1 prompt will cite per the cutover-gate definition.
+- **Methodology log Entry 001 considered and consciously skipped** at session close. Phase 4 retro updated the time-box to "after Phase 5 closes, or after methodology log carries three entries, whichever comes first." The three lived-BC narratives ahead (003 Participants, 004 Selling, 005 Auctions) are stronger Entry 001 anchors than narrative 002 because they will surface concrete `code-update` findings against shipped BCs; narrative 002's forward-spec posture means its cross-cutting observations are about narrative-authoring-against-spec-only, which is interesting but premature as a load-bearing methodology-log entry. The entry-criteria gate held; silence was the right call.
+
+### Narrative #3 candidate
+
+Per Phase 5 prompt §2.3, narrative 003 is the Participants-BC backfill (`003-bidder-starts-anonymous-session`). Smallest lived-code surface (M1 baseline plus Participants BC scaffold from M1-S2); companion to narrative 001 Moment 1 at finer grain. Narrative 002's discipline hands off cleanly: the per-Moment cadence, findings-during-drafting, em-dash hygiene, title-ambiguity check, narrator-led Moments where applicable, the per-Moment-disposition-tag-at-draft-time refinement.
+
+### Narrative status
+
+**Complete (v0.1, 2026-04-29).** Five Moments, cumulative deferred section, retrospective. Format conventions inherited from narrative 001 unchanged; CritterBids-specific patterns refined for forward-spec posture. Status flipped to `accepted` in the session-close commit (the final commit on this branch).
+
+---
+
+## Document History
+
+- **v0.1** (2026-04-29): Initial authoring as foundation-refresh Phase 5 Item 1a deliverable. Five Moments covering W001 slices 6.1 and 6.3; the closing Moment is multi-slice. Forward-spec posture (Settlement BC unshipped, M5 ship target) handled at the narrative level via consolidated `defer` entry in the cumulative deferred section. Five findings filed in `002-findings.md` across three routing lanes (`narrative-update`, `workshop-update`, `document-as-intentional`); zero `code-update` findings against Settlement, by structural impossibility. F001 (narrative 001 Moment 8 saga-event payload) and F003 (W003 storage-layer staleness against ADR 011) resolved in the same PR as the narrative landed. F002, F004, and F005 deferred to a W003 follow-up PR. Single-PR fold (prompt + narrative session) per user direction at session start; narrative-internal retro records the fold.
