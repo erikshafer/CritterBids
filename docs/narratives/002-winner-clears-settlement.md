@@ -73,3 +73,21 @@ Auction-system policy is at MVP defaults inherited from narrative 001 unchanged.
 - The `WasMet: false` (sale-fails) branch from non-met reserve. *(`alternate-path-failure`.)*
 - Reserve disagreement between Auctions' `ReserveMet` and Settlement's `ReserveCheckCompleted` (W001 parked question 5; the disagreement-handling discipline is decided ground but not dramatised here). *(`alternate-path-failure`.)*
 - BIN-source reserve-check skip (`Source: BuyItNow` lands directly in `ReserveChecked(WasMet: true)` per W003 §1.2 and Phase 1 Part 5; BIN is out of scope). *(`separate-narrative`.)*
+
+## Moment 3: SwiftFerret42's balance drops to $445
+
+**Implements:** slice 6.1.
+
+**Context.** The saga's state is `ReserveChecked(WasMet: true)`. The reserve threshold has been confirmed; the sale is no longer contingent. State still carries `HammerPrice: $55.00, FeePercentage: 10.0` and the participant identifiers. SwiftFerret42's "You Won" banner is still onscreen; her credit-balance display still reads $500.00. The next saga phase is the winner charge - the first phase where real (demo) money moves.
+
+**Interaction.** The saga issues `ChargeWinner` to the decider against `state = SettlementState.ReserveChecked(WasMet: true) { HammerPrice: $55.00, WinnerId: SwiftFerret42, ...participant fields }`.
+
+**Response.** The decider emits `WinnerCharged { SettlementId, WinnerId: SwiftFerret42, Amount: $55.00, ChargedAt: <now> }`. The event is appended to the SettlementId stream; the evolver advances state from `ReserveChecked(WasMet: true)` to `WinnerCharged`. The bidder-credit ledger debits SwiftFerret42's hidden $500.00 ceiling by $55.00, and her remaining credit lands at $445.00. Her phone's "You Won" banner ticks forward to "Charged $55.00." Her credit-balance display, which has read $500.00 since narrative 001 Moment 1, ticks down to $445.00. **First bidder-visible beat in narrative 002.**
+
+**Why this matters to the bidder.** SwiftFerret42 has now committed (demo) money to the keyboard. The provisional ownership from narrative 001 Moment 7 has resolved into a definitive purchase: she has paid $55.00, the system has acknowledged the charge, and her remaining credit is the durable record of how much she has left to spend on any further listings in this session. The hidden credit ceiling she was assigned in narrative 001 Moment 1 is no longer entirely hidden - $445.00 visible in her phone's display tells her she had at least that much before the charge, though it does not yet reveal the original $500.00 ceiling. The MVP credit-ledger posture means no real banking integration is involved; the charge is a ledger entry against Settlement's read-side, not a payment-processor transaction.
+
+### Things deliberately not included
+
+- The `PaymentFailed` branch from charge failure (insufficient credit, payment-provider rejection, ledger-divergence). *(`alternate-path-failure`.)*
+- Invalid-transition paths for `ChargeWinner` from `Initiated` (W003 §3.4; reserve check skipped) and from `WinnerCharged` (W003 §3.3; double-charge prevention). *(`alternate-path-failure`.)*
+- The bidder-credit projection's lifecycle and read-model shape. *(W003 does not define a named bidder-credit projection - see Finding 005 candidate at session close.)*
