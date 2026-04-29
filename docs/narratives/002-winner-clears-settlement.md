@@ -111,3 +111,23 @@ The second decider call emits `SellerPayoutIssued { SettlementId, SellerId: Grey
 - Banker's rounding edge cases for fractional-cent prices (W003 §4.2; the keyboard's $55.00 lands on a clean $5.50 fee with no rounding ambiguity). *(`implementation-detail`.)*
 - Invalid-transition paths for `CalculateFee` from `FeeCalculated` (W003 §4.3) and `IssueSellerPayout` from `WinnerCharged` (W003 §5.2). *(`alternate-path-failure`.)*
 - Compensation paths if the seller payout fails to land (W003 Phase 1 Part 3 defers compensation design beyond MVP). *(`post-MVP`.)*
+
+## Moment 5: The keyboard is hers
+
+**Implements:** slice 6.1, slice 6.3.
+
+**Context.** The saga's state is `PayoutIssued`. Both money-moving phases have completed: SwiftFerret42's $55.00 has been debited; GreyOwl12's $49.50 has been credited. The state carries the full settlement record - `HammerPrice: $55.00, FeeAmount: $5.50, SellerPayout: $49.50, ListingId, WinnerId, SellerId`. SwiftFerret42's "Charged $55.00" banner is still onscreen; her balance reads $445.00. Relay's BiddingHub holds her live SignalR connection from narrative 001 onward, ready to broadcast Settlement-grade pushes.
+
+**Interaction.** The saga issues `CompleteSettlement` to the decider against `state = SettlementState.PayoutIssued(FeeAmount: $5.50, SellerPayout: $49.50) { ListingId: keyboard, WinnerId: SwiftFerret42, SellerId: GreyOwl12, HammerPrice: $55.00 }`. This is the saga's terminal command; the decider's pattern match against the `PayoutIssued` state is the only legitimate entry to settlement closure (W003 §6.2 rejects `CompleteSettlement` from any other state).
+
+**Response.** The decider emits `SettlementCompleted { SettlementId, ListingId: keyboard, WinnerId: SwiftFerret42, SellerId: GreyOwl12, HammerPrice: $55.00, FeeAmount: $5.50, SellerPayout: $49.50, CompletedAt: <now> }`. The event is appended to the SettlementId stream as the terminal entry; the evolver advances state from `PayoutIssued` to `Completed`. The settlement's financial event stream is closed at terminal state and persists as the audit log per W003 §"Financial Event Stream"; no further events are appended.
+
+Relay's BiddingHub broadcasts the completion to SwiftFerret42's connection: `{ type: "SettlementCompleted", listingId: keyboard, hammerPrice: 55.00, remainingCredit: 445.00 }`. Her phone's "Charged $55.00" banner ticks forward to "Charged $55.00 to your credit. The keyboard is yours." The banner has now traversed all three states it carries through Settlement: "You Won" (inherited from narrative 001 Moment 7), "Charged $55.00" (Moment 3's tick-forward), and "Charged $55.00 to your credit. The keyboard is yours." (this Moment's tick-forward). **Final bidder-visible beat in narrative 002.**
+
+**Why this matters to the bidder.** The journey arc closes here. SwiftFerret42 began this narrative inheriting a "You Won" banner whose meaning was only provisional - the gavel had fallen, but no money had moved. Five Moments later, every Settlement phase has resolved cleanly: the reserve verified, the charge committed, the fee carved, the seller paid, the saga closed at terminal state. The keyboard is durably hers; her credit balance reads the post-charge $445.00 that will carry her through any further listings in the session; the seller has been compensated; the platform has taken its cut. The hammer's promise from narrative 001 Moment 7 - "you won this listing" - has been redeemed in financial fact. Every alternate narrative branch the project will eventually author - the failed payment, the reserve-not-met sale-fails branch, the BIN settlement variant, the seller-perspective companion to this beat - measures itself against this happy-path closure as the canonical reference of what completion looks like.
+
+### Things deliberately not included
+
+- The `CompleteSettlement` from `FeeCalculated` invalid-transition (W003 §6.2; payout not issued). *(`alternate-path-failure`.)*
+- The Wolverine Saga primitive's `MarkCompleted()` and saga-document-removal mechanics. *(`implementation-detail`; W003 Phase 1 Part 2 hosting territory.)*
+- The Operations BC's dashboard view of the settlement closing for the auction operator. *(`separate-narrative`; operator-perspective.)*
