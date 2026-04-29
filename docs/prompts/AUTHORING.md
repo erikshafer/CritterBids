@@ -10,7 +10,7 @@ These are the prose rules every prompt obeys. They exist so that prompts stay te
 
 2. **Scope is named by milestone and slice (or by target artifact for non-implementation prompts), not by feature area.** The filename carries the coordinates; the body restates them in the header. An agent reading the prompt cold should know within five seconds which artifact governs the work.
 
-3. **The milestone doc is authoritative for scope.** Implementation prompts reference it; they do not duplicate it. If a prompt and the milestone doc disagree, the milestone doc wins and the prompt is wrong.
+3. **The milestone doc is authoritative for scope.** Implementation prompts reference it; they do not duplicate it. If a prompt and the milestone doc disagree, the milestone doc wins and the prompt is wrong. Where a narrative covers the slice's journey at the bidder, seller, auctioneer, or operator perspective being implemented, the milestone doc and the relevant narrative are jointly authoritative. If no narrative covers the journey, author one before the slice runs.
 
 4. **Skill files own conventions.** A prompt names which skill files to load and trusts them to specify the rules. Prompts do not restate skill content inline: they point. If a needed convention has no skill file yet, that is a milestone-level decision and belongs in the milestone doc, not smuggled into a prompt.
 
@@ -35,6 +35,7 @@ For prompts in `implementations/`. Other subdirectory prompts (narratives, decis
 
 **Milestone:** M{n} ({name})
 **Slice:** S{n} ({slice name})
+**Narrative:** `docs/narratives/00X-{slug}.md` (or `none` plus a one-line reason if the slice does not anchor to a narrative)
 **Agent:** @{PSA|QAE|PO|UXE|DOE}
 **Estimated scope:** {one PR, ~N files}
 
@@ -73,7 +74,7 @@ Anything the agent should flag rather than decide unilaterally.
 
 ## Adapting the template for non-implementation prompts
 
-- **Narrative prompts** (`narratives/`): replace milestone/slice with `journey` and `protagonist`. Reference `docs/narratives/README.md` for the format. The "context to load" includes the workshop slices the narrative implements.
+- **Narrative prompts** (`narratives/`): replace milestone/slice with `journey` and `protagonist`. Reference `docs/narratives/README.md` for the format. The "context to load" includes the workshop slices the narrative implements. The canonical adaptation example is `docs/prompts/narratives/001-bidder-wins-flash-auction.md` (the Phase 2 narrative-authoring prompt).
 - **Decision prompts** (`decisions/`): replace milestone/slice with `ADR number` and `topic`. The "context to load" includes related ADRs and skill files. The "in scope" enumerates the options to evaluate.
 - **Workshop prompts** (`workshops/`): replace milestone/slice with `workshop number` and `BC`. The "in scope" enumerates the workshop's intended sections per `docs/skills/event-modeling/SKILL.md`.
 - **Skill prompts** (`skills/`): replace milestone/slice with `skill slug`. The "in scope" enumerates the patterns the skill file documents.
@@ -82,3 +83,4 @@ Anything the agent should flag rather than decide unilaterally.
 ## Document history
 
 - **v0.1** (2026-04-26): Authored as part of foundation-refresh Phase 1 Item 5. Carries forward the ten rules and template skeleton from the pre-subdivision `README.md` v0.1, expanded with subdirectory-specific adaptations.
+- **v0.2** (2026-04-28): Foundation refresh Phase 5 Item 2 amendment. Rule 3 grew the joint-authority clause for milestone doc plus narrative. The implementation prompt template gained a `Narrative:` metadata line. The "Adapting" section confirmed `docs/prompts/narratives/001-bidder-wins-flash-auction.md` as the canonical narrative-prompt example. No new template authored.

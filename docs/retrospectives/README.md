@@ -1,12 +1,12 @@
 # Session Retrospectives
 
 This directory holds the retrospectives produced at the close of each
-CritterBids implementation session — one retro per session prompt under
+CritterBids implementation session - one retro per session prompt under
 `docs/prompts/`. The retro is the durable record of what happened when that
 prompt ran, what was learned, and what the next session needs to know.
 
 Retros are living documents. **The template and the rules below evolve
-through M1 retrospectives** — after each M1 session lands, revisit this file
+through M1 retrospectives** - after each M1 session lands, revisit this file
 and fold in whatever the retro itself surfaced about the format. M1 is where
 the shape of a "good CritterBids retrospective" gets discovered; don't treat
 anything here as frozen until M1 is closed out.
@@ -29,11 +29,11 @@ retro sort next to each other when listed.
 Every retrospective file follows this structure:
 
 ```markdown
-# M{n}-S{n}: {Title} — Retrospective
+# M{n}-S{n}: {Title} - Retrospective
 
 **Date:** YYYY-MM-DD
-**Milestone:** M{n} — {name}
-**Slice:** S{n} — {slice name}
+**Milestone:** M{n} - {name}
+**Slice:** S{n} - {slice name}
 **Agent:** @{PSA|QAE|PO|UXE|DOE}
 **Prompt:** `docs/prompts/implementations/M{n}-S{n}-{slug}.md`
 [**Duration:** ~Xh]
@@ -57,16 +57,16 @@ traceability is mechanical.
 
 One subsection per non-trivial item. Each contains whichever of these apply:
 
-- **Why this approach** — when a Critter Stack idiom was chosen or rejected,
+- **Why this approach** - when a Critter Stack idiom was chosen or rejected,
   say *why* the alternative was rejected. These passages are the slice's
   contribution to the broader pattern library.
-- **Handler / structure after** — short code block showing the resulting shape.
-- **Structural metrics table** — `Metric | Before | After` for line count,
+- **Handler / structure after** - short code block showing the resulting shape.
+- **Structural metrics table** - `Metric | Before | After` for line count,
   class type, injected dependencies, return type. The most distinctive
   recurring element of a useful retro.
-- **Discovery / resolution** — when something failed and was worked around,
+- **Discovery / resolution** - when something failed and was worked around,
   document the error message verbatim, the root cause, and the resolution.
-- **Edge cases preserved or fixed** — bugs found incidentally.
+- **Edge cases preserved or fixed** - bugs found incidentally.
 
 ## Test results
 
@@ -91,6 +91,25 @@ the principle and the evidence. Reserve this section for things future
 sessions in other slices or BCs will need to know; do not restate item-level
 details.
 
+## Findings against narrative
+
+For slices anchored to a narrative (per the prompt's `Narrative:` metadata
+line), record whether the slice implemented the narrative as drafted or
+surfaced drift. Findings route to the four standing lanes per
+`docs/narratives/README.md`:
+
+- `narrative-update` - narrative was wrong; resolved in the slice's PR.
+- `workshop-update` - workshop slice was stale; resolved in the slice's PR.
+- `code-update` - code is wrong relative to the narrative's domain
+  understanding; surfaces a follow-up implementation prompt under
+  `docs/prompts/implementations/`. Not resolved in this PR.
+- `document-as-intentional` - apparent disagreement is two valid
+  expressions of the same intent; document the relationship and move on.
+
+For the rare slice that does not anchor to a narrative (likely operator
+runbooks or infrastructure-only changes), explain why and note whether a
+follow-up narrative is warranted.
+
 ## Verification checklist
 
 - [x] One item per acceptance criterion from the session prompt.
@@ -109,15 +128,15 @@ scope, tracked elsewhere."
 
 Use only when the session warrants them:
 
-- **{BC} assessment (after S0+S1+S2…)** — for milestones that complete a BC,
+- **{BC} assessment (after S0+S1+S2…)** - for milestones that complete a BC,
   a numbered summary of what the BC now demonstrates idiomatically.
-- **Files changed** — categorized list (New / Modified / Deleted / Tests /
+- **Files changed** - categorized list (New / Modified / Deleted / Tests /
   Docs) with one-line annotations. Use only when the change set spans many
   files or projects.
-- **API surface explored** — when a session is research-heavy against an
+- **API surface explored** - when a session is research-heavy against an
   unfamiliar Critter Stack feature, document what was tried, what worked,
   and what didn't.
-- **Comparison vs prior session** — `Component | Before | After` spanning
+- **Comparison vs prior session** - `Component | Before | After` spanning
   the whole session. Use when one session revises or replaces the output of
   the prior session.
 
@@ -161,7 +180,7 @@ build on this one.
    bound of self-congratulation; everything else stays factual. No "elegant
    solution," no "clean architecture."
 
-9. **Preserve the prompt's item codes.** S1a, S1b, S2a — never renumber,
+9. **Preserve the prompt's item codes.** S1a, S1b, S2a - never renumber,
    even if the work landed in a different order than the prompt listed it.
 
 10. **Retros are committed in the same PR as the session's code.** A
@@ -184,6 +203,6 @@ Until M1 retrospectives say otherwise, expect the template and the rules
 to move. Propose changes by PR against this file with a short note
 describing which session surfaced the gap.
 
-See `../prompts/README.md` for the matching session prompt template —
+See `../prompts/README.md` for the matching session prompt template -
 together they form the prompt → execute → retro loop that every M1 session
 runs through.
