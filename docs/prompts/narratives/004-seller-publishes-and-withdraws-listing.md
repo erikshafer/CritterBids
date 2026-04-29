@@ -10,7 +10,7 @@
 | **Protagonist** | GreyOwl12 (offstage in narrative 001 Cast → onstage here as the keyboard's seller) |
 | **Target artifact** | `docs/narratives/004-seller-publishes-and-withdraws-listing.md` (to be produced) |
 | **Companion artifact** | `docs/narratives/004-findings.md` (to be produced; conscious-skip note acceptable if zero findings) |
-| **Source-of-truth dependencies** | W004 (`004-selling-bc-deep-dive.md`) and W004 scenarios (`004-scenarios.md`); lived `src/CritterBids.Selling/` code; M2-S2 (BC scaffold), M2-S5 (slice 1.1 create-draft), M2-S6 (slice 1.2 submit), M2.5-S2 (update-draft) retros; M4-S2 implementation prompt at `docs/prompts/M4-S2-selling-withdraw-listing.md` (forward-spec ground for the WithdrawListing Moment) |
+| **Source-of-truth dependencies** | W004 (`004-selling-bc-deep-dive.md`) and W004 scenarios (`004-scenarios.md`); lived `src/CritterBids.Selling/` code; M2-S2 (BC scaffold), M2-S5 (slice 1.1 create-draft), M2-S6 (slice 1.2 submit), M2.5-S2 (update-draft) retros; M4-S2 implementation prompt at `docs/prompts/implementations/M4-S2-selling-withdraw-listing.md` (forward-spec ground for the WithdrawListing Moment) |
 | **Workflow position** | Third of four Phase 5 backfill narratives. First seller-perspective narrative for CritterBids. Mixed posture: lived M2 listing pipeline plus forward-spec M4-S2 WithdrawListing. |
 
 ---
@@ -19,7 +19,7 @@
 
 This session authors the Selling BC's first dedicated narrative and CritterBids' first seller-perspective narrative across the entire library. Where narratives 001-003 all carried bidder-perspective protagonists (SwiftFerret42, BoldPenguin7), narrative 004 brings GreyOwl12 — known offstage in narratives 001 and 002 as the keyboard's seller — onstage as the protagonist. The system surface he sees is the seller-side of the listing lifecycle: drafts, submissions, automated approvals, publication, and post-publication withdrawal. He never sees the auction itself; that lives in narratives 001 and 002.
 
-Narrative 004 mixes two postures within a single journey. Moments 1-3 dramatise the lived M2 listing pipeline (`CreateDraftListing`, `SubmitListing`, the auto-approval handler, `ListingPublished`) against shipped Selling BC code at `src/CritterBids.Selling/`. Moment 4 dramatises the M4-S2 WithdrawListing flow as forward-spec — the implementation prompt lives at `docs/prompts/M4-S2-selling-withdraw-listing.md` (305 lines, authored at the session that did *not* run M4-S2's slice; the implementation has not shipped). The narrator renders the WithdrawListing Moment per the M4-S2 prompt's specification and the W004 §4 "End Early and Relist" workshop framing; the lived-code audit lane defers under `defer` until M4-S2 ships.
+Narrative 004 mixes two postures within a single journey. Moments 1-3 dramatise the lived M2 listing pipeline (`CreateDraftListing`, `SubmitListing`, the auto-approval handler, `ListingPublished`) against shipped Selling BC code at `src/CritterBids.Selling/`. Moment 4 dramatises the M4-S2 WithdrawListing flow as forward-spec — the implementation prompt lives at `docs/prompts/implementations/M4-S2-selling-withdraw-listing.md` (305 lines, authored at the session that did *not* run M4-S2's slice; the implementation has not shipped). The narrator renders the WithdrawListing Moment per the M4-S2 prompt's specification and the W004 §4 "End Early and Relist" workshop framing; the lived-code audit lane defers under `defer` until M4-S2 ships.
 
 The journey requires a second listing to dramatise WithdrawListing plausibly. Narrative 001's Setting establishes that GreyOwl12 publishes the Vintage Mechanical Keyboard which then goes to auction (and to settlement in narrative 002); the keyboard itself is not withdrawn, by narrative 001's terminal outcome. Narrative 004 introduces a second listing of GreyOwl12's — a Vintage Folding Camera (or similar; concrete name confirmed at session start) — that he drafts, publishes, and then withdraws before any session attaches. The camera is sibling ground to the keyboard, not a replacement; it fits inside narrative 001's stated "three listings published in the days before the conference and attached to the operator's Flash session" because the camera was published but never attached. This second-listing decision is the most consequential session-start sign-off question.
 
@@ -43,7 +43,7 @@ Author the Selling BC's backfill narrative covering GreyOwl12's seller-side jour
 4. `C:\Code\CritterBids\docs\narratives\002-winner-clears-settlement.md` and `002-findings.md` — narrative 002 established W003 Polecat / SQL Server staleness as F003. Narrative 004 may surface analogous workshop-staleness findings against W004.
 5. `C:\Code\CritterBids\docs\narratives\003-bidder-starts-anonymous-session.md` and `003-findings.md` — the immediate-prior backfill narrative's discipline reference. Narrative 004 inherits the closing-arc shape, the lived-code audit posture, and the per-Moment disposition-tag-at-draft-time refinement.
 6. `C:\Code\CritterBids\docs\workshops\004-selling-bc-deep-dive.md` and `004-scenarios.md` — the workshop the narrative implements. Phase 1 and Phase 2 (Storytelling: A Listing's Complete Lifecycle) are the principal references; §4 (End Early and Relist) is the WithdrawListing forward-spec section.
-7. `C:\Code\CritterBids\docs\prompts\M4-S2-selling-withdraw-listing.md` — the M4-S2 implementation prompt, which the WithdrawListing Moment renders as forward-spec specification.
+7. `C:\Code\CritterBids\docs\prompts\implementations\M4-S2-selling-withdraw-listing.md` — the M4-S2 implementation prompt, which the WithdrawListing Moment renders as forward-spec specification.
 8. `C:\Code\CritterBids\docs\retrospectives\M2-S2-selling-bc-scaffold-retrospective.md`, `M2-S5-slice-1-1-create-draft-listing-retrospective.md`, `M2-S6-slice-1-2-submit-listing-retrospective.md`, `M2.5-S2-update-draft-listing-write-aggregate-retrospective.md` — design-time decisions the lived code alone does not show.
 
 Per-Moment lived-code reads under `src/CritterBids.Selling/`:
@@ -56,7 +56,7 @@ Per-Moment lived-code reads under `src/CritterBids.Selling/`:
 - Module wiring: `SellingModule.cs`
 
 Per-Moment forward-spec read for Moment 4:
-- `docs/prompts/M4-S2-selling-withdraw-listing.md` (305 lines; the slice's authoritative spec for command shape, handler guards, event payload, cross-BC routing).
+- `docs/prompts/implementations/M4-S2-selling-withdraw-listing.md` (305 lines; the slice's authoritative spec for command shape, handler guards, event payload, cross-BC routing).
 
 ---
 
@@ -250,7 +250,7 @@ When the session begins:
 1. Re-read this prompt and `docs/narratives/README.md` v0.1 in full.
 2. Re-read narrative 001 Setting (paragraph 2 specifically, for the keyboard's listing-time fields) and the Cast section (for GreyOwl12's offstage characterisation).
 3. Skim narrative 003 Setting and Moment 2 to absorb the lived-code audit cadence; narrative 004 inherits this discipline.
-4. Skim the M4-S2 implementation prompt (`docs/prompts/M4-S2-selling-withdraw-listing.md`) to absorb the WithdrawListing spec.
+4. Skim the M4-S2 implementation prompt (`docs/prompts/implementations/M4-S2-selling-withdraw-listing.md`) to absorb the WithdrawListing spec.
 5. Confirm with user: Moment grain (5 vs 4 vs 6), second-listing name, slice 0.3 inclusion, W004 cross-reference form (per-row vs consolidated), PR shape (fold vs separate). Lock these before drafting Cast.
 6. Propose Cast and Setting. Sign-off. Commit.
 7. Walk Moment-by-Moment per the working pattern. Lived Moments (1-4): read implementing slice → read W004 scenario section → read lived code → draft → surface findings → sign-off → commit. Forward-spec Moment 5: read M4-S2 prompt → read W004 §4 → draft → surface findings → sign-off → commit.
