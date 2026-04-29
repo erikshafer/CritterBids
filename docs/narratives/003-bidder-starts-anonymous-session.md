@@ -1,6 +1,6 @@
 ---
 slug: 003-bidder-starts-anonymous-session
-status: draft
+status: accepted
 journey: bidder
 perspective: single-bidder
 scope: happy-path
