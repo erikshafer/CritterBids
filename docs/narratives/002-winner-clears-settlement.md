@@ -91,3 +91,23 @@ Auction-system policy is at MVP defaults inherited from narrative 001 unchanged.
 - The `PaymentFailed` branch from charge failure (insufficient credit, payment-provider rejection, ledger-divergence). *(`alternate-path-failure`.)*
 - Invalid-transition paths for `ChargeWinner` from `Initiated` (W003 §3.4; reserve check skipped) and from `WinnerCharged` (W003 §3.3; double-charge prevention). *(`alternate-path-failure`.)*
 - The bidder-credit projection's lifecycle and read-model shape. *(W003 does not define a named bidder-credit projection - see Finding 005 candidate at session close.)*
+
+## Moment 4: GreyOwl12's payout clears
+
+**Implements:** slice 6.1.
+
+**Context.** The saga's state is `WinnerCharged`. SwiftFerret42's $55.00 has been debited; her credit-balance display reads $445.00. The state carries `HammerPrice: $55.00, FeePercentage: 10.0`, `SellerId: GreyOwl12`, and the rest of the participant fields. The next two saga phases land in close succession: the platform fee calculation, then the seller payout to GreyOwl12. Both happen below SwiftFerret42's perception window; this Moment is narrator-led.
+
+**Interaction.** The saga issues `CalculateFee` to the decider against `state = SettlementState.WinnerCharged { HammerPrice: $55.00, FeePercentage: 10.0, ... }`. Once the fee event is committed and the evolver advances state to `FeeCalculated`, the saga issues `IssueSellerPayout` against the new state.
+
+**Response.** The first decider call computes the fee as $55.00 × 10% = $5.50, applying banker's rounding to two decimal places per W003 §4.2's MVP convention, and the seller payout as $55.00 - $5.50 = $49.50. It emits `FinalValueFeeCalculated { SettlementId, HammerPrice: $55.00, FeePercentage: 10.0, FeeAmount: $5.50, SellerPayout: $49.50, CalculatedAt: <now> }`. The event is appended to the SettlementId stream; the evolver advances state from `WinnerCharged` to `FeeCalculated(FeeAmount: $5.50, SellerPayout: $49.50)`. The fee-amount and payout-amount fields are now non-nullable on the state by design, so the next phase can read them without null checks.
+
+The second decider call emits `SellerPayoutIssued { SettlementId, SellerId: GreyOwl12, PayoutAmount: $49.50, FeeDeducted: $5.50, IssuedAt: <now> }`. The event is appended to the SettlementId stream; the evolver advances state from `FeeCalculated` to `PayoutIssued`. GreyOwl12's seller-credit ledger increments by $49.50; in the MVP credit-ledger posture, this is a ledger entry against Settlement's seller-side read model rather than a banking transfer. SwiftFerret42 perceives nothing - her phone display still reads "Charged $55.00" and her balance still reads $445.00.
+
+**Why this matters to the bidder.** SwiftFerret42 does not see this Moment, but it is the Moment in which her $55.00 commitment becomes the seller's $49.50 receipt. The two-step path - fee calculation, then payout - is what allows the seller and the platform to never disagree on totals: the rounding rule is the single source of truth, applied once, in a single `FinalValueFeeCalculated` event whose math any auditor can replay. From SwiftFerret42's perspective, her $55.00 split into a $5.50 platform fee and a $49.50 seller payout is the journey's commercial outcome, the Moment GreyOwl12 receives the value of his keyboard. The seller's experience of this beat - "$49.50 just landed in my account" - is a candidate for a future seller-perspective narrative; from SwiftFerret42's vantage, the seller's gain is implicit in the system's silent acknowledgement that her purchase has gone through.
+
+### Things deliberately not included
+
+- Banker's rounding edge cases for fractional-cent prices (W003 §4.2; the keyboard's $55.00 lands on a clean $5.50 fee with no rounding ambiguity). *(`implementation-detail`.)*
+- Invalid-transition paths for `CalculateFee` from `FeeCalculated` (W003 §4.3) and `IssueSellerPayout` from `WinnerCharged` (W003 §5.2). *(`alternate-path-failure`.)*
+- Compensation paths if the seller payout fails to land (W003 Phase 1 Part 3 defers compensation design beyond MVP). *(`post-MVP`.)*
