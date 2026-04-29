@@ -55,3 +55,21 @@ Auction-system policy is at MVP defaults inherited from narrative 001 unchanged.
 - The `PendingSettlement` "row not found" retry path (W003 Phase 1 Part 1 Option A: Wolverine retry with backoff). *(`alternate-path-failure`; the happy-path Moment assumes the projection is caught up.)*
 - BIN settlement entry (`Source: BuyItNow`, the W003 §1.2 scenario). *(`separate-narrative`.)*
 - Re-initiation rejection from a non-null state (W003 §1.3 invalid-transition). *(`alternate-path-failure`.)*
+
+## Moment 2: Settlement verifies the reserve
+
+**Implements:** slice 6.1.
+
+**Context.** The saga's state is `Initiated`. The state carries `HammerPrice: $55.00, ReservePrice: $50.00, FeePercentage: 10.0` and the participant identifiers, hydrated from `SettlementInitiated`'s payload at the evolver step that closed Moment 1. The next saga phase is the binding reserve check. Auctions' `ReserveMet` was published earlier in the auction lifecycle (narrative 001 Moment 6, when SwiftFerret42's $55 retaliation bid crossed the threshold); that was the UX promise to her. Settlement's job now is the financial verification.
+
+**Interaction.** The saga issues `CheckReserve` to the decider against `state = SettlementState.Initiated { HammerPrice: $55.00, ReservePrice: $50.00, ...participant fields }`.
+
+**Response.** The decider compares hammer price against reserve, finds $55.00 exceeds $50.00, and emits `ReserveCheckCompleted { HammerPrice: $55.00, ReservePrice: $50.00, WasMet: true, CompletedAt: <now> }`. The event is appended to the SettlementId stream. The evolver advances state from `Initiated` to `ReserveChecked(WasMet: true)` while preserving the base fields. SwiftFerret42 perceives nothing; the reserve check fires and resolves below her window. If the hammer had landed below the reserve - the alternate-path-failure variant - the saga would route to `PaymentFailed` per W003 Phase 1 Part 3, and the listing would settle to a fail-state without charging her credit. That branch is consciously not dramatised here.
+
+**Why this matters to the bidder.** The reserve she could not see in the catalog has now been authoritatively confirmed as met. Auctions' `ReserveMet` told her the threshold was crossed at her bid time; Settlement's `ReserveCheckCompleted` confirms it as the financially binding decision by the BC that owns reserve enforcement. From this Moment forward, the sale is no longer contingent on the reserve question: SwiftFerret42 will be charged, GreyOwl12 will be paid, and the listing will close to a sold outcome. The two reserve checks - Auctions' UX-grade `ReserveMet` and Settlement's authority-grade `ReserveCheckCompleted` - cannot disagree in this happy path, and would route to an `alternate-path-failure` narrative if they ever did.
+
+### Things deliberately not included
+
+- The `WasMet: false` (sale-fails) branch from non-met reserve. *(`alternate-path-failure`.)*
+- Reserve disagreement between Auctions' `ReserveMet` and Settlement's `ReserveCheckCompleted` (W001 parked question 5; the disagreement-handling discipline is decided ground but not dramatised here). *(`alternate-path-failure`.)*
+- BIN-source reserve-check skip (`Source: BuyItNow` lands directly in `ReserveChecked(WasMet: true)` per W003 §1.2 and Phase 1 Part 5; BIN is out of scope). *(`separate-narrative`.)*
