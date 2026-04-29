@@ -100,3 +100,27 @@ The extended-bidding trigger is the second journey-relevant beat of this Moment.
 - The DCB rejection paths: `ListingNotOpen`, `ListingClosed`, `SellerCannotBid`, `ExceedsCreditCeiling`, `BelowMinimumBid`. Each rejection appends `BidRejected` to a dedicated `BidRejectionAudit` stream rather than the listing's primary stream (narrative 001 Finding 010 territory). *(`alternate-path-failure`.)*
 - The `BidRejectionAudit` stream's lifecycle (separate stream per listing, append-only, never deleted). *(`implementation-detail`; W002's audit-stream design choice.)*
 - BoldPenguin7's possible re-entry in the extended-bidding window (a counter-bid above $55 within the 15-second extension that would re-trigger another extension and prolong the auction). None lands in narrative 001's locked sequence. *(`separate-narrative`; future trading-the-trigger-window narrative.)*
+
+## Moment 3: The close timer extends
+
+**Implements:** slice 5.1 (extended bidding triggered).
+
+**Context.** The keyboard's `ExtendedBiddingTriggered` event committed in Moment 2's transaction. The event is now in flight to subscribers; the auction-closing saga is registered as one. The saga's state at Moment 3 entry: `(Id: ListingId, CurrentHighBid: $55.00, CurrentHighBidderId: SwiftFerret42, BidCount: 3, ReserveHasBeenMet: true, ScheduledCloseAt: <original session-start + 5 minutes>, OriginalCloseAt: <same>, ExtendedBiddingEnabled: true, Status: Active)`. The pending `CloseAuction` message scheduled in Moment 1 is still in the scheduled-message store, set to fire at the original close.
+
+**Interaction.** Wolverine routes `ExtendedBiddingTriggered` to `AuctionClosingSaga.Handle(ExtendedBiddingTriggered)`. The saga's document is loaded by `ListingId` (the saga correlation key per M3-S5 OQ1 Path A: `Saga.Id = ListingId`).
+
+**Response.** The saga's defensive guard checks `message.NewCloseAt > ScheduledCloseAt`. The post-Phase-2.5 fix at the emission site already enforces this invariant (the `TryComputeExtension` check `candidate <= state.ScheduledCloseAt` returns false), but the saga keeps the guard for defence-in-depth. The keyboard's `NewCloseAt = <original> + 15 seconds > <original> = ScheduledCloseAt`, so the guard passes.
+
+The saga calls `CancelPendingCloseAsync(messageStore, ScheduledCloseAt, ct)`. This issues a `ScheduledMessageQuery` against the Wolverine scheduled-message store: a ±100-millisecond window around the original `ScheduledCloseAt`, filtered by message type `typeof(CloseAuction).FullName`. The narrow window isolates the one pending close for the keyboard without risking cross-listing cancellations if two listings happened to share a scheduled time. The pending `CloseAuction` is cancelled.
+
+The saga then schedules a new `CloseAuction(ListingId: keyboard, ScheduledFor: NewCloseAt)` via `bus.ScheduleAsync(...)`. The new message lands in the scheduled-message store at the new close time (original + 15 seconds). The saga updates its state: `ScheduledCloseAt = NewCloseAt`, `Status = AuctionClosingStatus.Extended`.
+
+GreyOwl12's seller dashboard reflects the new close time. The countdown that read 25 seconds during Moment 2's $55 bid now reads 40 seconds (5 of the 15-second extension elapsed during the saga handler's runtime, leaving 40 seconds; rough numbers — the dashboard's exact display depends on the polling cadence). The keyboard is still bid-able for the rest of the extension.
+
+**Why this matters to the seller.** GreyOwl12 has just watched the system's extended-bidding policy fire on the keyboard's behalf. The 15-second extension is the protection-against-snipe guarantee: if SwiftFerret42 (or anyone) bid in the trigger window, the system gives competitors the same window-of-opportunity to respond. From his window, the close timer that he had been watching tick down has just reset to a longer time; the sale is not closing as soon as he expected. From the system's window, the saga has cancelled one pending `CloseAuction` and scheduled another, with no possibility of both firing (the narrow time-window query plus the named-method `NotFound(CloseAuction)` static-method safety net handle the race-condition edges per M3-S5b's OQ2 Path A discipline). The auction's terminal beat is now 15 seconds further away.
+
+### Things deliberately not included
+
+- The `ScheduledMessageQuery` ±100ms window's edge-case behavior: what happens if two listings' close timers fire within 100ms of each other (the narrow window prevents cross-listing cancellation, but the design choice is worth understanding for any future multi-extension session). *(`implementation-detail`; W002 + M3-S5b retro design choice.)*
+- The named-method `NotFound(CloseAuction)` static safety net: handles the race where a `CloseAuction` arrives but the saga document has already been deleted by `MarkCompleted` from a terminal handler (BIN, withdraw). Not exercised in narrative 005's happy path. *(`implementation-detail`; M3-S5b OQ2 Path a defence.)*
+- Re-entry in the 15-second extension. The narrative 001 sequence lands no further bids in the extension; if a counter-bid had landed, the saga would receive another `ExtendedBiddingTriggered` and reschedule again. *(`separate-narrative`; future trading-the-trigger-window narrative.)*
