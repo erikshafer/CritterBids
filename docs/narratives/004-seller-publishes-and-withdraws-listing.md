@@ -162,3 +162,104 @@ The seller dashboard refreshes; the camera moves from GreyOwl12's published list
 
 - The lived-code audit of the `WithdrawListing` handler. The M4-S2 prompt is the spec; the implementation has not shipped. *(`defer`; trigger is M4-S2 ship.)*
 - Cross-BC consumer reactions in detail: the Auctions Closing saga's `Resolved`-without-outcome-event branch on `ListingWithdrawn` consumption (lived M3 territory at finer grain), and the Relay BC's "listing withdrawn" notification push to bidders and watchers (per the contract's documentation; a no-op here since the camera has no bidders or watchers). *(`separate-narrative`; narrative 005 + future Relay-perspective territory.)*
+
+## Deferred from this narrative
+
+The following were deliberately not narrated in this Selling-perspective happy-path narrative. Each is named with its disposition so future sessions can pull from this list when scoping the next narrative, ADR, skill file, or implementation prompt. Items here are not bugs or omissions; they are consciously deferred and traceable. Items recorded in `004-findings.md` (F001 hardcoded FeePercentage, F002 missing SubmitListing HTTP endpoint, F003 missing Approved intermediate state) are not duplicated here.
+
+### `defer` (revisit when trigger lands)
+
+- Lived-code audit of the `WithdrawListing` handler (Moment 5; trigger: M4-S2 ship).
+
+### `separate-narrative` (other journey perspectives)
+
+- Cross-BC consumer reactions on `ListingPublished`: Listings BC's `CatalogListingView` projection-handler logic; Auctions BC's format-specific bidding wiring (Flash forward-spec for M4-S5/S6; Timed wires bidding immediately on publish per M3 lived behavior) (Moment 3).
+- Update-draft cycles between create and submit: W004 §1.3-1.5 covers the `UpdateDraftListing` immutable-field-guard scenarios; the happy-path narrative does no iteration (Moment 4).
+- Timed-format auction wiring on `ListingPublished` consumption (Moment 4; narrative 005 Auctions territory).
+- BIN ceiling behavior on Timed listings: what happens if a bidder hits the $80 BIN before withdrawal (Moment 4; bidder-perspective via the `BuyItNowPurchased` flow, narrative 005 territory).
+- Cross-BC consumer reactions on `ListingWithdrawn`: Auctions Closing saga's `Resolved`-without-outcome-event branch (lived M3 at finer grain) and Relay BC's "listing withdrawn" notification push (per the contract's documentation; a no-op here since the camera has no bidders or watchers) (Moment 5).
+
+### `UX-or-UI-detail` (app design)
+
+- Seller-dashboard UI rendering across all five Moments: registration form layout, post-registration confirmation, listing-draft form input layout, validation feedback, format-and-duration interaction, the camera's published-list and withdrawn-section rendering. M6 frontend MVP territory.
+
+### `document-as-intentional` (settled design choices)
+
+- Listing-format selection rationale: Flash vs Timed, why duration is null for Flash, why duration is required for Timed (Moment 2; W004 covers the format-and-duration interaction).
+
+### `alternate-path-failure` (failure modes warranting their own narratives)
+
+- The 400 / 409 rejection paths in `RegisterAsSeller`'s `Before()` guard: no-active-session, already-registered-seller (Moment 1).
+- Rejection paths from `CreateDraftListing`: 403 from `ValidateAsync` on unregistered seller (with Wolverine retry-after-projection-catches-up per M2-S5 retro race-condition note); validation failures from `ListingValidator` (whitespace title, BIN below reserve, format-incompatible duration) per W004 §5 (Moment 2).
+- The `ListingValidator` rejection branch on submission: `ListingSubmitted + ListingRejected` events with no integration event, leaving the aggregate in `Rejected` state pending another `SubmitListing` (Moment 3).
+- The state guard's invalid-transition path on submit: submitting from `Submitted`, `Published`, or `Withdrawn` states (Moment 3).
+
+## Retrospective
+
+### Narrative intent vs. outcome
+
+Stated goal at session start: author the Selling BC's backfill narrative covering GreyOwl12's seller-side journey across registration, two listings' publication pipelines, and the camera's withdrawal. Audit W004, lived `src/CritterBids.Selling/` code, and the M4-S2 implementation prompt. Route disagreements through the four-lane findings discipline. Add per-row narrative back-references on W001 and a new Narrative Cross-References section on W004. Establish GreyOwl12's anchored cross-narrative values (the Vintage Folding Camera's listing-time fields).
+
+**Outcome.** Five Moments covering W001 slices 0.3, 1.1, 1.2 plus the M4-S2 forward-spec slice. Mixed posture: lived M2 listing pipeline (Moments 1-4) plus forward-spec M4-S2 WithdrawListing (Moment 5). Three findings filed in `004-findings.md`: F001 hardcoded FeePercentage 0.10m placeholder (`document-as-intentional`), F002 missing SubmitListing HTTP endpoint (`code-update`, stub follow-up at `docs/prompts/implementations/n004-fu-submit-listing-endpoint.md`), F003 missing `Approved` intermediate state in the `ListingStatus` enum (`document-as-intentional`). The M4-S2 path-citation correction landed in the Moment 5 commit (small in-PR fix). The Vintage Folding Camera's listing-time fields anchored as canonical from this narrative onward. W004 carries zero Polecat / SQL Server staleness against ADR 011 (in contrast to W003 which surfaced narrative 002's F003); no F004 needed. Cast and Setting locked first; Moment-by-Moment sign-off cadence held throughout. Goal met.
+
+### What worked
+
+- **Mixed lived/forward-spec posture worked at finer grain than narrative 001's pattern.** Narrative 001 had three forward-spec Moments scattered through an eight-Moment lived journey; narrative 002 was fully forward-spec; narrative 004 has one forward-spec Moment closing a four-lived-Moment journey. The same Moment-by-Moment discipline carried each posture cleanly without the working pattern needing adaptation.
+- **Multi-phase compression in Moment 4 (CreateDraftListing + SubmitListing for the camera).** The README's multi-slice convention extended naturally to multi-command compression for journey-grain reasons (the camera's pipeline is structurally identical to Moments 2-3; expansion would add no journey value).
+- **Pre-Moment surrounding-directory reads caught F002 and the M4-S2 path correction.** Narrative 003 retro established this pattern; narrative 004 confirmed its value. Reading just `SubmitListing.cs` would have surfaced the inline comment about no HTTP endpoint, but searching the directory for any `[WolverinePost]`/`[WolverineGet]` registrations confirmed the gap structurally.
+- **Three findings surfaced naturally during code reads.** F001-F003 emerged during Moment 3's read of `SubmitListingHandler`, `SellerListing.cs`, and `ListingStatus.cs`; not forced or shoehorned. Routing-by-finding-rather-than-routing-by-area held: F001 and F003 both surfaced from the same handler-and-aggregate read but routed differently (`document-as-intentional` for the placeholder comment vs the deliberate state-machine compression).
+- **Sibling-listing pattern for WithdrawListing.** The Vintage Folding Camera as a sibling listing to the keyboard let the narrative dramatise withdrawal without contradicting narrative 001's keyboard ground. Reusable: any future narrative needing a counterfactual outcome on a journey whose primary listing already has a fixed terminal outcome can introduce a sibling.
+- **Em-dash hygiene drop continued battle-tested.** No em-dash audit; em-dashes used naturally throughout commit messages and prose; no slips.
+
+### What was hard
+
+- **The keyboard cannot dramatise WithdrawListing without contradicting narrative 001.** This was anticipated at session start (the prompt's open-question section flagged the second-listing requirement) but worth recording because narrative 005 (Auctions) may face analogous constraints — narrative 001 establishes the keyboard's terminal outcome (sold to SwiftFerret42 at $55), so any narrative 005 Moment that needs a counterfactual auction outcome (passed listing, BIN purchase, payment failure) will need its own sibling listing.
+- **F001-F003 routing was non-obvious in places.** F003 (missing `Approved` state) could have routed `code-update` (the state machine is incomplete) but the inline `ListingStatus.cs` comment explicitly notes the design choice; that made `document-as-intentional` correct. Lesson: read code comments alongside the code; the comment may signal a design choice that flips the routing.
+- **The M4-S2 path was wrong in the prompt I authored.** Caught at Moment 5 by the lived-code-vs-spec read step. Path-citations in prompts need a quick `find` or `Glob` check at prompt-authoring time. Going forward: cite paths only after confirming they exist.
+
+### Decisions about how to author (meta-decisions worth carrying forward)
+
+- **Mixed-posture narratives are a normal pattern, not an exception.** Future narratives can freely mix lived and forward-spec Moments depending on what the journey covers. The discipline (lived audit floor for lived Moments; spec audit floor for forward-spec Moments; routing per Moment) is the same.
+- **Sibling-listing pattern for counterfactual outcomes.** When a narrative's protagonist has a primary-listing terminal outcome locked by an earlier narrative, introduce a sibling listing for any Moment that needs a different outcome. This avoids contradicting earlier narratives and gives the new outcome distinct anchored ground.
+- **Path-citations need a `find` check at prompt-authoring time.** A trivial Bash check before committing the prompt would have caught the M4-S2 path drift. Add to the prompt-authoring checklist for narratives 005+ and any future foundation-refresh prompts.
+- **Read code comments alongside the code for finding routing.** A comment that explicitly notes a design choice (like `ListingStatus.cs:5-7`'s comment on the missing `Approved` state) flips routing from `code-update` to `document-as-intentional`. Without the comment, the same code might route differently.
+- **Anchored cross-narrative values pattern compounds.** Narrative 001 (keyboard fields), 003 (BoldPenguin7 specifics), 004 (camera fields) each anchor specifics that subsequent narratives can inherit. Narrative 005 may anchor auction-grain specifics (bid sequences, extended-bidding window mechanics at finer grain than narrative 001 reached).
+
+### Patterns refined for narrative 005
+
+Inherited from narratives 001-003 unchanged: bounded frontmatter v1, prose-paragraph Moment body, multi-slice / multi-saga-phase / multi-command Moments grow in paragraphs, single-named-protagonist plus omniscient narrator, seven disposition tags for deferral, per-Moment plus cumulative deferral discipline, code-style backticks for events and projection names, em-dash hygiene drop.
+
+Refined this session for narrative 005's use:
+
+- **Mixed-posture is the default for narratives spanning shipped + planned work.** Narrative 005 (Auctions, M3 + M4-S1 lived; M4-S5/S6 Flash session forward-spec) will likely need this pattern.
+- **Sibling-listing pattern.** Available if narrative 005 needs counterfactual auction outcomes.
+- **Path-citation pre-check.** Prompt-authoring for narrative 005 should confirm any M3/M4 retro paths and W002 section anchors before committing the prompt.
+- **Code-comment-as-routing-evidence.** Apply when auditing M3+M4 Auctions code; the codebase has rich inline comments that may flip routing.
+
+### Quality signal from the session
+
+User feedback clean throughout. No Moment titles needed revision. Three findings' routings held under user adjudication (F001-F003 all sat at proposed routings; the F003 `code-update`-vs-`document-as-intentional` distinction was author-leaned and user-confirmed via the in-line comment in `ListingStatus.cs`). Path-correction was caught and bundled cleanly into the Moment 5 commit. Em-dash hygiene drop continued without friction.
+
+The seller-perspective POV held throughout — no slips into bidder-side framing. The narrator's responsibility (rendering GreyOwl12's view faithfully) was load-bearing for Moments 1, 2, 3, and 5; Moment 4's compression deliberately repeated the seller-perspective shape from Moments 2-3.
+
+### Follow-ups generated
+
+- **F001** (hardcoded FeePercentage 0.10m placeholder in `SubmitListingHandler`) **routed `document-as-intentional`** with the comment "M5 placeholder — no fee engine exists yet" as the design-intent evidence. No in-PR or follow-up code change. Will be revisited when M5 ships and the fee-engine work moves the constant into a configurable boundary.
+- **F002** (missing `SubmitListing` HTTP endpoint) **stub follow-up prompt** at `docs/prompts/implementations/n004-fu-submit-listing-endpoint.md`. Slice scope: add a Wolverine HTTP endpoint that invokes the existing `SubmitListingHandler` so the seller dashboard can trigger submit via HTTP rather than only via aggregate-handler invocation. Resolution runs in subsequent product work.
+- **F003** (missing `Approved` intermediate state in `ListingStatus` enum) **routed `document-as-intentional`** with the inline comment in `ListingStatus.cs:5-7` as the design-intent evidence. The design compresses what could be a 6-state machine (Draft, Submitted, Approved, Published, Rejected, Withdrawn) into 5 states by treating auto-approval-and-publication as a single observable transition. No in-PR or follow-up code change. W004 may benefit from explicitly naming the compression in its Phase 1 aggregate-state-machine sketch; that is a future workshop-cleanup edit, not a Phase 5 deliverable.
+- **W004 storage-layer audit** confirmed clean against ADR 011. Narrative 002 surfaced F003 there for W003's Polecat / SQL Server staleness; W004 carries no analogous staleness. No F004 needed.
+- **Methodology log Entry 001 considered and consciously skipped** at session close. Three of the four lived-BC narratives have now produced findings (003, 004, plus narrative 002's forward-spec workshop-update findings). Narrative 005 (Auctions) is the final lived-BC chance before Phase 5 closes. The cross-cutting observations are accumulating but remain narrative-grain rather than methodology-grain at this session's close.
+
+### Narrative #5 candidate
+
+Per Phase 5 prompt §3.5, narrative 005 is the Auctions BC backfill (`005-...`). Largest lived surface in the project (M3 S1-S6 plus M4-S1). Default protagonist is GreyOwl12 (seller-perspective on a winning Flash auction with extended bidding) or operator-perspective on the same. Confirm at narrative 005 session start. Likely Moments: session creation and listing attachment (operator territory), bid-by-bid sequence (auctioneer-or-operator window), auction closing saga at finer grain than narrative 001 Moment 7 reached, terminal-outcome paths.
+
+### Narrative status
+
+**Complete (v0.1, 2026-04-29).** Five Moments, cumulative deferred section, retrospective. Format conventions inherited from narratives 001-003. Mixed-posture pattern (lived + forward-spec) and sibling-listing pattern established. Status flipped to `accepted` in the session-close commit.
+
+---
+
+## Document History
+
+- **v0.1** (2026-04-29): Initial authoring as foundation-refresh Phase 5 Item 1c deliverable. Five Moments covering W001 slices 0.3, 1.1, 1.2 plus the M4-S2 forward-spec slice. First seller-perspective narrative for CritterBids; first to use the `single-seller` perspective slot. Three findings filed: F001 hardcoded FeePercentage placeholder (`document-as-intentional`), F002 missing SubmitListing HTTP endpoint (`code-update`, stub follow-up), F003 missing Approved intermediate state (`document-as-intentional`). M4-S2 path-citation correction landed in the Moment 5 commit. Vintage Folding Camera's listing-time fields anchored as canonical: title "Vintage Folding Camera", Format Timed, StartingBid $40, ReservePrice null, BuyItNowPrice $80, ExtendedBiddingEnabled false, Duration 7 days, FeePercentage 0.10. W004 confirmed clean against ADR 011 (no Polecat / SQL Server staleness; in contrast to W003's narrative-002-surfaced F003). Mixed-posture pattern (lived Moments 1-4, forward-spec Moment 5) and sibling-listing pattern (the camera) established for narrative 005's use.
