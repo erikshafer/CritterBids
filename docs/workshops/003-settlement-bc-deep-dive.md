@@ -40,6 +40,14 @@ From the vision docs and earlier workshops, Settlement has:
 
 ---
 
+## Narrative Cross-References
+
+The following narratives implement slices that this workshop deep-dives. Each narrative cites its slices via `Implements:` lines on its Moments; this section is the inverse index per the narratives README v0.1 bidirectional-referencing convention.
+
+- **[Narrative 002 - Winner Clears Settlement (Happy Path)](../narratives/002-winner-clears-settlement.md)** implements slices 6.1 (Settlement saga happy path from `ListingSold`) and 6.3 (seller payout notification via Relay). Single-bidder perspective; happy-path; companion to narrative 001 Moment 8 at finer grain. Five Moments dramatising the Settlement saga's per-phase progression (Initiated, ReserveChecked, WinnerCharged, FeeCalculated, PayoutIssued, Completed). Forward-spec across all five Moments because the Settlement BC is unshipped at narrative authoring time (M5 ship target). The narrative renders the saga as W003 designs it; lived-code audit defers until Settlement ships. Findings surfaced by narrative 002 against W003: F002 (`Price` / `HammerPrice` rename across initiation, `document-as-intentional`, deferred to W003 follow-up); F003 (Polecat / SQL Server storage references against ADR 011's All-Marten Pivot, `workshop-update`, minimum-scope correction landed in narrative 002's PR); F004 (`SettlementInitiated` payload mismatch between scenarios §1.1 and §7.1, `workshop-update`, deferred); F005 (missing named bidder-credit projection, `workshop-update`, deferred).
+
+---
+
 ## Ubiquitous Language
 
 The Settlement BC owns the post-resolution financial workflow: from `ListingSold` or `BuyItNowPurchased` through `SettlementCompleted`. The in-flight bidding lifecycle is owned by Auctions ([W002 §3](./002-auctions-bc-deep-dive.md#ubiquitous-language)); the pre-publish listing lifecycle is owned by Selling ([W004 §3](./004-selling-bc-deep-dive.md#ubiquitous-language)).
