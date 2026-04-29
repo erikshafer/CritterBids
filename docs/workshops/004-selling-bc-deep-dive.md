@@ -12,6 +12,14 @@
 
 ---
 
+## Narrative Cross-References
+
+The following narratives implement slices that this workshop deep-dives. Each narrative cites its slices via `Implements:` lines on its Moments; this section is the inverse index per the narratives README v0.1 bidirectional-referencing convention.
+
+- **[Narrative 004 - Seller Publishes and Withdraws Listing (Happy Path)](../narratives/004-seller-publishes-and-withdraws-listing.md)** implements W001 slices 0.3 (seller registration), 1.1 (draft creation), 1.2 (submit-and-publish), and the M4-S2 forward-spec WithdrawListing slice. Single-seller perspective (GreyOwl12 brought onstage from narrative 001's offstage cast); happy-path; first seller-perspective narrative for CritterBids. Five Moments dramatising seller registration, the keyboard listing's full publication pipeline (lived M2), the camera's compressed publication pipeline (lived M2 with reserve = null branch), and the camera's withdrawal (forward-spec per M4-S2 prompt). Findings surfaced by narrative 004 against W004 / lived Selling code: F001 hardcoded `FeePercentage: 0.10m` placeholder in `SubmitListingHandler` (`document-as-intentional`, M5 fee-engine deferred); F002 missing `SubmitListing` HTTP endpoint (`code-update`, stub follow-up at `docs/prompts/implementations/n004-fu-submit-listing-endpoint.md`); F003 missing `Approved` intermediate state in `ListingStatus` enum (`document-as-intentional`, the auto-approve-and-publish compression is intentional per inline comments). Anchors the Vintage Folding Camera's listing-time fields as canonical for cross-narrative reference.
+
+---
+
 ## Ubiquitous Language
 
 The Selling BC owns the pre-publish listing lifecycle: from `DraftListingCreated` through `ListingPublished`, plus post-publish revision (`ListingRevised`) and end-of-life (`ListingEndedEarly`, `ListingWithdrawn`, `ListingRelisted`). The in-flight bidding lifecycle is owned by Auctions ([W002 §3](./002-auctions-bc-deep-dive.md#ubiquitous-language)); post-resolution settlement is owned by Settlement ([W003 §3](./003-settlement-bc-deep-dive.md#ubiquitous-language)).
