@@ -188,6 +188,7 @@ Every narrative ships its retrospective in the same file, appended after the `##
 |---|---|---|---|---|
 | [001](./001-bidder-wins-flash-auction.md) | accepted | bidder | happy-path | 0.2, 1.3, 1.4, 2.3, 3.1, 3.3, 4.1, 4.3, 5.1, 6.1 |
 | [002](./002-winner-clears-settlement.md) | accepted | bidder | happy-path | 6.1, 6.3 |
+| [003](./003-bidder-starts-anonymous-session.md) | accepted | bidder | happy-path | 0.2 |
 
 ## Document history
 

@@ -9,7 +9,12 @@ public sealed record StartParticipantSession;
 public static class StartParticipantSessionHandler
 {
     // Word lists for display name generation.
-    // Names are derived from UUID v7 random bytes — uniqueness is guaranteed by stream ID uniqueness.
+    // Names are derived from UUID v7 random bytes. Uniqueness is probabilistic, not guaranteed:
+    // stream-ID uniqueness (UUID v7's collision space) does not propagate through the modulo
+    // derivations into the (adjective × animal × number) tuple space (~7.25M tuples).
+    // Collision probability is below 0.001% at the demo's bidder count. See narrative 001
+    // Finding 002 (docs/narratives/001-findings.md) for the workshop-side correction and
+    // narrative 003 Finding 001 (docs/narratives/003-findings.md) for this lived-code correction.
     // See docs/decisions/007-uuid-strategy.md for rationale on UUID v7 for Participants.
     private static readonly string[] Adjectives =
     [
@@ -45,7 +50,8 @@ public static class StartParticipantSessionHandler
         // Bytes 8–11 are in the random portion of UUID v7 (ToByteArray() Data4 section — big-endian).
         // UUID v7 uses time-ordered high bytes and independently randomized low bytes.
         // Two UUIDs created in the same millisecond share only the timestamp prefix (bytes 0–7);
-        // bytes 8–15 are independently random, ensuring display name uniqueness.
+        // bytes 8–15 are independently random, giving display-name collisions a probabilistic
+        // floor under 0.001% at conference scale (not absolute uniqueness).
         var adjIdx = bytes[8] % Adjectives.Length;
         var aniIdx = bytes[9] % Animals.Length;
         var num = ((bytes[10] << 8) | bytes[11]) % 9999 + 1;
