@@ -1,6 +1,6 @@
 ---
 slug: 005-seller-watches-flash-auction-close
-status: draft
+status: accepted
 journey: seller
 perspective: single-seller
 scope: happy-path
