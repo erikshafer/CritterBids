@@ -152,3 +152,88 @@ The five narratives covering this auction stack: narrative 001 dramatised the bi
 - The `ListingPassed` terminal branches (`ReserveNotMet` if reserve had not been met with bids; `NoBids` if no bids had landed). Not exercised in narrative 005's happy path. *(`alternate-path-failure`.)*
 - The `NotFound(CloseAuction)` static safety net's invocation path (a `CloseAuction` arrives after the saga document has been deleted by `MarkCompleted`). Not exercised here either; the saga is intact when the close fires. *(`implementation-detail`; M3-S5b OQ2 Path a defence.)*
 - The Listings BC's `CatalogListingView` projection-handler logic in detail. *(`separate-narrative`; covered in narrative 001 Moment 7 from the bidder's window at coarser grain.)*
+
+## Deferred from this narrative
+
+The following were deliberately not narrated in this Auctions-perspective happy-path narrative. Each is named with its disposition. Cross-Moment duplications are consolidated.
+
+### `defer` (revisit when trigger lands)
+
+- Lived-code audit of the M4-S5 / M4-S6 session-start cascade (Moment 1; trigger: M4-S5 ships the Auctions-side `SessionStartedHandler` fan-out and M4-S6 ships the Listings-side `SessionMembershipHandler`).
+
+### `separate-narrative` (other journey perspectives)
+
+- The Flash session aggregate's full lifecycle: creation by operator, listing attachment, session start, session end (Moment 1; future operator-perspective narrative; M4-S5 territory).
+- Bidder re-entry in the 15-second extension; trading-the-trigger-window beats where successive bids re-trigger extensions and prolong the auction (Moments 2 and 3; future trading-the-trigger-window narrative).
+- The Listings BC's `CatalogListingView` projection-handler logic in detail (Moment 4; covered in narrative 001 Moment 7 from the bidder's window at coarser grain).
+
+### `implementation-detail` (skill file or ADR territory)
+
+- The session-start cascade's parallel fan-out semantics (Moment 1; M4-S5 design choices).
+- The `BidRejectionAudit` stream's lifecycle: separate stream per listing, append-only, never deleted (Moment 2; W002's audit-stream design choice).
+- The `ScheduledMessageQuery` ±100ms window edge-case behavior (Moment 3; W002 + M3-S5b retro design choice).
+- The `NotFound(CloseAuction)` static safety net (Moments 3 and 4; M3-S5b OQ2 Path a defence; not exercised in the happy path).
+
+### `alternate-path-failure` (failure modes warranting their own narratives)
+
+- The DCB rejection paths: `ListingNotOpen`, `ListingClosed`, `SellerCannotBid`, `ExceedsCreditCeiling`, `BelowMinimumBid` (Moment 2; each rejection appends `BidRejected` to a dedicated `BidRejectionAudit` stream rather than the listing's primary stream).
+- The `ListingPassed` terminal branches: `ReserveNotMet` (bids exist but reserve unmet), `NoBids` (no bids landed) (Moment 4).
+
+## Retrospective
+
+### Narrative intent vs. outcome
+
+Stated goal at session start: author the Auctions BC's backfill narrative covering GreyOwl12's seller-perspective experience as the keyboard goes to auction in the demo Flash session. Audit W002, lived `src/CritterBids.Auctions/` code, and narrative 001 Moments 4-7 for cross-narrative consistency. Route disagreements through the four-lane findings discipline. Add per-row narrative back-references on W001 (slices 2.3, 3.1, 3.3, 5.1, 5.2) and a new Narrative Cross-References section on W002.
+
+**Outcome.** Four Moments covering W001 slices 2.3 (forward-spec; Moment 1), 3.1 (place bid; Moment 2 multi-bid cascade), 5.2 (reserve met; Moment 2 sub-beat), 5.1 (extended bidding triggered; Moment 3), 3.3 (scheduled close; Moment 4). Mixed posture: forward-spec Moment 1 (M4-S5/S6 unshipped, no implementation prompts exist; spec source is W002 + narrative 001 Setting paragraph 2), lived Moments 2-4 against shipped M3 code. **Zero new findings surfaced** — the lived M3 code matches W002 + retros; narrative 001's Finding 011 (the `TryComputeExtension` bug) was verified as fixed in place via Phase 2.5 PR #14; Finding 012 (saga loads `SellerId` via `AggregateStreamAsync`) was already routed `document-as-intentional` in narrative 001 and the lived inline comment preserves the design rationale; cross-narrative consistency with narrative 001 Moments 4-7 holds (same bidders, same dollar amounts, same sequence). W002 confirmed clean against ADR 011 (zero Polecat / SQL Server references; same as W004; in contrast to W003). Slice 5.2 (`ReserveMet`) lifted from "P1 / forward-spec per narrative 001 Moment 7" to "shipped lived" via the `PlaceBidHandler.cs:126` lived emission. The five-narrative stacking pattern on the keyboard (narratives 001 bidder-spine, 002 settlement, 003 BoldPenguin7's session-start, 004 GreyOwl12's listing-publication, 005 this auction-close) made explicit at Moment 4's close. Cast and Setting locked first; Moment-by-Moment sign-off cadence held throughout. Goal met.
+
+### What worked
+
+- **Pre-Moment surrounding-directory reads + code-comment-as-routing-evidence (from narrative 004) confirmed F012's intentional design** quickly. Reading `AuctionClosingSaga.cs:103-105`'s inline comment about why `SellerId` isn't tracked on saga state preserved the design rationale and avoided re-surfacing F012 as a new finding.
+- **Path-citation pre-check (from narrative 004) caught zero issues at prompt-author time.** The discipline's small win: confirmed M4-S5/M4-S6 prompts do not exist; confirmed W002 / `002-scenarios.md` paths; confirmed all M3 retro filenames before citing.
+- **Observer-protagonist Voice held throughout.** GreyOwl12's window is structurally passive (he watches state changes; he doesn't act). The narrator carries saga-grain mechanics; the protagonist carries journey-grain through observation. The two responsibilities split cleanly per-Moment without the narrator over-narrating internals or under-narrating to the point of reading as a thin journal.
+- **Cross-narrative consistency with narrative 001 Moments 4-7 held without drift.** Same bid sequence ($30 → $35 → $55), same bidders, same trigger-window behavior, same gavel-fall outcome. The audit confirmed narrative 001 was already accurate at the bidder grain; narrative 005 added Auctions-saga-grain detail that narrative 001 didn't reach.
+- **Mixed-posture pattern (narrative-004 lesson) carried clean.** One forward-spec Moment in a four-lived-Moment journey worked exactly as the inherited pattern predicted. The narrator's grain shifted from "renders the design from W002" (Moment 1) to "renders the lived behavior" (Moments 2-4) without friction.
+- **Em-dash hygiene drop continued without friction.** No audit step; em-dashes used naturally throughout. Path-citation pre-check confirmed zero path drift.
+
+### What was hard
+
+- **Verifying the post-Phase-2.5 F011 fix required a broader code search than the original method name.** A grep for `TryComputeExtension` returned nothing on `PlaceBidHandler.cs` at first; needed to broaden to `ExtendedBidding` and read the file. The method is still named `TryComputeExtension` per the lived code at line 177; the early grep failure was an artifact of glob-pattern + line-context behavior, not the code's actual shape. Lesson for future post-fix audits: verify with multiple search patterns (method name, surrounding behavior, comment fragments) before concluding a fix has been moved or renamed.
+- **The four Moments span very different abstractions.** Moment 1 is system-cascade (operator action triggering fan-out); Moment 2 is DCB-plus-events (handler validating against consistency state); Moment 3 is saga-state-machine (cancel-and-reschedule); Moment 4 is saga-terminal-decision-tree-plus-cross-BC-handoff. The narrator's grain shifted across Moments more than in earlier narratives. The Moment titles ("The keyboard goes live", "The reserve crosses", "The close timer extends", "The gavel falls") did the grain-shift markers' work, but the body's pacing varied accordingly.
+
+### Decisions about how to author (meta-decisions worth carrying forward)
+
+- **Observer-protagonist Voice is a real narrative-authoring option.** Complementary to active-protagonist (narratives 001 / 003 / 004). The narrator's responsibility-split (protagonist's window ↔ saga-internal dramatisation) is the defining technique for any narrative whose protagonist's role is structurally passive (watching, monitoring, awaiting outcome).
+- **Cross-narrative consistency audits are a standalone audit surface.** When a narrative overlaps in domain time / event with prior narratives, the audit confirms the narratives render the same domain events, dollar amounts, and sequences consistently. Drift surfaces as `narrative-update` against the older narrative; non-drift outcomes (like narrative 005's clean check against narrative 001 Moments 4-7) confirm the project's narrative library is internally coherent.
+- **Zero-findings outcomes are valid.** Narrative 005 surfaced no new findings. Earlier narratives (001 with twelve, 002 with five, 003 with two, 004 with three) covered the audit territory; narrative 005's audit verified post-fix state and cross-narrative consistency rather than finding fresh drift. The `005-findings.md` file is consciously skipped per the prompt's acceptance criterion ("OR the narrative-internal retro contains an explicit conscious-skip note with rationale"); this section is that note.
+
+### Closing the lived-BC narrative wave
+
+Narrative 005 closes the lived-BC backfill series. Across narratives 002-005 (the four Phase 5 Item 1 backfills), the project authored:
+
+- **Narrative 002** — Settlement BC, fully forward-spec. Five findings: F001 narrative-update against narrative 001 Moment 8 saga-event payload corrections (resolved in-PR); F002 / F004 / F005 routed to a W003 follow-up PR (deferred); F003 W003 storage-staleness against ADR 011 (resolved in-PR minimum-scope sweep).
+- **Narrative 003** — Participants BC, fully lived. Two findings: F001 lived-comment misclaim correction (resolved in-PR); F002 missing `GET /api/participants/{id}` endpoint (stub follow-up at `n003-fu-get-participant-endpoint.md`).
+- **Narrative 004** — Selling BC, mixed lived M2 + forward-spec M4-S2. Three findings: F001 hardcoded FeePercentage placeholder (`document-as-intentional`); F002 missing `SubmitListing` HTTP endpoint (stub follow-up at `n004-fu-submit-listing-endpoint.md`); F003 missing `Approved` intermediate state (`document-as-intentional`).
+- **Narrative 005** — Auctions BC, mixed forward-spec M4-S5/S6 + lived M3+M4-S1. Zero new findings; F011 / F012 from narrative 001 verified.
+
+The four backfill narratives plus narrative 001 (the cross-BC bidder spine) and narrative 002 (settlement after gavel) constitute CritterBids' five-narrative library. The library covers all four lived BCs (Participants, Selling, Auctions plus the read-side Listings) plus Settlement (forward-spec) plus the cross-BC integration boundaries between them.
+
+### Quality signal from the session
+
+User feedback clean throughout. No Moment titles needed revision. Zero findings surfaced is a quiet outcome rather than a problem (the cumulative coverage from earlier narratives plus the post-Phase-2.5 fix landing was the right stage to expect a clean audit). Em-dash hygiene drop continued. Path-citation pre-check confirmed zero path drift. Observer-protagonist Voice held without slips into active-protagonist framing.
+
+### Follow-ups generated
+
+- **No findings = no per-finding follow-ups beyond what narratives 001-004 already generated.** F011's Phase 2.5 fix is in place. F012's `document-as-intentional` routing is preserved. F002 stubs from narratives 003 and 004 remain queued.
+- **Methodology log Entry 001 written** at session close (separate commit). Captures the audit-floor heterogeneity observation across narratives 002-005: lived + forward-spec mixing within a single narrative is the structurally expected mode rather than an exception. The entry-criteria gate from Phase 4 retro time-box closed positively at the final lived-BC chance.
+- **Phase 5 Item 4 (cutover gate) becomes the next session.** M5 milestone doc + M5-S1 prompt + Phase 5 cross-narrative retrospective. The five-narrative library is now ready to anchor M5-S1's narrative citation per AUTHORING.md rule 3's joint-authority clause.
+
+### Narrative status
+
+**Complete (v0.1, 2026-04-29).** Four Moments, cumulative deferred section, retrospective. Format conventions inherited from narratives 001-004. Mixed-posture pattern, observer-protagonist Voice, and zero-findings outcome established as new precedents for any future narrative authoring. Status flipped to `accepted` in the session-close commit.
+
+---
+
+## Document History
+
+- **v0.1** (2026-04-29): Initial authoring as foundation-refresh Phase 5 Item 1d deliverable. Closes the lived-BC narrative backfill wave. Four Moments covering W001 slices 2.3 (forward-spec; Moment 1), 3.1 / 5.2 (Moment 2 multi-bid with reserve cross), 5.1 (Moment 3 extended bidding trigger), 3.3 (Moment 4 gavel-fall and cross-BC handoff to narrative 002). First observer-protagonist narrative for CritterBids. Mixed posture: forward-spec Moment 1 for M4-S5/S6 session-start cascade (no implementation prompts exist; spec source is W002 + narrative 001 Setting paragraph 2); lived M3 Moments 2-4. Zero new findings; `005-findings.md` consciously skipped per the prompt's acceptance criterion (the narrative-internal retro carries the skip note). F011 (`TryComputeExtension` bug from narrative 001) verified as fixed in place via Phase 2.5 PR #14. F012 (saga loads `SellerId` via `AggregateStreamAsync`) routed `document-as-intentional` in narrative 001 and the lived inline comment preserves the design rationale. W002 confirmed clean against ADR 011. Slice 5.2 (`ReserveMet`) lifted from "P1 / forward-spec per narrative 001" to "shipped lived". Five-narrative stacking pattern on the keyboard made explicit. Methodology log Entry 001 written at session close in a separate commit.
