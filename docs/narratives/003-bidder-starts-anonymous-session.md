@@ -50,3 +50,26 @@ Auction-system policy is at MVP defaults. The `[Authorize]` global convention fr
 - Rejoin-vs-new-session behavior on QR re-scan (the system unconditionally mints a fresh session per scan; whether the same human scanning twice should land in the same session is product-decision territory). *(`defer`.)*
 - Authentication or account binding. *(`post-MVP`; M6 introduces real authentication and the `[AllowAnonymous]` posture lifts at that point.)*
 - Failure modes for the request itself: lost Wi-Fi connectivity, rate limit (none configured at MVP), API-host downtime. *(`alternate-path-failure`.)*
+
+## Moment 2: The system mints BoldPenguin7
+
+**Implements:** slice 0.2.
+
+**Context.** The HTTP POST from Moment 1 has landed at the `StartParticipantSession` handler. BoldPenguin7's phone is showing the loading state; her connection is held open awaiting the response. No state has yet committed; her presence in the system is a single in-flight request and the moment-old loading spinner. The handler is about to run.
+
+**Interaction.** Wolverine invokes `StartParticipantSession.Handle(cmd)`. The handler runs a single synchronous block of derivations, builds an event, and returns a tuple of the HTTP response and a Marten `IStartStream` instruction. Marten's commit follows when the handler returns.
+
+**Response.** The handler generates a UUID v7 via `Guid.CreateVersion7()`. The UUID's high bytes carry the millisecond timestamp prefix; the low bytes are independently randomised. This is the `ParticipantId` — the stream key under which BoldPenguin7's lifecycle will live for the rest of the conference. The timestamp prefix gives Marten insert locality on PostgreSQL; the random low bytes are the source of every other identifier the bidder will carry.
+
+The byte-derived field mints fire next, all from the UUID's low bytes. Byte 8 modulo 25 selects the adjective (one of `Bold`, `Swift`, `Fierce`, `Calm`, `Bright`, `Nimble`, `Keen`, and eighteen others); byte 9 modulo 29 selects the animal (one of `Ferret`, `Penguin`, `Otter`, `Falcon`, and twenty-five others); bytes 10 and 11 combined modulo 9999 plus 1 yield the number suffix (1 to 9999). For BoldPenguin7's stream the bytes happen to land on `Bold`, `Penguin`, and `7`, producing the display name `BoldPenguin7`. Bytes 12 and 13 combined modulo 9999 plus 1 yield the `BidderId` number; in BoldPenguin7's case, `Bidder 4523`. Byte 14 modulo 9 multiplied by 100 plus 200 yields the credit ceiling; for BoldPenguin7, $700 (the sixth of nine discrete values: $200, $300, $400, $500, $600, **$700**, $800, $900, $1000). The credit ceiling is hidden by design — it lives on the event payload but is never returned through the HTTP response.
+
+The handler constructs `ParticipantSessionStarted(ParticipantId, DisplayName: "BoldPenguin7", BidderId: "Bidder 4523", CreditCeiling: $700, OccurredAt: <now>)` and returns `(CreationResponse<Guid>(Location: "/api/participants/{ParticipantId}", participantId), MartenOps.StartStream<Participant>(participantId, evt))`. Marten commits the new stream when the handler returns: a single `ParticipantSessionStarted` event lands as the first entry in BoldPenguin7's stream, keyed on her `ParticipantId`.
+
+The `Participant` aggregate's `Apply` for `ParticipantSessionStarted` runs against the freshly committed event. It sets `Id` to the `ParticipantId` and flips `HasActiveSession` to true. The aggregate's third property, `IsRegisteredSeller`, remains false — BoldPenguin7 is a bidder, not a seller, and the slice 0.3 `RegisterAsSeller` flow is out of scope for this narrative. Her aggregate state shape now reads `(Id: ParticipantId, HasActiveSession: true, IsRegisteredSeller: false)`.
+
+**Why this matters to the bidder.** BoldPenguin7 perceives nothing in this Moment — her phone still shows the loading state; the response has not yet returned. But her relationship with CritterBids has just been established as a durable system fact. The `ParticipantId` will travel with every bid she places for the rest of the conference; the `BidderId` will appear on every `BidPlaced` event whose payload includes her bid; the credit ceiling will silently gate her bid acceptances for the rest of her session. Three of those four facts are now committed to the event stream. None of them will appear in the response payload she is about to receive — the credit ceiling is hidden by design, and the `BidderId` is event-only. The display name `BoldPenguin7` is the one identifier she will see in Moment 3.
+
+### Things deliberately not included
+
+- The aggregate's `Apply` method for `SellerRegistered` (slice 0.3); the aggregate's `IsRegisteredSeller` flip. The aggregate carries the seller-side Apply as part of the BC's two-event design but BoldPenguin7 will never exercise that path in this narrative. *(`separate-narrative`; candidate for narrative 004 (Selling BC) or a future seller-perspective narrative.)*
+- Failure modes during the commit: Marten transaction failure, PostgreSQL connection drop, UUID v7 collision. None will fire in this happy-path Moment. *(`alternate-path-failure`.)*
