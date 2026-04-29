@@ -67,3 +67,27 @@ The seller dashboard refreshes; the seller-registration step shows complete. Gre
 
 - The seller-dashboard UI rendering: the layout of the registration form, the post-registration confirmation visual, navigation to the listing-draft flow. *(`UX-or-UI-detail`; M6 frontend MVP territory.)*
 - The 400 / 409 rejection paths in the `Before()` guard: no-active-session, already-registered-seller. *(`alternate-path-failure`.)*
+
+## Moment 2: GreyOwl12 drafts the keyboard listing
+
+**Implements:** slice 1.1.
+
+**Context.** GreyOwl12 has just registered as a seller in Moment 1. His `Participant` aggregate carries `IsRegisteredSeller: true`; the Selling BC's `RegisteredSeller` document for his `ParticipantId` has been upserted; the seller dashboard now shows the "Create new listing" affordance enabled. He has navigated to the listing-draft form and filled in the keyboard's details: title, format, starting bid, reserve, BIN, duration field (which for Flash format remains null), and the extended-bidding settings.
+
+**Interaction.** The seller dashboard POSTs `CreateDraftListing { SellerId: ParticipantId, Title: "Vintage Mechanical Keyboard", Format: Flash, StartingBid: $25.00, ReservePrice: $50.00, BuyItNowPrice: $100.00, Duration: null, ExtendedBiddingEnabled: true, ExtendedBiddingTriggerWindow: 30 seconds, ExtendedBiddingExtension: 15 seconds }` to `/api/listings/draft`. Wolverine routes the request to `CreateDraftListingHandler`, which is a compound handler with a `ValidateAsync` pre-check.
+
+**Response.** `ValidateAsync` queries `ISellerRegistrationService.IsRegisteredAsync(SellerId)`; the service consults the `RegisteredSellers` projection and returns true (GreyOwl12's Selling-side document was upserted in Moment 1). Validation passes; control passes to `Handle`.
+
+`Handle` generates a fresh UUID v7 — the keyboard's `ListingId`. It constructs `DraftListingCreated { ListingId, SellerId: GreyOwl12, Title: "Vintage Mechanical Keyboard", Format: Flash, StartingBid: $25.00, ReservePrice: $50.00, BuyItNowPrice: $100.00, Duration: null, ExtendedBiddingEnabled: true, ExtendedBiddingTriggerWindow: 30 seconds, ExtendedBiddingExtension: 15 seconds, CreatedAt: <now> }` and opens a new stream via `MartenOps.StartStream<SellerListing>(ListingId, evt)`. The handler returns a tuple of `(CreationResponse<Guid>(Location: "/api/listings/{ListingId}", listingId), startStreamOp)`. Marten commits the stream when the handler returns.
+
+The `SellerListing` aggregate's `Apply(DraftListingCreated)` runs against the freshly committed event. It sets all eleven listing-time fields plus `Status` to `Draft`. The aggregate's state shape now reads `(Id: ListingId, SellerId: GreyOwl12, Title, Format, StartingBid, ReservePrice, BuyItNowPrice, Duration: null, ExtendedBiddingEnabled, ExtendedBiddingTriggerWindow, ExtendedBiddingExtension, Status: Draft, PublishedAt: null)`. The HTTP response is 201 Created with the Location header pointing to the new listing's URI.
+
+The seller dashboard refreshes and shows the keyboard listing in his draft list with status "Draft." It is private to him — no bidder can see it; no Listings BC `CatalogListingView` exists for it yet; no Auctions BC stream has opened. The keyboard exists only in the Selling BC's event store at this point.
+
+**Why this matters to the seller.** GreyOwl12 has committed the keyboard's listing-time fields to durable system state under his `SellerId`. The fields are private until publication and editable until submission (per W004 §1's update-draft scenarios). The reserve price he set ($50) is confidential ground that will travel through the system as the binding threshold for the auction's reserve check; he, the system, and eventually Settlement will know it, but no bidder will see it until it crosses. The Flash format choice means the duration field is null (Flash listings inherit duration from session attachment, not from listing-time configuration). All eleven fields are now state on the keyboard's stream, ready for the next state transition when he submits.
+
+### Things deliberately not included
+
+- The seller-dashboard form-rendering UI: input layout, validation feedback, format-and-duration interaction. *(`UX-or-UI-detail`; M6 frontend MVP territory.)*
+- Rejection paths: 403 from `ValidateAsync` on unregistered seller (with Wolverine retry-after-projection-catches-up per M2-S5 retro race-condition note); validation failures from `ListingValidator` (whitespace title, BIN below reserve, format-incompatible duration) per W004 §5. *(`alternate-path-failure`.)*
+- Listing-format selection rationale: Flash vs Timed, why duration is null for Flash, why duration is required for Timed. *(`document-as-intentional`; W004 covers the format-and-duration interaction; the narrative renders the keyboard's specific fields without restating the format-choice rationale.)*
