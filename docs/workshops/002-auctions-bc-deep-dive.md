@@ -12,6 +12,14 @@
 
 ---
 
+## Narrative Cross-References
+
+The following narratives implement slices that this workshop deep-dives. Each narrative cites its slices via `Implements:` lines on its Moments; this section is the inverse index per the narratives README v0.1 bidirectional-referencing convention.
+
+- **[Narrative 005 - Seller Watches Flash Auction Close (Happy Path)](../narratives/005-seller-watches-flash-auction-close.md)** implements W001 slices 2.3 (forward-spec session-start cascade; Moment 1), 3.1 (place bid; Moment 2 multi-bid), 5.2 (reserve met; Moment 2 sub-beat), 5.1 (extended bidding triggered; Moment 3), 3.3 (scheduled close; Moment 4). Single-seller observer-protagonist perspective (GreyOwl12); happy-path; companion to narrative 001 Moments 4-7 at the Auctions-saga grain. Mixed posture: Moment 1 forward-spec for M4-S5/S6 session-start cascade; Moments 2-4 lived M3 + M4-S1. Zero new findings surfaced; the lived M3 code matches W002 + M3-S5 / M3-S5b retros; narrative 001 Finding 011 (`TryComputeExtension` bug) verified as fixed in place via Phase 2.5 PR #14; narrative 001 Finding 012 (saga loads `SellerId` via `AggregateStreamAsync`) routed `document-as-intentional` and the lived inline comment preserves the design rationale. Cross-narrative consistency with narrative 001 Moments 4-7 (the same auction from SwiftFerret42's bidder-perspective) holds.
+
+---
+
 ## Ubiquitous Language
 
 The Auctions BC owns the in-flight bidding lifecycle: from `BiddingOpened` through resolution (`ListingSold` / `ListingPassed` / `BuyItNowPurchased`). Pre-publish lifecycle is owned by Selling ([W004 §3](./004-selling-bc-deep-dive.md#ubiquitous-language)); post-resolution settlement is owned by Settlement ([W003 §3](./003-settlement-bc-deep-dive.md#ubiquitous-language)).
