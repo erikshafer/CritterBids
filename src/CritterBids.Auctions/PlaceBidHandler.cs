@@ -47,9 +47,9 @@ public static class PlaceBidHandler
             return;
         }
 
-        foreach (var evt in AcceptanceEvents(command, state, now))
+        foreach (var @event in AcceptanceEvents(command, state, now))
         {
-            var wrapped = session.Events.BuildEvent(evt);
+            var wrapped = session.Events.BuildEvent(@event);
             wrapped.AddTag(new ListingStreamId(command.ListingId));
             session.Events.Append(command.ListingId, wrapped);
         }
@@ -95,6 +95,7 @@ public static class PlaceBidHandler
 
         var auditKey = BidRejectionAudit.StreamKey(command.ListingId);
         var existing = await session.Events.FetchStreamStateAsync(auditKey);
+
         if (existing is null)
             session.Events.StartStream<BidRejectionAudit>(auditKey, rejected);
         else

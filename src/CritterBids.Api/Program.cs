@@ -15,11 +15,11 @@ var builder = WebApplication.CreateBuilder(args);
 
 builder.UseWolverine(opts =>
 {
-    // ── Modular monolith isolation settings ───────────────────────────────────
+    // ── Modular monolith isolation settings ───────────────────────────
     opts.MultipleHandlerBehavior = MultipleHandlerBehavior.Separated;
     opts.Durability.MessageIdentity = MessageIdentity.IdAndDestination;
 
-    // Wolverine's envelope tables live in the "wolverine" schema.
+    // Wolverine's envelope tables live in the "wolverine" schema
     opts.Durability.MessageStorageSchemaName = "wolverine";
 
     // BC handler/endpoint discovery
