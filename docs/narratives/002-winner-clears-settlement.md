@@ -1,6 +1,6 @@
 ---
 slug: 002-winner-clears-settlement
-status: draft
+status: accepted
 journey: bidder
 perspective: single-bidder
 scope: happy-path
