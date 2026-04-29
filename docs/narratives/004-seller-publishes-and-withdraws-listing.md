@@ -44,3 +44,26 @@ Auction-system policy is at MVP defaults. The `[Authorize]` global convention is
 The keyboard's listing-time fields, inherited verbatim from narrative 001 Setting paragraph 2, are: title "Vintage Mechanical Keyboard", format Flash, starting bid $25.00, reserve $50.00, BIN $100.00, extended bidding enabled with 30-second trigger window and 15-second extension, FeePercentage 10.0, duration determined by session attachment. The camera's listing-time fields, established here as canonical for this narrative onward, are: title "Vintage Folding Camera", format Timed, starting bid $40.00, no reserve (null), BIN $80.00, extended bidding disabled, FeePercentage 10.0, duration 7 days from publication. The reserve = null path on the camera exercises a different `SellerListing` aggregate branch than the keyboard's reserve-set path; the Timed format on the camera (vs the keyboard's Flash) means the camera would, if not withdrawn, have its bidding open immediately on `ListingPublished` consumption per M3 lived behavior rather than wait for a Flash session start. The camera's withdrawal in Moment 5 closes its journey before either the auction-side or the bidder-side ever perceive it as bid-able.
 
 The cleanest possible run on both listings, modulo the deliberate camera-withdrawal: no draft-validation rejections, no submission rejections, no post-publication revisions, no `ListingWithdrawn` failures. GreyOwl12's two listings move through the Selling state machine cleanly until the camera's deliberate exit at Moment 5.
+
+## Moment 1: GreyOwl12 registers as a seller
+
+**Implements:** slice 0.3.
+
+**Context.** GreyOwl12's CritterBids session was minted minutes earlier when he first navigated to the seller dashboard — the same `StartParticipantSession` flow that narrative 003 dramatised for BoldPenguin7, just initiated through a different UI surface. He has a `ParticipantId`, a system-derived display name (unanchored here; it does not appear in the seller-side beats narrative 004 dramatises), a `BidderId` he will never use, and a hidden credit ceiling irrelevant to his seller activity. His `Participant` aggregate state reads `(Id: ParticipantId, HasActiveSession: true, IsRegisteredSeller: false)`. He has clicked through to the seller-onboarding flow on the dashboard; the next interaction commits him as a seller.
+
+**Interaction.** The seller dashboard POSTs `RegisterAsSeller { ParticipantId }` to `/api/participants/{id}/register-seller`. Wolverine routes the request to `RegisterAsSellerHandler.Handle`, with the `Participant` aggregate loaded for the `[WriteAggregate]` workflow.
+
+**Response.** The handler's `Before()` guard runs first. The `HasActiveSession` check passes (he has one); the `IsRegisteredSeller` check passes (he is not yet registered, so the 409 idempotency guard does not trigger). Control passes to the body of `Handle`. The handler emits `SellerRegistered { ParticipantId: GreyOwl12, CompletedAt: <now> }` as a domain event appended to GreyOwl12's `Participant` stream, alongside an integration event `SellerRegistrationCompleted { ParticipantId, CompletedAt }` published through `OutgoingMessages` to the Wolverine transactional outbox.
+
+The `Participant` aggregate's `Apply(SellerRegistered)` runs against the freshly committed event. It flips `IsRegisteredSeller` to true. GreyOwl12's aggregate state shape now reads `(Id: ParticipantId, HasActiveSession: true, IsRegisteredSeller: true)`. The HTTP response is 200 OK with no body — appending to an existing resource (his Participant stream), not creating a new one.
+
+The Selling BC's `SellerRegistrationCompletedHandler` consumes the integration event from the outbox queue. It performs `session.Store(new RegisteredSeller { Id = ParticipantId })`, upserting a document keyed on the same `ParticipantId` into the Selling BC's document store. Idempotency is guaranteed by the upsert semantics: a duplicate consumption of `SellerRegistrationCompleted` would store the same document state.
+
+The seller dashboard refreshes; the seller-registration step shows complete. GreyOwl12 can now draft listings.
+
+**Why this matters to the seller.** GreyOwl12 has crossed the threshold from "anonymous participant who could only bid" to "registered seller who can both bid and list." His identity has been augmented: the same `ParticipantId` that anchored him in the system as an anonymous participant is now also the key to a `RegisteredSeller` document in the Selling BC's schema, the unique-by-construction reference under which any listing he creates will be persisted. The dual presence — `Participant` aggregate in Participants BC, `RegisteredSeller` document in Selling BC — is the cross-BC coordination that makes seller-side product features possible without violating BC isolation. From his window, this is a one-click action that confirms his right to list; from the system's window, it is a small saga across two BCs over the Wolverine outbox that establishes durable seller status.
+
+### Things deliberately not included
+
+- The seller-dashboard UI rendering: the layout of the registration form, the post-registration confirmation visual, navigation to the listing-draft flow. *(`UX-or-UI-detail`; M6 frontend MVP territory.)*
+- The 400 / 409 rejection paths in the `Before()` guard: no-active-session, already-registered-seller. *(`alternate-path-failure`.)*
