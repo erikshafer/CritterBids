@@ -124,3 +124,31 @@ GreyOwl12's seller dashboard reflects the new close time. The countdown that rea
 - The `ScheduledMessageQuery` ±100ms window's edge-case behavior: what happens if two listings' close timers fire within 100ms of each other (the narrow window prevents cross-listing cancellation, but the design choice is worth understanding for any future multi-extension session). *(`implementation-detail`; W002 + M3-S5b retro design choice.)*
 - The named-method `NotFound(CloseAuction)` static safety net: handles the race where a `CloseAuction` arrives but the saga document has already been deleted by `MarkCompleted` from a terminal handler (BIN, withdraw). Not exercised in narrative 005's happy path. *(`implementation-detail`; M3-S5b OQ2 Path a defence.)*
 - Re-entry in the 15-second extension. The narrative 001 sequence lands no further bids in the extension; if a counter-bid had landed, the saga would receive another `ExtendedBiddingTriggered` and reschedule again. *(`separate-narrative`; future trading-the-trigger-window narrative.)*
+
+## Moment 4: The gavel falls
+
+**Implements:** slice 3.3 (scheduled close → BiddingClosed → ListingSold).
+
+**Context.** The keyboard's saga is in `Status: Extended`; the new `CloseAuction` message is in the scheduled-message store waiting to fire at `<original close + 15 seconds>`. No further bids land in the extension. SwiftFerret42's $55 stands as the keyboard's high bid; she is the high bidder; bid count is 3; reserve has been met. GreyOwl12 watches the close timer count down.
+
+**Interaction.** The scheduled `CloseAuction(ListingId: keyboard, ScheduledFor: <original + 15s>)` fires. Wolverine routes it to `AuctionClosingSaga.Handle(CloseAuction)`. The saga's document is loaded by `ListingId`.
+
+**Response.** The idempotency guard checks `Status == Resolved` (false; the saga is `Extended`); control passes. The saga emits `BiddingClosed(ListingId: keyboard, At: <now>)` to its outgoing-messages tuple — the bidding window is closed; no further bids will be accepted for the keyboard.
+
+The saga then decides the terminal outcome. The decision tree: `BidCount > 0 && ReserveHasBeenMet`. The keyboard's saga state has `BidCount: 3` and `ReserveHasBeenMet: true`, so the `ListingSold` branch fires. The saga does not track `SellerId` on its own state (the start handler from M3-S5 chose not to capture it); it must load it at close time. The saga calls `session.Events.AggregateStreamAsync<Listing>(ListingId, ct)` to rebuild the Auctions-side `Listing` aggregate and read `SellerId` from its projected state — populated by `Apply(BiddingOpened)` when Moment 1's session-start cascade landed. The aggregate's `SellerId` reads as GreyOwl12.
+
+The saga emits `ListingSold(ListingId: keyboard, SellerId: GreyOwl12, WinnerId: SwiftFerret42, HammerPrice: $55.00, BidCount: 3, SoldAt: <now>)` to the outgoing-messages tuple. The saga's state advances: `Status = AuctionClosingStatus.Resolved`. `MarkCompleted()` is called; Wolverine's saga persistence will delete the saga document on the next commit. The handler returns the outgoing-messages tuple.
+
+Wolverine's transactional outbox dispatches `BiddingClosed` and `ListingSold` to the cross-BC RabbitMQ queues. The Listings BC consumes both events and updates the keyboard's `CatalogListingView`: `Status: "Sold"`, `WinnerId: SwiftFerret42's ParticipantId`, `HammerPrice: $55.00`. The Settlement BC consumes `ListingSold` and begins the settlement journey — this is narrative 002's Moment 1 entry point.
+
+GreyOwl12's seller dashboard refreshes. The keyboard moves from his "Live" section to a "Sold" section. The hammer price $55.00 is displayed; the winner's display name "SwiftFerret42" is displayed; the bid count 3 is displayed. The auction is over from his window. The settlement saga is now in flight (narrative 002 territory); the post-fee $49.50 payout will land on his seller-side account when the saga emits `SellerPayoutIssued`.
+
+**Why this matters to the seller.** GreyOwl12's keyboard has sold. The terminal outcome he could not have predicted at publish time — would the auction reach reserve, would extended bidding extend it, would a high bidder emerge — is now resolved. The hammer price $55.00 means he will receive $49.50 after the platform's 10% fee (per narrative 002's settlement walkthrough); a non-trivial outcome above his $50 reserve. SwiftFerret42 is the winner; she will be charged in narrative 002 Moment 3. From his window, the journey from "I have something to sell" (narrative 004's opening) to "the system has sold it for me" closes here. The settlement that will land him his payout is narrative 002's responsibility; narrative 005 hands off cleanly at the `ListingSold` integration-event commit boundary.
+
+The five narratives covering this auction stack: narrative 001 dramatised the bidder-perspective on this same auction (SwiftFerret42's QR scan through her settlement charge); narrative 002 dramatises the settlement that follows the gavel-fall; narrative 003 dramatised BoldPenguin7's session-start (her competitor-perspective on the same Flash session); narrative 004 dramatised GreyOwl12's listing-publication weeks earlier; narrative 005 closes the auction half. Five perspectives, one keyboard.
+
+### Things deliberately not included
+
+- The `ListingPassed` terminal branches (`ReserveNotMet` if reserve had not been met with bids; `NoBids` if no bids had landed). Not exercised in narrative 005's happy path. *(`alternate-path-failure`.)*
+- The `NotFound(CloseAuction)` static safety net's invocation path (a `CloseAuction` arrives after the saga document has been deleted by `MarkCompleted`). Not exercised here either; the saga is intact when the close fires. *(`implementation-detail`; M3-S5b OQ2 Path a defence.)*
+- The Listings BC's `CatalogListingView` projection-handler logic in detail. *(`separate-narrative`; covered in narrative 001 Moment 7 from the bidder's window at coarser grain.)*
