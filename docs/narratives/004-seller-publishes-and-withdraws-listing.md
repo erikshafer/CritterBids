@@ -1,6 +1,6 @@
 ---
 slug: 004-seller-publishes-and-withdraws-listing
-status: draft
+status: accepted
 journey: seller
 perspective: single-seller
 scope: happy-path
