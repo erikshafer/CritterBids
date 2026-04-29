@@ -32,3 +32,21 @@ A weekday afternoon at Nebraska.Code(). The conference floor has been open for s
 The system's MVP infrastructure is healthy. The CritterBids API host is running; the Participants BC's `[AllowAnonymous]` endpoint at `/api/participants/session` is reachable; Wolverine is processing requests; Marten's event store on PostgreSQL is up. The conference Wi-Fi is fast enough that the QR-scan-to-page-load round trip will land in well under a second. No rate limit is in play, no infrastructure hiccup is queued, no UUID v7 collision will fire (a collision in a single millisecond requires two 80-bit random values to coincide; the demo's bidder count is forty, the millisecond window is the request-arrival rate, the probability is below the floor of practical concern).
 
 Auction-system policy is at MVP defaults. The `[Authorize]` global convention from `CLAUDE.md` is overridden by the Participants BC's `[AllowAnonymous]` posture per M1 — real authentication and account binding are deferred to M6. UUID v7 stream IDs apply per ADR 007: the stream ID is generated fresh, the timestamp prefix gives Marten insert locality, the random low bytes drive the byte-derived display name and `BidderId`. Display names follow the `<Adjective><Animal><Number>` convention with 25 adjectives, 29 animals, and a 1-9999 number suffix — roughly 7.25 million tuples, well above the demo's bidder count, with collision probability under 0.001% at conference scale. Credit ceilings are drawn from nine discrete values between $200 and $1000 in $100 steps, derived deterministically from byte 14 of the stream ID and hidden from the bidder by design (never returned in any HTTP response payload). The cleanest possible run.
+
+## Moment 1: BoldPenguin7 scans the QR code
+
+**Implements:** slice 0.2.
+
+**Context.** BoldPenguin7 stands at the CritterBids booth on the conference floor with her phone in hand. She has just framed and scanned the QR code on the printed sign. Her phone has decoded the QR's URL — the demo's landing route, served by the CritterBids API host — and is loading the page. She has no prior events in the system; nothing about her exists in any stream yet. The auction operator is still finalising the Flash session lineup; the demo session has not yet started.
+
+**Interaction.** The page POSTs an empty body to `/api/participants/session`. Wolverine routes the request to the `StartParticipantSession` handler, which treats the call as the first event in a new lifecycle. The HTTP request travels over the conference Wi-Fi, lands at the API host, and is queued for handler dispatch.
+
+**Response.** The request is in flight; nothing has committed yet. BoldPenguin7's phone shows a brief loading state. The handler is about to run.
+
+**Why this matters to the bidder.** This is the moment the bidder crosses the threshold from anonymous-pre-system to anonymous-with-system. Before the QR scan, she has no relationship to CritterBids: no Participant stream exists for her, no `BidderId` has been computed, no credit ceiling has been rolled. After the request lands, all of those are about to be true in the next handler tick. Her perception is a brief loading spinner; the system's perception is that a new lifecycle is opening.
+
+### Things deliberately not included
+
+- Rejoin-vs-new-session behavior on QR re-scan (the system unconditionally mints a fresh session per scan; whether the same human scanning twice should land in the same session is product-decision territory). *(`defer`.)*
+- Authentication or account binding. *(`post-MVP`; M6 introduces real authentication and the `[AllowAnonymous]` posture lifts at that point.)*
+- Failure modes for the request itself: lost Wi-Fi connectivity, rate limit (none configured at MVP), API-host downtime. *(`alternate-path-failure`.)*
