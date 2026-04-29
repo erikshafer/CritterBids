@@ -73,3 +73,21 @@ The `Participant` aggregate's `Apply` for `ParticipantSessionStarted` runs again
 
 - The aggregate's `Apply` method for `SellerRegistered` (slice 0.3); the aggregate's `IsRegisteredSeller` flip. The aggregate carries the seller-side Apply as part of the BC's two-event design but BoldPenguin7 will never exercise that path in this narrative. *(`separate-narrative`; candidate for narrative 004 (Selling BC) or a future seller-perspective narrative.)*
 - Failure modes during the commit: Marten transaction failure, PostgreSQL connection drop, UUID v7 collision. None will fire in this happy-path Moment. *(`alternate-path-failure`.)*
+
+## Moment 3: BoldPenguin7's phone lands on the catalog
+
+**Implements:** slice 0.2.
+
+**Context.** The handler from Moment 2 has returned. Marten's commit has landed: the `ParticipantSessionStarted` event sits as the first entry in BoldPenguin7's stream, the `Participant` aggregate's state shape reads `(Id: ParticipantId, HasActiveSession: true, IsRegisteredSeller: false)`, and the HTTP response is on its way back over the conference Wi-Fi. BoldPenguin7's phone is still showing the loading spinner from Moment 1; the network round-trip from QR scan to handler-response-arrival has taken under a second.
+
+**Interaction.** The response arrives. The HTTP status is 201 Created. The body carries the `ParticipantId` Guid. The Location header reads `/api/participants/{ParticipantId}` — the URI under which any future participant lookup would happen, though the system has no GET endpoint at that URI today (Finding 002). The frontend loader sees the response and transitions to the catalog page route.
+
+**Response.** BoldPenguin7's phone displays the catalog page. The header reads "BoldPenguin7" — her display name, surfaced for the first time. The list of published listings is visible: a Vintage Mechanical Keyboard, a Rare Pokemon Card, a Hand-Carved Wooden Bowl. None of them are bid-able yet because the operator has not started the Flash session. Her credit balance is not displayed; the system's design hides the credit ceiling from the bidder by intent, and the catalog page does not query any balance endpoint. From this point until she places her first bid (narrative 001 Moment 5 from SwiftFerret42's window), BoldPenguin7's experience of the system is browsing the catalog and waiting for the session to start.
+
+**Why this matters to the bidder.** The journey from anonymous human to anonymous-with-system is now complete from her perception. She has a name, a catalog to read, and the implicit promise of a session that will start when the operator starts it. The system has done the durable identity work — the `ParticipantId` is keyed on her stream forever; the `BidderId` "Bidder 4523" lives on the `ParticipantSessionStarted` event payload; the credit ceiling $700 silently gates the bids she will place when the session runs. From her phone's perspective, the system has acted: she scanned, she waited briefly, the catalog appeared. The deeper system mechanics from Moment 2 are invisible to her by design. The QR code on the printed sign at the booth has done its work.
+
+### Things deliberately not included
+
+- The catalog-page UI rendering itself: how listings are laid out, what fields are shown per listing, what happens when she taps one. *(`UX-or-UI-detail`; design artifact territory.)*
+- The display-name source for the catalog-page header. The frontend somehow renders "BoldPenguin7" but the system has no `GET /api/participants/{id}` endpoint today; the UI claim is forward-spec for M6's frontend MVP and surfaces the backend gap as Finding 002 at session close. *(`defer`; trigger is M6 frontend ship.)*
+- Pre-session catalog interactions: tapping into a listing's detail, watchlist actions, filter-and-sort. *(`separate-narrative`; covered in narrative 001 Moments 2-3 from SwiftFerret42's window.)*
