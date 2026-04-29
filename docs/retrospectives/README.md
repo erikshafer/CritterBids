@@ -91,6 +91,25 @@ the principle and the evidence. Reserve this section for things future
 sessions in other slices or BCs will need to know; do not restate item-level
 details.
 
+## Findings against narrative
+
+For slices anchored to a narrative (per the prompt's `Narrative:` metadata
+line), record whether the slice implemented the narrative as drafted or
+surfaced drift. Findings route to the four standing lanes per
+`docs/narratives/README.md`:
+
+- `narrative-update` - narrative was wrong; resolved in the slice's PR.
+- `workshop-update` - workshop slice was stale; resolved in the slice's PR.
+- `code-update` - code is wrong relative to the narrative's domain
+  understanding; surfaces a follow-up implementation prompt under
+  `docs/prompts/implementations/`. Not resolved in this PR.
+- `document-as-intentional` - apparent disagreement is two valid
+  expressions of the same intent; document the relationship and move on.
+
+For the rare slice that does not anchor to a narrative (likely operator
+runbooks or infrastructure-only changes), explain why and note whether a
+follow-up narrative is warranted.
+
 ## Verification checklist
 
 - [x] One item per acceptance criterion from the session prompt.
