@@ -190,6 +190,7 @@ Every narrative ships its retrospective in the same file, appended after the `##
 | [002](./002-winner-clears-settlement.md) | accepted | bidder | happy-path | 6.1, 6.3 |
 | [003](./003-bidder-starts-anonymous-session.md) | accepted | bidder | happy-path | 0.2 |
 | [004](./004-seller-publishes-and-withdraws-listing.md) | accepted | seller | happy-path | 0.3, 1.1, 1.2 |
+| [005](./005-seller-watches-flash-auction-close.md) | accepted | seller | happy-path | 2.3, 3.1, 3.3, 5.1, 5.2 |
 
 ## Document history
 
