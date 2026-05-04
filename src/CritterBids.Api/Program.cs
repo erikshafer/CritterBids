@@ -3,6 +3,7 @@ using CritterBids.Contracts;
 using CritterBids.Listings;
 using CritterBids.Participants;
 using CritterBids.Selling;
+using CritterBids.Settlement;
 using JasperFx;
 using JasperFx.Events;
 using Marten;
@@ -27,6 +28,7 @@ builder.UseWolverine(opts =>
     opts.Discovery.IncludeAssembly(typeof(SellerListing).Assembly);
     opts.Discovery.IncludeAssembly(typeof(CatalogListingView).Assembly);
     opts.Discovery.IncludeAssembly(typeof(Listing).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(SettlementSaga).Assembly);
 
     // RabbitMQ transport — guarded so fixtures using DisableAllExternalWolverineTransports() are unaffected
     var rabbitMqUri = builder.Configuration.GetConnectionString("rabbitmq");
@@ -103,6 +105,7 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     builder.Services.AddSellingModule();
     builder.Services.AddListingsModule();
     builder.Services.AddAuctionsModule();
+    builder.Services.AddSettlementModule();
 }
 
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────
