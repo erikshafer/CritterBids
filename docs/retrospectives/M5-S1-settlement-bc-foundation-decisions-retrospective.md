@@ -40,25 +40,21 @@
 
 ### Decision
 
-**Wolverine Saga adopted for M5.** `ProcessManager<TState>` deferred until the Wolverine framework primitive's API stabilizes. The W003 §Part 2 design discipline of "decider semantics regardless of host" is preserved at the workshop and scenarios level — events, transitions, state shapes, and the 41 scenarios in `003-scenarios.md` apply unchanged across either host. The lived precedent is M3-S5's Auction Closing saga; the framework migration path when triggers fire is a single-slice rewrite, bounded by the 28 pure-function scenarios in Sections 1-7 acting as the migration's contract.
+**Wolverine Saga adopted for Settlement.** The choice is between two shipped Wolverine coordination patterns: Saga (Approach A) and Process Managers via Handlers (Approach B). Saga fits Settlement because the seven phases share evolving state (`HammerPrice`, `FeePercentage`, `FeeAmount`, etc.) — the shape the Saga primitive is built to host. Handlers fit event-reactive coordination without phased state; Settlement is not that shape. The proposed `ProcessManager<TState>` framework primitive Erik is designing for Wolverine is out of scope per CritterBids' shipped-Wolverine stance and is not an implementation option.
 
-### Why deferral over adoption
+The W003 §Part 2 decider-pattern *design lens* (discriminated-union state, pure-function `Decide`/`Evolve`) is preserved at the workshop and scenarios level — events, transitions, state shapes, and the 41 scenarios in `003-scenarios.md` apply unchanged. M5-S4 may extract pure-function helpers from the saga's per-phase handlers (Option C inside Option A) without ADR amendment. The decider lens is portable; the host is per-BC by coordination shape.
 
-Three triggers were considered for adopting `ProcessManager<TState>` immediately:
+### Why Saga over Handlers for Settlement
 
-1. **Framework readiness** — the API is in active design, not stable. Adopting an in-design primitive in a milestone slice introduces risk bounded only by the framework's own development cadence. CritterBids' demo-vehicle and reference-architecture goals require shipping M5 on schedule; the framework-readiness gate fired in favor of the established Saga primitive.
-2. **CritterBids-as-first-lived-example** — a real evangelism argument exists, but Erik holds the framework-roadmap context that would make this the right call. Without that input, the safer default is the well-trodden pattern with explicit migration triggers documented.
-3. **Type-safety gains** — the discriminated-union state type sketched in W003 collapses into a `SettlementStatus` enum plus nullable fields on the Saga document. The type-safety gains the decider pattern provides become disciplined nullable handling carried by code review and handler-entry assertions. This is a real cost; ADR-019 names it honestly rather than papering over it.
+Settlement's seven phases share evolving state by design. Approach B (Handlers) would force the workflow onto either Option B1 (threading state through ever-growing self-sent commands) or Option B2 (rehydrating state from the event stream on every handler entry). Both reinvent saga state outside the primitive Wolverine ships for that purpose. The lived precedent is M3-S5's Auction Closing saga — a phased-state workflow on the Saga primitive — which is structurally similar to but smaller than Settlement's seven-phase shape. Choosing Handlers for Settlement would create a CritterBids-internal inconsistency with M3-S5 and bury saga-state plumbing in command payloads.
 
-### Three explicit revisit triggers
+The shipped-Wolverine stance also rules out ProcessManager<TState> as an implementation option. Erik holds the framework-design context for that primitive at JasperFx; CritterBids' direction is to use shipped Wolverine features only, so the proposed primitive is documented in W003 as a *design lens* (the decider pattern as a discipline applicable within either Saga or Handlers) but not as a CritterBids host choice. ADR-019 makes this stance explicit; W003 Phase 1 Part 2 was restructured in this slice to reflect it.
 
-ADR-019 records three independent triggers, any one of which reopens the choice:
+### Single revisit trigger
 
-1. `ProcessManager<TState>` framework API stabilizes (1.0-grade surface in Wolverine release)
-2. Saga shape produces specific friction during M5 implementation that the decider pattern would have prevented (cumulative pattern across S2-S6 retros)
-3. JasperFx project direction explicitly requires CritterBids as the first lived example
+ADR-019 records one revisit trigger: **the Saga shape produces specific friction during M5 implementation** that the decider design lens (Option C) or the Handlers shape (Option B) would have prevented. Examples that would justify revisit: nullable-field correctness bugs surfacing in Sections 1-7's scenarios, handler-entry assertion duplication across more than two handlers, or `SettlementStatus` enum drift requiring repeated W003 amendments. The default response if the trigger fires is to extract pure-function decider helpers per Option C inside the existing Saga host — keeping the change scoped to one BC's internals. Migrating to Approach B (Handlers) would only become correct if M5 implementation revealed Settlement's coordination shape to be more event-reactive than W003 modeled, which is unlikely given the workshop's "phased progression with evolving state" framing.
 
-The migration scope is named: a single-slice prompt rewriting the host wrapper while preserving events, scenarios, and the W003 design verbatim. No contract changes; no scenario rewrites; no W003 restructure.
+The proposed `ProcessManager<TState>` framework primitive's stabilization is **not** a revisit trigger. CritterBids does not gate on framework-design work outside its shipped-Wolverine stance.
 
 ### Structural metrics
 
@@ -66,9 +62,10 @@ The migration scope is named: a single-slice prompt rewriting the host wrapper w
 |--------|--------|-------|
 | ADRs in `docs/decisions/` | 14 (016, 017, 018 latest accepted) | 15 (019 accepted) |
 | ADR Status Ledger next-unreserved pointer | 019 | 020 |
-| W003 Phase 1 Part 2 hosting decision status | "Deferred to Erik at implementation time" | Closed; cites ADR-019 as the M5-S1 closure |
+| W003 Phase 1 Part 2 hosting decision status | "Deferred to Erik at implementation time" | Closed; Wolverine Saga adopted; Process Managers via Handlers documented as the alternative shipped pattern |
+| W003 Phase 1 Part 2 structure | "Two Approaches" (Saga vs proposed `ProcessManager<TState>` primitive) | "Hosting Comparison": Approach A (Saga, chosen), Approach B (Handlers, alternative shipped pattern), Design Lens (decider pattern; proposed primitive out of scope) |
 | Settlement workflow host primitive | Undecided | Wolverine Saga |
-| Migration contract from Saga to `ProcessManager<TState>` | Implicit | Named: 28 pure-function scenarios (Sections 1-7) plus the W003 design — no contract changes, no scenario rewrites |
+| `ProcessManager<TState>` framework primitive | Framed as future migration target | Out of scope per CritterBids' shipped-Wolverine stance; explicit in ADR-019 and W003 Part 2 |
 
 ---
 
@@ -80,7 +77,7 @@ A new "Field Name Convention: `Price` at Initiation, `HammerPrice` Post-Initiati
 
 ### Why Phase 1 Part 2 placement
 
-The Open Questions section preferred Phase 1 Part 2 over §7's evolver sidebar because the rename's rationale is most legible alongside the Saga-vs-ProcessManager hosting comparison. That preference held: the Field Name Convention sits at the bottom of Part 2 where a reader exiting the host comparison naturally encounters it before reading Part 3 onwards. Placing it as a §7 sidebar would have buried the convention under an evolver-mechanics paragraph that most readers skim.
+The Open Questions section preferred Phase 1 Part 2 over §7's evolver sidebar because the rename's rationale is most legible alongside the hosting comparison. That preference held: the Field Name Convention sits at the bottom of Part 2 where a reader exiting the Saga-vs-Handlers comparison naturally encounters it before reading Part 3 onwards. Placing it as a §7 sidebar would have buried the convention under an evolver-mechanics paragraph that most readers skim.
 
 ### Touchpoint table
 
@@ -235,11 +232,11 @@ Full solution build: 0 errors, 0 warnings (verified via `dotnet build CritterBid
 
 1. **The cutover gate's joint-authority discipline holds without ceremony.** AUTHORING.md rule 3 makes the milestone doc and the narrative jointly authoritative; the prompt's `**Narrative:**` line was the only structural difference between this prompt and M3-S1 / M4-S1, and the slice ran without any new ceremony around the citation. The discipline was load-bearing during F005's name choice (`BidderCreditView` over `BidderCreditLedger`) — narrative 002's Setting framed the trade-off, and the resolution included a cite-and-edit back to narrative 002 Moment 3 per Phase 5 §7. Future M5 slices inherit this pattern with no further methodology overhead.
 
-2. **Folding deferred findings into the foundation slice was structurally correct, not just a PR-savings move.** Phase 5 retro Item 7 framed the W003 amendments fold as "saved a PR." The lived experience refines that: the F002 Field Name Convention belongs adjacent to the Saga-vs-ProcessManager hosting comparison because both speak to the same per-phase state-shape decisions; the F004 payload normalization belongs adjacent to the canonical event vocabulary the contract stubs encode; the F005 BidderCreditView definition closes a workshop gap that narrative 001 Moment 8 was already implicitly betting on. Any of the three would have been awkward in a separate workshop-cleanup PR — they are foundation decisions, not workshop hygiene.
+2. **Folding deferred findings into the foundation slice was structurally correct, not just a PR-savings move.** Phase 5 retro Item 7 framed the W003 amendments fold as "saved a PR." The lived experience refines that: the F002 Field Name Convention belongs adjacent to the hosting-comparison framing in Part 2 because both speak to the same per-phase state-shape decisions; the F004 payload normalization belongs adjacent to the canonical event vocabulary the contract stubs encode; the F005 BidderCreditView definition closes a workshop gap that narrative 001 Moment 8 was already implicitly betting on. Any of the three would have been awkward in a separate workshop-cleanup PR — they are foundation decisions, not workshop hygiene.
 
 3. **The "what it is *not*" column in the Ubiquitous Language table earns its keep at moments like F005.** Adding `BidderCreditView` to the table and writing its "Distinct from the per-bid ceiling enforced by Auctions' DCB" clarifier costs one sentence and prevents a category of future confusion: a reader scanning the table sees the running-balance / per-bid-ceiling distinction without having to read Part 4 plus Part 7 to assemble it. The W003 table convention has been worth its inch since W001; M5-S3 onwards should continue exercising the column when introducing new terms.
 
-4. **The framework-readiness deferral idiom is reusable beyond this ADR.** ADR-019's three explicit revisit triggers (framework stabilization, lived-friction signal, project-direction input) are a structural shape that recurs whenever CritterBids touches Critter Stack primitives that are themselves in design. M3-S1's ADR 007 Gate 4 deferral was the precedent (waiting on JasperFx input). The same three-trigger shape applies; future ADRs that defer on framework readiness can lift the structure verbatim.
+4. **The shipped-Wolverine stance corrected the original ADR framing mid-PR.** The ADR was first authored with `ProcessManager<TState>` framed as a future migration target, which implied CritterBids might pursue the proposed framework primitive when it stabilizes. User clarification at PR review surfaced the actual stance: CritterBids uses shipped Wolverine features only; the proposed primitive is JasperFx framework-design work and is not a CritterBids implementation roadmap item. ADR-019, W003 Phase 1 Part 2, and this retrospective were restructured in a follow-up commit on the same branch to reflect the stance. The corrected comparison is Saga vs Process Managers via Handlers (both shipped); the decider pattern is documented as a *design lens* applicable within either host. The lesson generalizes: when an ADR or workshop frames a choice that includes proposed framework primitives, name CritterBids' adoption stance (shipped-only vs willing-to-track-design) explicitly in the Context section before listing options. Future ADRs should pin the stance before enumerating options.
 
 5. **Per-Moment surrounding-directory reads pay off for cite-and-edit work.** Phase 5 retro Item 5's "pre-Moment surrounding-directory reads" lesson generalized cleanly to the F005 cite-and-edit: reading narrative 002 Moment 3's full structure (body prose plus deferred-list parenthetical) before authoring the W003 Phase 1 Part 7 amendment made the cite-and-edit scope obvious — only the parenthetical needed the cite, not the body prose. A weaker prep would have either over-touched the narrative (rewriting body prose unnecessarily) or under-touched it (leaving the parenthetical's stale claim that "W003 does not define a named bidder-credit projection").
 
@@ -317,7 +314,8 @@ The W003 broader-sweep deferral (narrative 002 F003's untouched references at L2
 - **Real payment-processor integration** — post-MVP per W003 §"Winner Charge".
 - **Compensation paths beyond MVP** — post-MVP per W003 Phase 1 Part 3.
 - **W003 broader storage-staleness sweep** (narrative 002 F003's references at L29 / L649 / L663) — future workshop-cleanup session, not M5.
-- **`ProcessManager<TState>` migration** — deferred per ADR-019; revisit on any of the three named triggers.
+- **`ProcessManager<TState>` framework primitive** — out of scope per CritterBids' shipped-Wolverine stance (ADR-019). Erik's framework-design work at JasperFx is its own track, not a CritterBids implementation roadmap item.
+- **Process Managers via Handlers (Approach B)** — not Settlement's host; documented as the right tool for future event-reactive BCs (Relay's broadcast pipeline post-M5 is the canonical candidate).
 
 ### Foundation refresh closure
 

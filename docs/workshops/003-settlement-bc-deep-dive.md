@@ -167,7 +167,7 @@ In practice, this should never happen — `ListingPublished` happens hours or da
 
 ---
 
-### Part 2: The Settlement Workflow — Two Approaches
+### Part 2: The Settlement Workflow — Hosting Comparison
 
 This is the core of the Settlement BC and the most interesting design question in this workshop. The workflow is:
 
@@ -177,9 +177,11 @@ Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssue
                                     └── (credit check fails) → Failed
 ```
 
-Six events, linear progression, one failure exit point. It's a textbook workflow — and the question is whether to model it as a traditional Wolverine Saga or as an explicit decider-style process manager.
+Six events, linear progression, one failure exit point. It's a textbook workflow — and the question is which Wolverine coordination primitive to host it on.
 
-#### Approach A: Traditional Wolverine Saga
+> **CritterBids' framing constraint.** CritterBids uses **shipped Wolverine features only**. Two coordination patterns are available within shipped Wolverine: **Wolverine Saga** (Approach A) and **Process Managers via Handlers** (Approach B). The decider pattern via the proposed `ProcessManager<TState>` framework primitive — design work Erik is leading at JasperFx — is documented in this Part as a *design lens* (the third subsection below), not as an implementation option. The lens is useful regardless of host; the framework primitive is out of scope as a CritterBids implementation choice. M5-S1's ADR-019 closes the host choice as Wolverine Saga; this Part's structure was reorganized at M5-S1 to reflect the shipped-Wolverine stance.
+
+#### Approach A: Wolverine Saga (chosen for Settlement per ADR-019)
 
 ```csharp
 public sealed class SettlementSaga : Saga
@@ -353,11 +355,71 @@ public OutgoingMessages Handle(FailSettlement command)
 - Testing each step in isolation requires a saga harness — the `Handle` methods depend on saga state being set correctly first.
 - The command-chaining pattern (`Handle` returns the next command) is implicit control flow.
 
-#### Approach B: Decider-Style Process Manager
+#### Approach B: Process Managers via Handlers
 
-The decider pattern (from Jérémie Chassaing's work and used in Emmett's `Workflow` type) models the workflow as three pure functions: **Decide** (given state + command, return events), **Evolve** (given state + event, return new state), and an explicit state type that makes invalid transitions unrepresentable.
+The handler-based process manager pattern is Wolverine's shipped event-reactive coordination primitive. Each handler reacts to a specific event independently; coordination emerges from the handler chain rather than from a stateful saga document. No `Saga` base class, no `MarkCompleted()`, no shared mutable state across handlers — just a sequence of `[WolverineHandler]` methods consuming events and emitting the next.
 
-> **Sketch disclaimer:** The exact API of `ProcessManager<TState>` lives in Erik's in-progress JasperFx proposal. The code below is a general shape of the decider pattern — not a claim about how the framework will actually wire it up. Treat this as "what the logic would look like if it were pure functions" rather than "this is how you'll write it in Wolverine."
+```csharp
+// Each handler is a separate static method; no shared state
+public static class SettlementHandlers
+{
+    public static async Task<OutgoingMessages> Handle(
+        ListingSold message,
+        IDocumentSession session,
+        CancellationToken ct)
+    {
+        var pending = await session.LoadAsync<PendingSettlement>(message.ListingId, ct);
+        if (pending is null) throw new PendingSettlementNotFoundException(message.ListingId);
+
+        var settlementId = SettlementIdFor(message.ListingId);
+
+        return new OutgoingMessages
+        {
+            new SettlementInitiated(settlementId, message.ListingId, message.WinnerId,
+                pending.SellerId, message.HammerPrice, /* Source: */ "Bidding",
+                pending.ReservePrice, pending.FeePercentage, DateTimeOffset.UtcNow),
+            // Self-send next step — but with the full state payload, since no saga document holds it
+            new CheckReserveCommand(settlementId, message.HammerPrice, pending.ReservePrice)
+        };
+    }
+
+    public static OutgoingMessages Handle(CheckReserveCommand command)
+    {
+        var met = command.ReservePrice is null || command.HammerPrice >= command.ReservePrice;
+        // ...emit ReserveCheckCompleted; emit ChargeWinnerCommand carrying state forward...
+    }
+
+    // ...one handler per phase, each carrying the state it needs in its inbound command...
+}
+```
+
+**The state-threading question.** State that subsequent phases need (`HammerPrice`, `FeePercentage`, the materialized `FeeAmount` after calculation) has to live somewhere. Two options:
+
+- **Option B1: Thread state through self-sent commands as growing payloads.** Each command carries every field a downstream handler will read. Command shapes accumulate fields as the workflow progresses (`CheckReserveCommand` carries 3 fields; `ChargeWinnerCommand` carries 5; `IssueSellerPayoutCommand` carries 7). Handler signatures are coupled to evolving payload contracts.
+- **Option B2: Hydrate state from the event stream on every handler entry.** Each handler loads the financial event stream, replays `SettlementInitiated` plus all subsequent events to rebuild current state, then makes its decision. This re-implements event sourcing's read path on a per-handler basis — work that the Saga primitive's state document handles natively.
+
+**What's good:**
+
+- The shipped Wolverine pattern for event-reactive coordination. Familiar to anyone who's authored cross-BC handlers in CritterBids (M3-S6's `AuctionStatusHandler` and `ListingSnapshotHandler` are the canonical examples).
+- No saga lifecycle to reason about — no `MarkCompleted()`, no saga-state persistence cleanup, no saga-correlation rules.
+- Each handler is independently testable — a unit test against the static method and its inputs.
+- Fits leaf-reaction pipelines naturally: when each handler is a one-shot reaction with no continuation state, this shape is the right tool.
+
+**What's awkward for Settlement specifically:**
+
+- Settlement has phased shared state by design. Forcing the handler chain to thread state via Option B1 or rebuild state via Option B2 reinvents what the Saga primitive ships natively.
+- Self-sent commands grow large as phase progression accumulates fields. A `CompleteSettlementCommand` carrying every field downstream phases need (`SettlementId, ListingId, WinnerId, SellerId, HammerPrice, FeeAmount, SellerPayout, ...`) is essentially the saga state, but expressed as a transient message rather than a persisted document. The persistence guarantee differs (the saga document is durable; the command is in-flight on the message bus).
+- No single place to ask "what state is this settlement in?" Without a saga document, "current state" requires loading the event stream — a per-query cost the Saga primitive amortizes via its persisted document.
+
+This is the wrong host for Settlement, but the right host for future BCs whose coordination shape is event-reactive without phased state. Relay's broadcast pipeline is the canonical post-M5 candidate. M3-S6's `AuctionStatusHandler` (consumes `BiddingOpened`, `BiddingClosed`, `ListingSold`, `ListingPassed` to update `CatalogListingView`) is the lived precedent.
+
+#### Design Lens: The Decider Pattern
+
+> **Out of scope as a CritterBids implementation primitive.** The code sketches in this subsection illustrate the decider pattern as a *design lens* — useful for shaping the events, state transitions, and scenario tests in `003-scenarios.md` Sections 1-7 regardless of which Wolverine host is chosen. They are **not** an implementation option for CritterBids: the proposed `ProcessManager<TState>` framework primitive Erik is designing for Wolverine is JasperFx framework-design work, not a CritterBids implementation roadmap item. The Saga host (Approach A) is the M5 implementation choice per ADR-019; the lens below survives as design discipline applied within the Saga.
+
+The decider pattern (from Jérémie Chassaing's work and used in Emmett's `Workflow` type) models the workflow as three pure functions: **Decide** (given state + command, return events), **Evolve** (given state + event, return new state), and an explicit state type that makes invalid transitions unrepresentable. The pattern is reusable as a design discipline: extract `Decide` and `Evolve` as pure-function helpers from a Saga's per-phase handlers, and Sections 1-7's 28 scenarios pass against the helpers directly without a saga harness.
+
+> **Sketch disclaimer:** The code below illustrates the decider pattern's shape, drawn from Erik's in-progress JasperFx `ProcessManager<TState>` proposal as a reference. It is included here as design-lens documentation, not as a CritterBids implementation target.
 
 ```csharp
 // State as a discriminated union — each phase is its own type
@@ -527,34 +589,32 @@ The framework's job (whatever `ProcessManager<TState>` ends up looking like) is 
 
 #### The Comparison
 
-| Dimension | Wolverine Saga | Process Manager (decider) |
+The choice within shipped Wolverine is between Saga (Approach A) and Handlers (Approach B). The decider lens (the third subsection above) applies as design discipline within either host; it is not a separate column in this comparison.
+
+| Dimension | Wolverine Saga (A) | Process Managers via Handlers (B) |
 |---|---|---|
-| State representation | Mutable document with enum `Status` | Discriminated union, immutable |
-| Invalid state access | Runtime nullable check | Compile-time — cannot access |
-| Testability | Requires saga harness | Pure function, trivial |
-| Framework coupling | Strong (inherits `Saga`) | Weak (pure functions + framework wrapper) |
-| Flow visibility | Spread across handlers | Single decider switch |
-| Boilerplate | Less | More |
-| Familiarity | Standard Wolverine idiom | New pattern |
-| C# ergonomics | Natural | Awkward state copying |
-| Compensation clarity | Handler per failure step | Pattern-matched in decider |
+| Phased shared state | Held in saga document; durable; loaded once per command | Threaded through commands or rehydrated from event stream per handler |
+| State representation | Mutable document with `Status` enum | No persisted state document; state is in-flight on commands or in the event stream |
+| Lifecycle primitive | `Saga` base class + `MarkCompleted()` | None — handlers are leaf reactions |
+| Self-send shape | Continuation commands carry only `Id`; saga state holds the rest | Continuation commands carry every field downstream handlers need |
+| Wolverine inbox / retry | Per-step (continuation commands hit the inbox individually) | Per-handler (each handler is its own inbox entry) |
+| Testability | Saga harness or pure-function helper extraction (Option C in ADR-019) | Each handler is a static method, unit-testable directly |
+| Familiarity in CritterBids | Lived precedent: M3-S5 Auction Closing saga | Lived precedent: M3-S6 `AuctionStatusHandler` / `ListingSnapshotHandler` |
+| Fit shape | Workflows with phased shared state | Event-reactive coordination without phased state |
 
 #### `@Architect` — Which Approach for Settlement?
 
-Settlement is a particularly strong candidate for the decider approach because:
+Settlement's seven phases share evolving state by design: `HammerPrice` and `FeePercentage` are read at multiple phases; `FeeAmount` and `SellerPayout` materialize at the FeeCalculated phase and are read at PayoutIssued and Completed; the participant identifiers persist across the entire saga. This is the shape Approach A is built to host.
 
-1. **The workflow is linear and phased.** There's no branching except for the reserve-not-met failure exit. The state machine is small and fits comfortably in one decider function.
-2. **The type safety matters.** Financial workflows benefit from "you cannot read the fee amount before it was calculated" being a compile error instead of a runtime nullable check.
-3. **Test density is high.** We're going to write many scenarios for Settlement in Phase 3 — each one becomes a trivial pure-function test rather than a saga harness setup.
-4. **It's small enough to be a proof of concept.** If `ProcessManager<TState>` is ready when M5 (Settlement milestone) begins, Settlement is a low-risk place to validate the framework. If not, we fall back to the Wolverine Saga approach without losing anything.
+Approach B (Handlers) would force the workflow onto either Option B1 (threading state through ever-growing self-sent commands) or Option B2 (rehydrating state from the event stream on every handler entry). Both reinvent saga state outside the primitive Wolverine ships for that purpose. The Auction Closing saga (M3-S5) is the lived precedent for Approach A; Settlement's seven-phase shape is structurally similar (phased progression with evolving shared state) but longer and richer in financial fields, making the saga primitive even more load-bearing here than at M3-S5.
 
-**For MVP (Milestone 5):** Use whichever is ready. If `ProcessManager<TState>` is landed in Wolverine by the time M5 is reached, Settlement is the natural first consumer. If not, the Wolverine Saga approach is fine and migrates cleanly later because the decisions (phase order, events produced, state transitions) are identical between the two approaches. **The business logic is the same; only the hosting pattern differs.**
+The decider design lens applies within Approach A: M5-S4's implementation may extract pure-function `Decide` and `Evolve` helpers from the saga's per-phase handlers, exercising `003-scenarios.md` Sections 1-7's 28 pure-function scenarios as helper-method tests rather than saga-harness tests. That extraction is implementation-detail per ADR-019 Option C, not a separate hosting choice.
 
-> **Decision: Design Settlement around the decider pattern semantically, regardless of implementation choice.** The events, phases, and transitions documented in this workshop are the authoritative specification. When implementation begins, choose Wolverine Saga or ProcessManager based on framework readiness. Migration from one to the other preserves all scenarios and events — only the hosting code changes.
+Approach B remains the right tool for future CritterBids BCs whose coordination shape is leaf-reactive: Relay's broadcast pipeline (post-M5) is the canonical candidate.
+
+> **Decision (W003-grade): Settlement is hosted on the Wolverine Saga primitive (Approach A), with the decider pattern applied as a design lens (pure-function helper extraction permitted) per ADR-019.** The events, phases, and transitions documented in this workshop are the authoritative specification regardless of host shape; the 41 scenarios in `003-scenarios.md` apply. Process Managers via Handlers (Approach B) remains the right host for future BCs whose coordination shape is event-reactive without phased state.
 >
-> This decision is deliberately noncommittal on the framework choice because Erik has visibility into `ProcessManager<TState>` maturity that this workshop doesn't. He can make the call at implementation time.
-
-> **Hosting decision (M5-S1, ADR-019): Wolverine Saga adopted for M5.** The framework-readiness gate fired in favor of the established Saga primitive. The decider semantics on this page hold unchanged; only the host wrapper materializes as `Saga` rather than `ProcessManager<TState>`. Migration triggers and scope are recorded in [`docs/decisions/019-settlement-workflow-hosting.md`](../decisions/019-settlement-workflow-hosting.md).
+> M5-S1 closure: ADR-019 records the choice with a single revisit trigger (Saga-shape friction during M5 implementation that the decider design lens or Handlers shape would prevent). The proposed `ProcessManager<TState>` framework primitive is out of scope per CritterBids' shipped-Wolverine stance and is not a revisit trigger.
 
 #### Field Name Convention: `Price` at Initiation, `HammerPrice` Post-Initiation
 
@@ -734,7 +794,7 @@ This Part was authored at M5-S1 to close narrative 002 Finding 005. The narrativ
 |---|----------|------------|
 | 1 | How does Settlement get the reserve value? | `PendingSettlement` projection built from `ListingPublished` events, stored in Polecat. |
 | 2 | Projection race condition (ListingSold before projection catches up)? | Wolverine retry policy. Settlement workflow retries if `PendingSettlement` not found. |
-| 3 | Wolverine Saga vs Process Manager? | Design around decider semantics. Implementation choice deferred to Erik at M5 time based on `ProcessManager<TState>` framework readiness. Migration between the two preserves all scenarios. |
+| 3 | Wolverine Saga vs Process Managers via Handlers? | Wolverine Saga adopted for Settlement (M5-S1, ADR-019) — phased shared state fits the Saga primitive. Handlers remain the right host for future event-reactive BCs (e.g. Relay's broadcast pipeline). Decider pattern applied as design lens within the Saga. The proposed `ProcessManager<TState>` framework primitive is out of scope per CritterBids' shipped-Wolverine stance. |
 | 4 | Compensation logic for MVP? | None. The only failure path is reserve-not-met → `PaymentFailed` → terminate. Real compensation is post-MVP when real payment processing is wired in. |
 | 5 | Credit ledger — does the DCB see charges? | No. Ceiling is per-bid maximum, not running balance. Settlement records charges in its own stream for audit. |
 | 6 | Buy It Now settlement path | Starts in `ReserveChecked(WasMet: true)`. Reserve check skipped for BIN. Seller's BIN price is the agreed price. |
@@ -749,7 +809,7 @@ This Part was authored at M5-S1 to close narrative 002 Finding 005. The narrativ
 
 - `PendingSettlement` projection (Polecat document) — schema and lifecycle defined
 - Settlement workflow state machine — 7 phases (including `Failed`), transitions explicit
-- Decider pattern sketched as alternative to Wolverine Saga — both approaches documented; M5-S1 ADR-019 chose Wolverine Saga as the host with decider semantics preserved
+- Two shipped Wolverine hosts compared: Approach A (Wolverine Saga) and Approach B (Process Managers via Handlers); M5-S1 ADR-019 chose Approach A for Settlement with the decider pattern as design lens. The proposed `ProcessManager<TState>` framework primitive is out of scope per CritterBids' shipped-Wolverine stance.
 - Financial event stream — audit log pattern for all settlement events
 - `BidderCreditView` projection (Marten document) — schema, lifecycle, and consumer model defined in Part 7 (added M5-S1; closes narrative 002 Finding 005)
 

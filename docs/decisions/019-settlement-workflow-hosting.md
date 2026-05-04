@@ -7,21 +7,25 @@
 
 ## Context
 
-The Settlement BC's seven-phase financial workflow (Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed, with a `Failed` exit at any phase via `PaymentFailed`) lands in M5. Workshop 003 (`docs/workshops/003-settlement-bc-deep-dive.md` Phase 1 Part 2) presents two hosting paths for that workflow and explicitly defers the choice to implementation time:
+The Settlement BC's seven-phase financial workflow (Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed, with a `Failed` exit at any phase via `PaymentFailed`) lands in M5. The implementation host needs deciding before M5-S2 begins.
 
-- **Wolverine Saga.** The established CritterBids pattern. The Auction Closing saga shipped at M3-S5 is the lived precedent: a `Saga` subclass with mutable state, per-phase `Handle` methods, self-sending continuation commands, and `MarkCompleted()` at terminal state. Wolverine owns saga-state persistence via Marten and routes inbound commands through its inbox.
-- **`ProcessManager<TState>` decider.** A framework Erik (JasperFx core team) is actively designing as a Wolverine primitive. Models the workflow as three pure functions — `Decide(state, command) → events`, `Evolve(state, event) → state`, and an explicit discriminated-union state type — so invalid transitions are pattern-match misses (compile-time errors when a new state lands), not runtime nullable checks. The exact framework API lives in Erik's in-progress JasperFx proposal; W003's sketches are conceptual.
+**CritterBids' framing constraint.** CritterBids uses shipped Wolverine features only. The proposed `ProcessManager<TState>` framework primitive that Erik is designing for Wolverine is explicitly out of scope as an implementation choice — that work is JasperFx framework-design territory, not a CritterBids implementation roadmap item. Within shipped Wolverine, two coordination patterns are available for the Settlement workflow:
 
-W003 §Part 2's design decision is that the workflow is **designed around decider semantics regardless of implementation choice** — the events, phases, transitions, scenarios, and state-shape are identical between the two hosts. Only the framework that holds the workflow differs. The 41 scenarios in `003-scenarios.md` are written so 28 of them (Sections 1-7) are pure-function decider/evolver tests that pass against either host; only Section 9's five integration scenarios touch hosting-specific machinery.
+- **Wolverine Saga.** The established CritterBids pattern. The Auction Closing saga shipped at M3-S5 is the lived precedent: a `Saga` subclass with mutable state, per-phase `Handle` methods, self-sending continuation commands, and `MarkCompleted()` at terminal state. Wolverine owns saga-state persistence via Marten and routes inbound commands through its inbox. Fits workflows whose phases share evolving state (`HammerPrice`, `FeePercentage`, `FeeAmount` once calculated, etc.) that subsequent phases read without re-deriving.
+- **Process Managers via Handlers.** Wolverine's shipped event-reactive coordination pattern. Each handler reacts to a domain or integration event independently; coordination emerges from the handler chain rather than from a stateful saga document. Fits workflows whose steps don't share evolving state — pure event-cascade pipelines where each handler's input is the previous handler's output event. Relay-side broadcast pipelines are the canonical fit; the Auctions BC's cross-listing read-model handlers are also handlers-based, not saga-based.
 
-The decision has to land at M5-S1 because M5-S2 (BC scaffold + module wiring) and onwards immediately consume the choice. Deferring further would either block M5-S2 or force the foundation decision to surface mid-implementation — the failure mode the M2 retrospective's "three rapid ADR pivots" warning called out.
+W003 (`docs/workshops/003-settlement-bc-deep-dive.md` Phase 1 Part 2) was authored before this stance was made explicit; it framed the comparison as Saga vs the proposed `ProcessManager<TState>` primitive. The corrected framing is documented in the W003 amendment landing alongside this ADR.
+
+**Decider-pattern semantics as a design lens.** Independent of host choice, the decider pattern (discriminated-union state types, pure-function `Decide` and `Evolve`) is a useful *design lens* for type-safe state machines. W003's design decision — "design around decider semantics regardless of implementation choice" — applies to either host: the events, phases, transitions, and scenarios in `003-scenarios.md` are identical regardless of whether the host is a Saga or a Handlers-based pipeline. The 28 pure-function scenarios in Sections 1-7 of `003-scenarios.md` test the decider pattern's `Decide(state, command) → events` and `Evolve(state, event) → state` shapes directly, with no framework dependency.
+
+The decision has to land at M5-S1 because M5-S2 (BC scaffold + module wiring) and onwards immediately consume the choice. Deferring further would force the foundation decision to surface mid-implementation — the failure mode the M2 retrospective's "three rapid ADR pivots" warning called out.
 
 Two facts shape the choice as of 2026-05-03:
 
-1. **Framework readiness asymmetry.** The Wolverine Saga primitive ships in Wolverine 5+ and has shipped a saga in CritterBids (M3-S5 Auction Closing). `ProcessManager<TState>` is in active design. The framework's API surface, lifecycle hooks, persistence model, and integration with Wolverine's outbox / inbox / scheduling primitives are not yet stable.
-2. **The decider-semantic preservation gate.** W003's Part 2 decision and the 28 pure-function scenarios mean the migration cost from Saga to `ProcessManager<TState>` is bounded — the events, state shapes, and transitions transfer verbatim. Only the host wrapper changes. That migration cost is real but mechanical, not semantic.
+1. **Phased-state-fit asymmetry.** Settlement's seven phases share evolving state — `HammerPrice` and `FeePercentage` are read at multiple phases; `FeeAmount` and `SellerPayout` materialize at the FeeCalculated phase and are read at PayoutIssued and Completed; the participant identifiers persist across the entire saga. This is the shape Wolverine Saga is designed to host. Process Managers via Handlers fit workflows where each step is event-reactive without shared state; forcing Settlement onto a handlers-only shape would require either a separate state document threaded through every handler (re-inventing saga state with extra plumbing) or hydrating state from the event stream on every handler entry (re-inventing event sourcing's read path on a per-handler basis).
+2. **The decider-semantic preservation gate.** W003's Part 2 decision and the 28 pure-function scenarios mean the workflow's *semantics* — events, state shapes, transitions — are decoupled from the host primitive. If a future BC's coordination shape calls for Handlers (e.g., Relay's broadcast pipeline), the same scenario-grade test discipline applies. The lens is portable; the host is per-BC.
 
-This ADR closes the choice for M5 implementation. It does not foreclose `ProcessManager<TState>` adoption later; it scopes the conditions under which the choice is revisited.
+This ADR closes the choice for M5 implementation. Process Managers via Handlers remains the right tool for future BCs whose coordination shape is event-reactive without phased state; it is not foreclosed for CritterBids — it is simply not the right host for Settlement.
 
 ## Options Considered
 
@@ -33,39 +37,45 @@ The W003 §Part 2 decider-semantic discipline is preserved at the design level: 
 
 This option's costs are documented honestly: the type-safety gains the decider pattern provides (a `FeeCalculated` state cannot expose null `FeeAmount`) become disciplined nullable handling on the saga document, with the discipline carried by code review and the handler-entry assertions. The flow visibility gains (single decider switch vs seven scattered handlers) are similarly trade-offs the lived M3-S5 Auction Closing saga has already absorbed without incident.
 
-### Option B: `ProcessManager<TState>` decider (deferred)
+### Option B: Process Managers via Handlers
 
-Settlement implements the workflow as a `ProcessManager<TState>` consumer (final API TBD). State is a discriminated union (`SettlementState.Initiated`, `SettlementState.ReserveChecked`, `SettlementState.WinnerCharged`, `SettlementState.FeeCalculated`, `SettlementState.PayoutIssued`, `SettlementState.Completed`, `SettlementState.Failed`) with phase-specific fields populated only on the relevant variant. `Decide` and `Evolve` are pure functions; the framework wraps the load-decide-evolve loop and handles persistence, dispatch, and scheduling.
+Settlement implements the workflow as a chain of Wolverine handlers, each reacting to a specific event. `ListingSold` arrives at `InitiateSettlementHandler`, which emits `SettlementInitiated` and triggers a self-send `CheckReserveCommand`. A separate `CheckReserveHandler` consumes that and emits `ReserveCheckCompleted`, triggering the next step. Each handler is independent; no shared mutable state document persists across the chain.
 
-The advantages are real and aligned with the financial-workflow domain: invalid transitions cannot compile, the decider is a one-line pure-function test per scenario, the state machine is visible in one place, and CritterBids becomes the first lived `ProcessManager<TState>` example — feeding implementation experience back into the JasperFx framework design.
+State that subsequent phases need (`HammerPrice`, `FeePercentage`, the materialized `FeeAmount` after calculation) has to live somewhere. The two paths are: (a) thread the state through the self-sent commands as growing payloads, accumulating fields on each command; (b) hydrate state from the event stream on every handler entry, replaying `SettlementInitiated` plus all subsequent events to rebuild the current shape. Path (a) couples handler signatures to evolving payload contracts; path (b) re-implements event sourcing's read path on a per-handler basis.
 
-The cost as of 2026-05-03 is timing. The framework API is not stable. M5 cannot block on framework finalization without blocking the demo-vehicle and reference-architecture goals CritterBids serves. Adopting an in-design framework primitive in a milestone slice introduces risk that is bounded only by the framework's own development cadence, which CritterBids does not control even though Erik is the framework's author.
+Either path works for event-reactive coordination without phased state — the handler chain is what Wolverine ships for that shape. Settlement is not that shape. The seven phases share state by design (W003 Phase 1 Part 2's framing is explicitly "phased progression with evolving state"); forcing Settlement onto a Handlers-only shape would invent saga state outside the saga primitive that is built for it.
+
+This option remains the right host for future CritterBids BCs whose coordination is event-reactive without phased state. The Relay BC's broadcast pipeline (post-M5) is the most likely first adopter — each broadcast event is a leaf reaction with no continuation state to thread. The Auctions BC's cross-listing read-model handlers (`AuctionStatusHandler`, `ListingSnapshotHandler` from M3-S6) are also handlers-based; they are the lived precedent for Wolverine handler coordination in CritterBids. Settlement is not the right test case for the pattern; ADR-019 closes that misfit.
 
 ### Option C: Hybrid — Saga shell with decider-pattern internals
 
-Implement as a `Saga`-derived class but extract a pure `Decide` static helper that the per-phase handlers call. The saga becomes a thin host that handles persistence and command dispatch; the business logic lives in pure functions identical in shape to what `ProcessManager<TState>` would consume.
+Implement as a `Saga`-derived class but extract a pure `Decide` static helper that the per-phase handlers call. The saga becomes a thin host that handles persistence and command dispatch; the business logic lives in pure functions whose shape matches the decider lens W003 documents. The discriminated-union state type can be modeled as records the saga maps to/from at handler entry/exit, or as a parallel "decision context" object that the helper consumes without touching the saga's mutable fields.
 
-This option preserves the pure-function testability for Sections 1-7 of `003-scenarios.md` while retaining the established Wolverine Saga primitive for hosting. The cost is duplication: the saga document holds mutable state, and the decider operates on a discriminated-union state type, so a small adapter layer translates between the two on each handler entry.
+This option preserves the pure-function testability for Sections 1-7 of `003-scenarios.md` while retaining the Saga primitive for hosting. The cost is a small adapter layer between the saga's mutable document and the decider helper's value-typed inputs.
 
 Rejected for M5 in favor of Option A's simpler shape, but flagged as a viable intermediate step if `003-scenarios.md` Sections 1-7's pure-function tests turn out to need decider-shaped helpers anyway during M5-S4 implementation. If that need surfaces, Option C is a sub-decision inside Option A — adopt the helper extraction without changing the host. This ADR's scope is host choice; helper-extraction is implementation-detail and lives in the M5-S4 retrospective if it materializes.
+
+### Out of scope: the proposed `ProcessManager<TState>` framework primitive
+
+Erik (JasperFx core team) is designing a `ProcessManager<TState>` primitive for Wolverine that wraps the load-decide-evolve loop natively, with framework-managed state hydration from the event stream and pattern-matched `Decide`/`Evolve` pure functions. CritterBids' stance is to use shipped Wolverine features only; the proposed primitive is JasperFx framework-design work and is **not** an implementation option for CritterBids. The decider pattern's *design lens* (discriminated-union state, pure-function semantics) remains useful regardless — it survives in W003 as a design discipline applied to Saga or Handlers, not as a future framework target.
+
+This ADR does not gate on the proposed primitive's stabilization, because adopting it is not the plan. If JasperFx ships the primitive in a future Wolverine release and CritterBids' direction shifts to adopt shipped framework features that include it, that is a separate ADR and a separate decision — not a revisit trigger of this one.
 
 ## Decision
 
 **Option A.** Settlement implements its workflow as a Wolverine Saga in M5. The saga's shape mirrors W003 Phase 1 Part 2 Approach A: a `SettlementSaga : Saga` document with a `SettlementStatus` enum tracking phase progression, per-phase `Handle` methods, self-sending continuation commands (`CheckReserve`, `ChargeWinner`, `CalculateFee`, `IssueSellerPayout`, `CompleteSettlement`), and `MarkCompleted()` at terminal state. Persistence is via Marten under the deterministic UUID v5 `SettlementId` per W003 Phase 1 Part 6.
 
-The W003 §Part 2 design discipline of "decider semantics regardless of host" is preserved at the workshop and scenarios level: events, state transitions, phase order, and the 41 scenarios in `003-scenarios.md` apply unchanged. M5-S4's implementation may extract pure-function helpers from the saga's per-phase handlers when scenarios from Sections 1-7 (28 pure-function decider/evolver tests) demand them; that extraction is implementation-detail inside Option A and does not require an ADR amendment.
+The choice between Option A (Saga) and Option B (Handlers) turns on Settlement's phased-state shape: the seven phases share evolving state by design, which is exactly what the Saga primitive is built to host. Handlers fit event-reactive coordination without phased state; Settlement is not that shape. Option B remains the right host for future CritterBids BCs whose coordination is leaf-reactive (Relay's broadcast pipeline is the canonical post-M5 candidate); choosing it for Settlement would re-invent saga-state plumbing outside the primitive Wolverine ships for that purpose.
 
-This decision is **not** a rejection of `ProcessManager<TState>`. It is a sequencing choice: ship M5 on the established Saga primitive now, migrate when the framework primitive ships and stabilizes. The 28 pure-function scenarios are the migration's contract — they pass against either host.
+The W003 §Part 2 decider-pattern design lens is preserved at the workshop and scenarios level: events, state transitions, phase order, and the 41 scenarios in `003-scenarios.md` apply unchanged. M5-S4's implementation may extract pure-function helpers from the saga's per-phase handlers when scenarios from Sections 1-7 (28 pure-function decider/evolver tests) demand them; that extraction is implementation-detail inside Option A and does not require an ADR amendment. This is the discriminated-union design lens applied to a Saga host, not the proposed framework primitive.
 
-### Revisit triggers
+### Revisit trigger
 
-This ADR is reopened when **any one** of the following lands:
+This ADR is reopened when **the Saga shape produces specific friction** during M5 implementation that the decider design lens (Option C) or the Handlers shape (Option B) would have prevented. Examples that would justify revisit: nullable-field correctness bugs surfacing in Sections 1-7's scenarios, handler-entry assertion duplication across more than two handlers, or `SettlementStatus` enum drift requiring repeated W003 amendments. Each of these is a M5-S{2-6} retrospective signal; the cumulative pattern triggers revisit, not any single occurrence.
 
-1. **`ProcessManager<TState>` framework API stabilizes** in a Wolverine release (1.0-grade API surface for the primitive, with persistence integration, scheduling, and outbox semantics confirmed). The natural revisit point is the next post-M5 milestone where Settlement is touched substantively; the migration is its own slice with its own retro.
-2. **The Saga shape produces specific friction** during M5 implementation that the decider pattern would have prevented. Examples that would justify revisit: nullable-field correctness bugs surfacing in Sections 1-7's scenarios, handler-entry assertion duplication across more than two handlers, or `SettlementStatus` enum drift requiring repeated W003 amendments. Each of these is a M5-S{2-6} retrospective signal; the cumulative pattern triggers revisit, not any single occurrence.
-3. **JasperFx project direction explicitly requires CritterBids to be the first lived `ProcessManager<TState>` example.** Erik holds the framework-roadmap context; if framework-evangelism timing makes CritterBids the demonstration vehicle, the decision is reopened on that input. The migration would land as its own milestone slice (likely a post-M5 BC-internal refactor PR) with its own retro and acceptance criteria.
+The default response if the trigger fires: extract pure-function decider helpers per Option C inside the existing Saga host. That keeps the change scoped to one BC's internals without disturbing the contracts, scenarios, or W003 design. Migrating to Option B (Handlers) would only become the right move if M5 implementation revealed Settlement's coordination shape to be more event-reactive than W003 modeled — an unlikely outcome given the workshop's explicit "phased progression with evolving state" framing, but recorded here for completeness.
 
-The default migration path when any trigger fires: a separate, well-scoped slice prompt under `docs/prompts/implementations/<slug>.md` consuming the W003 Phase 1 Part 2 design (unchanged) and the 28 pure-function scenarios (unchanged). The migration's diff lives in the BC's hosting wrapper and the saga-vs-process-manager skill file; the integration scenarios from Section 9 are exercised end-to-end against the new host to confirm equivalence.
+This ADR does **not** gate on framework-design work outside CritterBids' shipped-Wolverine stance. The proposed `ProcessManager<TState>` primitive's stabilization is not a revisit trigger; if JasperFx ships it and CritterBids' direction shifts to adopt shipped framework features that include it, that is a separate ADR.
 
 ## Consequences
 
@@ -81,15 +91,15 @@ The skill file's M5 amendment is flagged as in-scope for the M5-S4 retrospective
 
 ### `marten-projections.md` skill file flagged for M5-S3 cross-BC-event-seeded projection amendment
 
-Independent of the saga vs ProcessManager choice, the `PendingSettlement` projection is the first CritterBids projection seeded from a cross-BC integration event (`ListingPublished` from Selling) rather than from same-BC streams. M5-S3 (the projection's implementation slice) retrospectively amends `marten-projections.md` with the pattern. M5-S1 flags the file as in-scope for that future amendment; the full pattern documentation lands at M5-S3's retro. (See the F002 amendment in W003 Phase 1 Part 2 for the rename rationale that the saga-vs-decider hosting comparison frames.)
+Independent of the host-choice decision, the `PendingSettlement` projection is the first CritterBids projection seeded from a cross-BC integration event (`ListingPublished` from Selling) rather than from same-BC streams. M5-S3 (the projection's implementation slice) retrospectively amends `marten-projections.md` with the pattern. M5-S1 flags the file as in-scope for that future amendment; the full pattern documentation lands at M5-S3's retro.
 
-### Decider-pattern semantic discipline holds at the workshop layer
+### Decider-pattern design lens holds at the workshop layer
 
-W003 Part 2's "design around decider semantics" decision is unchanged. Future amendments to W003 (M5-S1's F002, F004, F005 amendments per narrative 002 findings; any future workshop-cleanup) preserve the decider framing. If a future ADR migrates the host to `ProcessManager<TState>`, W003 does not require restructuring — the workshop already speaks the decider's vocabulary.
+W003 Part 2's "design around decider semantics" decision survives as a design lens, not as a future framework target. Future amendments to W003 (M5-S1's F002, F004, F005 amendments per narrative 002 findings; any future workshop-cleanup) preserve the lens. The Saga's per-phase handlers may extract pure `Decide`/`Evolve` helpers (Option C inside Option A) without ADR amendment.
 
-### `ProcessManager<TState>` adoption remains a future option, framed as a single-slice migration
+### Process Managers via Handlers remains the right tool for future event-reactive coordination
 
-When any of the three revisit triggers fires, the migration is one slice's work: rewrite the Saga shell as a ProcessManager consumer; preserve the events, scenarios, and W003 design verbatim; verify Section 9's integration scenarios pass against the new host. The skill file `wolverine-sagas.md` extends to cover the new pattern (or splits to a dedicated `process-manager.md` per the established skill-file pattern when files grow past coherent scope). No W003 rewrite, no scenario rewrite, no integration-event-contract change — the contract stubs authored at M5-S1 (`SettlementCompleted`, `PaymentFailed`, `SellerPayoutIssued`) remain stable across the migration.
+Option B is not foreclosed for CritterBids — it is correctly scoped to event-reactive coordination shapes that don't share phased state. Future BCs whose workflow is a leaf-reaction cascade (Relay's broadcast pipeline post-M5; cross-BC read-model updates of the kind M3-S6 already lived) use Handlers. The ADR's positive claim: Saga for Settlement; Handlers for Relay-style broadcast cascades; the choice is per-BC by coordination shape.
 
 ### Out-of-scope for this ADR
 
@@ -102,11 +112,12 @@ This ADR does not close any of the following, by design:
 
 ## References
 
-- `docs/workshops/003-settlement-bc-deep-dive.md` Phase 1 Part 2 — the workshop framing this ADR closes; presents both options at design-grade with the decider-semantic preservation decision
-- `docs/workshops/003-scenarios.md` Sections 1-9 — the 41 scenarios that pass against either host (Sections 1-7 are pure-function tests applicable to both)
+- `docs/workshops/003-settlement-bc-deep-dive.md` Phase 1 Part 2 — the workshop framing this ADR closes; the corrected Saga vs Handlers comparison lands in the W003 amendment alongside this ADR
+- `docs/workshops/003-scenarios.md` Sections 1-9 — the 41 scenarios that pass against either Saga or Handlers (Sections 1-7 are pure-function decider/evolver tests applicable as design-lens helpers regardless of host)
 - `docs/narratives/002-winner-clears-settlement.md` — the joint-authoritative narrative for M5-S1 per AUTHORING.md rule 3; renders the saga's per-phase progression as five Moments without committing to host choice
 - `docs/decisions/007-uuid-strategy.md` — UUID v5 deterministic stream ID convention used by `SettlementId` per W003 Phase 1 Part 6
 - `docs/decisions/011-all-marten-pivot.md` — Settlement uses Marten on PostgreSQL; saga-state persistence and the financial event stream both land in the shared Marten store
 - `docs/skills/wolverine-sagas.md` — the implementation reference for M5-S2 onwards; gets the Settlement amendment at M5-S4 retro
-- `docs/skills/wolverine-message-handlers.md` — handler conventions cross-reference
+- `docs/skills/wolverine-message-handlers.md` — handler conventions cross-reference (also the reference for Option B's Process Managers via Handlers shape, applicable to future event-reactive BCs)
 - `docs/retrospectives/M3-S5-auctions-saga-extended-bidding-retrospective.md` (and adjacent M3-S5 retros) — the lived precedent for the Wolverine Saga pattern in CritterBids
+- `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` — the lived precedent for Wolverine Handlers coordination (`AuctionStatusHandler`, `ListingSnapshotHandler` cross-BC sibling-handler pattern); the shape Option B would extend
