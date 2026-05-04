@@ -12,7 +12,8 @@ Patterns and conventions for building stateful orchestration sagas with Wolverin
 4. [Handler Discovery](#handler-discovery)
 5. [Marten Document Configuration](#marten-document-configuration)
 6. [Business Logic — The Decider Pattern](#business-logic--the-decider-pattern)
-7. [Scheduled Messages and Timeouts](#scheduled-messages-and-timeouts)
+7. [Multi-Phase Sagas with Self-Sent Continuation Commands](#multi-phase-sagas-with-self-sent-continuation-commands)
+8. [Scheduled Messages and Timeouts](#scheduled-messages-and-timeouts)
 8. [Idempotency](#idempotency)
 9. [Saga Lifecycle Completion](#saga-lifecycle-completion)
 10. [DOs and DO NOTs](#dos-and-do-nots)
@@ -295,6 +296,88 @@ public async Task<OutgoingMessages> Handle(
 The read cost is paid once per terminal — cheap against a live aggregate (which the DCB already hits on every decision), negligible against an inline projection.
 
 **In-repo ground:** CritterBids `AuctionClosingSaga.Handle(CloseAuction)` (authored M3-S5b) — `SellerId` lives on the `Listing` aggregate (populated via `Apply(BiddingOpened)`) and is re-read at close time instead of being captured by `StartAuctionClosingSagaHandler`. The frozen-start-handler invariant was preserved at zero cost. See `src/CritterBids.Auctions/AuctionClosingSaga.cs` and retrospective `docs/retrospectives/M3-S5b-auction-closing-saga-terminal-paths-retrospective.md` §"S5b-1" for the full narrative.
+
+---
+
+## Multi-Phase Sagas with Self-Sent Continuation Commands
+
+The Auction Closing saga is a **two-phase shape**: it starts on `BiddingOpened`, accumulates bid state through the auction's lifetime, and closes on `CloseAuction` (a single scheduled-message handler). One open phase, one close phase. The Settlement saga (M5-S4 / W003 Phase 1 Part 2 Approach A) is structurally distinct: a **seven-phase progression** through `Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed`, where each phase is its own `Handle` method invoked by a self-sent continuation command. The mechanics differ in three concrete ways worth pinning here, since both shapes are likely to recur in CritterBids and future BCs.
+
+### When to reach for a multi-phase saga
+
+A multi-phase saga is the right tool when:
+
+| Property | Two-phase (Auction Closing) | Multi-phase (Settlement) |
+|---|---|---|
+| Trigger sources | One open + many bidders + one close timer | One inbound integration event |
+| Decisions per phase | Multiple per phase (every bid, every reserve check) | One per phase (charge → calculate → payout → complete) |
+| Time scale | Hours / days | Seconds (in-process queue) |
+| Failure paths | Closure outcomes (Sold / Passed / Withdrawn) | One linear path with one early exit (`Failed`) |
+| Continuation source | External events (BIDS, scheduled close) | Self-sent commands within the same saga |
+| Shape | Accumulator | Pipeline |
+
+If the workflow is a *pipeline* — each step depends on the previous step's terminal state, and there's no incoming external traffic between steps — multi-phase with self-sends is correct. If the workflow is an *accumulator* — multiple external messages arrive over time and the saga reacts to each — two-phase with start + close is correct.
+
+### Self-sent continuation commands
+
+Each phase emits a self-send command in its `OutgoingMessages` return. Wolverine routes the command back to the saga via the saga's own `Handle` method. The command is a plain `sealed record (Guid SettlementId)` — Wolverine's `[SagaIdentityFrom(nameof(X.SettlementId))]` decoration on the receiving Handle parameter overrides the default `{SagaName}Id` correlation convention.
+
+```csharp
+public OutgoingMessages Handle(
+    [SagaIdentityFrom(nameof(ChargeWinner.SettlementId))] ChargeWinner message,
+    IDocumentSession session)
+{
+    if (Status != SettlementStatus.ReserveChecked)
+    {
+        throw new InvalidSettlementTransitionException(Id, Status, nameof(ChargeWinner));
+    }
+
+    Status = SettlementStatus.WinnerCharged;
+    session.Events.Append(Id, new WinnerCharged(Id, WinnerId, HammerPrice, DateTimeOffset.UtcNow));
+
+    return new OutgoingMessages { new CalculateFee(Id) };
+}
+```
+
+### State guards on every phase entry
+
+Every Handle method begins with a `if (Status != ExpectedPhase) throw InvalidSettlementTransitionException(...)` guard. The guard is the multi-phase saga's idempotency contract: re-delivery of a continuation command after the saga has advanced past the corresponding phase throws (Wolverine inbox dedup should prevent this in practice; the guard is the correctness backstop). The seven invalid-transition scenarios in W003 §1.3 / §2.4 / §3.3 / §3.4 / §4.3 / §5.2 / §6.2 each correspond to exactly one of these guards firing.
+
+The guards are also where the `SettlementStatus` enum earns its keep — the enum is the cross-Handle contract that lets each phase declare its precondition explicitly. Without the enum, the precondition would be implicit in nullable-field combinations (`FeeAmount is not null && SellerPayout is not null` → "we must be at FeeCalculated"), which is harder to read and easier to drift.
+
+### The financial event stream — `session.Events.Append` alongside `OutgoingMessages`
+
+The Auction Closing saga emits its outcome events (BiddingClosed / ListingSold / ListingPassed) only on the bus via `OutgoingMessages` — there is no Auctions-side event stream that stores them; downstream BCs consume them via RabbitMQ. The Settlement saga is different: per W003 §"Financial Event Stream", every event in the settlement's lifecycle is appended to a dedicated audit stream keyed by `SettlementId`. This adds one line per phase:
+
+```csharp
+session.Events.Append(Id, new ReserveCheckCompleted(...));
+return new OutgoingMessages { new ChargeWinner(Id) };
+```
+
+The first event in the stream uses `session.Events.StartStream<FinancialEventStream>(sagaId, settlementInitiated)` because `opts.Events.UseMandatoryStreamTypeDeclaration = true` requires every new stream to declare its type. `FinancialEventStream` is a marker class (mirrors `BidRejectionAudit`'s shape — see `marten-event-sourcing.md`) whose sole purpose is satisfying the stream-type-declaration rule.
+
+Integration events that cross BC boundaries are dual-role: they're both appended to the financial event stream (audit) AND emitted via `OutgoingMessages` (bus delivery to local + cross-BC consumers). The Settlement saga emits `SellerPayoutIssued` and `SettlementCompleted` this way; the local M5-S3 `PendingSettlementHandler` fires on the OutgoingMessages dispatch (under `MultipleHandlerBehavior.Separated`) and the cross-BC publish route (S6) routes the same emission to RabbitMQ.
+
+### Retry-on-not-found at the Start handler
+
+The Settlement saga's Start handler reads `PendingSettlement` (a projection seeded by `ListingPublished`, possibly days earlier in a different BC). Per W003 Phase 1 Part 1 Option A, if the projection has not caught up at start time, the handler throws `PendingSettlementNotFoundException` and a Wolverine retry policy (`OnException<...>().RetryWithCooldown(100ms, 250ms, 500ms)`) re-queues the inbound message. The triggering event stays in the queue until the projection catches up. This pattern generalizes: a multi-phase saga that depends on a projection at start time should declare a custom retryable exception and a corresponding `IWolverineExtension` retry policy, both BC-scoped.
+
+### `MarkCompleted()` at the terminal phase
+
+The terminal phase's Handle calls `MarkCompleted()` after appending the terminal event and emitting the integration event. Wolverine removes the saga document at the next persistence boundary; the audit stream persists per W003 §"Financial Event Stream" — the saga's mutable orchestration state goes away, but the immutable history of what happened stays.
+
+### In-repo ground
+
+| Aspect | Two-phase (M3-S5) | Multi-phase (M5-S4) |
+|---|---|---|
+| Saga document | `src/CritterBids.Auctions/AuctionClosingSaga.cs` | `src/CritterBids.Settlement/SettlementSaga.cs` |
+| Start handler | `StartAuctionClosingSagaHandler.cs` | `StartSettlementSagaHandler.cs` |
+| Continuation pattern | Scheduled `CloseAuction` via `bus.ScheduleAsync` | Self-sent `CheckReserve` / `ChargeWinner` / `CalculateFee` / `IssueSellerPayout` / `CompleteSettlement` via `OutgoingMessages` |
+| Audit stream | None (events flow to other BCs only) | `FinancialEventStream` keyed by `SettlementId` |
+| Retry policy | `AuctionsConcurrencyRetryPolicies` (`ConcurrencyException` / `DcbConcurrencyException`) | `SettlementsConcurrencyRetryPolicies` (`PendingSettlementNotFoundException`) |
+| Integration tests | `AuctionClosingSagaTests` — multi-message scenarios | `SettlementSagaTests.Full_BiddingSource_HappyPath_ProducesSixEventStream` — single inbound message, six-event stream assertion |
+
+The two shapes coexist in the same project because the underlying business processes have different shapes. Don't force a single saga primitive on both — match the saga shape to the workflow's natural rhythm.
 
 ---
 
