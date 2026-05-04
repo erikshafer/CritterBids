@@ -68,6 +68,7 @@ Each term carries a one-line definition with optional cross-references and "what
 | **Seller Payout** | The amount transferred to the seller after fee deduction (`HammerPrice - FeeAmount`). Issued via `SellerPayoutIssued`. | Pushed to seller via Relay BC (W001 slice 6.3). |
 | **Buy It Now Settlement Path** | The variant Settlement workflow triggered by `BuyItNowPurchased` (vs. `ListingSold`). Starts in `ReserveChecked(WasMet: true)` to skip the reserve comparison. | Per W003 Phase 1 Part 5 decision. The `BuyItNowPrice >= ReservePrice` invariant in Selling BC (W004 §3) is the upstream guarantee that makes this safe. |
 | **Financial Event Stream** | The append-only audit log of every event in a settlement's lifecycle. One stream per `SettlementId`. | Marten-backed (PostgreSQL) per ADR 011 All-Marten Pivot; never deleted; persists for compliance and audit. |
+| **BidderCreditView** | A Marten document projection per bidder per session. Carries `(BidderId, RemainingCredit, LastChargedSettlementId, UpdatedAt)`. Read by Relay's broadcast handler when composing `SettlementCompleted` pushes. | Owned by Settlement BC. Lifecycle defined in W003 Phase 1 Part 7. Distinct from the per-bid ceiling enforced by Auctions' DCB — this view is post-charge running balance, not the bid-time invariant. |
 | **Bidder** | A participant who has placed at least one bid. The settlement's "buyer" when they win. Identified by `BidderId` (= `WinnerId` on `ListingSold`). | Same `BidderId` as in W002 §3 and Participants BC. |
 | **Seller** | The participant who originally listed the item. Identified by `SellerId`, cached on `PendingSettlement` from `ListingPublished`. | Same `SellerId` as in W004 §3 and Participants BC. |
 
@@ -553,6 +554,32 @@ Settlement is a particularly strong candidate for the decider approach because:
 >
 > This decision is deliberately noncommittal on the framework choice because Erik has visibility into `ProcessManager<TState>` maturity that this workshop doesn't. He can make the call at implementation time.
 
+> **Hosting decision (M5-S1, ADR-019): Wolverine Saga adopted for M5.** The framework-readiness gate fired in favor of the established Saga primitive. The decider semantics on this page hold unchanged; only the host wrapper materializes as `Saga` rather than `ProcessManager<TState>`. Migration triggers and scope are recorded in [`docs/decisions/019-settlement-workflow-hosting.md`](../decisions/019-settlement-workflow-hosting.md).
+
+#### Field Name Convention: `Price` at Initiation, `HammerPrice` Post-Initiation
+
+The command and event vocabulary uses two different names for the final accepted price across the saga's lifecycle. This is deliberate and load-bearing — readers of Part 2's sketches alone may interpret the asymmetry as a workshop inconsistency, especially because the sketches above use `HammerPrice` throughout while the canonical scenarios in `003-scenarios.md` §1 and §7 render the asymmetry verbatim. The scenarios are the authoritative source; this section names the convention so the asymmetry is documented rather than discovered.
+
+**The convention.** Pre-initiation field names use the source-agnostic name `Price`. Post-initiation names use the source-specific name `HammerPrice`. The evolver at `003-scenarios.md` §7.1 is the single point of rename — taking the source-agnostic `Price` from `SettlementInitiated`'s payload and producing a `HammerPrice` field on `SettlementState.Initiated`.
+
+| Touchpoint | Field name | Why |
+|---|---|---|
+| `InitiateSettlement` command (input to decider, §1.1 / §1.2) | `Price` | Source-agnostic. Bidding source carries the hammer price; BIN source carries the BIN price. The command is constructed by the inbound-event handler before the decider sees it; the handler's vocabulary should not commit to one source. |
+| `SettlementInitiated` event (decider output, §1.1 / §1.2 / §1.3; evolver input, §7.1 / §7.2) | `Price` | Same rationale. The event is the durable record of the decider's initiation decision; its payload carries `Source` as the disambiguator. |
+| `SettlementState.Initiated` (evolver output for Bidding source, §7.1) | `HammerPrice` | The rename happens here. Once `Source: Bidding` is committed in state, the value semantically *is* the hammer price by definition. |
+| `SettlementState.ReserveChecked(WasMet: true)` (evolver output for BIN source, §7.2) | `HammerPrice` | BIN source branches directly past the reserve check; the BIN price is absorbed as the hammer-price-equivalent for downstream phases (per Part 5's BIN settlement path decision). |
+| `ReserveCheckCompleted` event (§2.1, §2.2, §2.3) | `HammerPrice` | Post-initiation: state has committed to a source and the field is the hammer price. |
+| `WinnerCharged` event payload `Amount` field (§3.1) | `Amount` | Naming difference here is intentional: `Amount` is the charge against the bidder's credit, semantically equal to `HammerPrice` from state but rendered with payment-domain vocabulary at the moment money moves. |
+| All other downstream events (`FinalValueFeeCalculated`, `SellerPayoutIssued`, `SettlementCompleted`) | `HammerPrice` | The hammer-price-grain field carries through the lifecycle. |
+
+**Why source-agnostic at initiation.** The decider's `Decide(null, InitiateSettlement)` pattern match must accept both source paths. If the command field were named `HammerPrice` at this layer, BIN-source initiation would either misname the field (semantically wrong: the value is the BIN price, not a hammer price) or require two command shapes (`InitiateSettlementFromBidding`, `InitiateSettlementFromBuyItNow`) that double the decider's pattern-match surface for no design benefit. The source-agnostic `Price` plus discriminator `Source` is the simpler shape that serves both flows.
+
+**Why source-specific post-initiation.** Once the saga has committed to a source (recorded in `SettlementInitiated`'s `Source` field; folded into state by the evolver), the value is no longer ambiguous. Downstream code (the reserve check in Part 2's Approach A `Handle(CheckReserve)`, the fee calculation, the payout issuance) reads `HammerPrice` from state with no need to re-disambiguate. The W003 §Part 4 fee calculation `Math.Round(HammerPrice * (FeePercentage / 100m), 2)` is legible at a glance because `HammerPrice` is the right name at that phase.
+
+**Naming-discipline implication.** When implementing the saga in M5 (per ADR-019's Wolverine Saga choice): the saga document carries `HammerPrice` (matching post-initiation state); the inbound-event handler that constructs `InitiateSettlement` from `ListingSold` or `BuyItNowPurchased` reads `ListingSold.HammerPrice` or `BuyItNowPurchased.Price` from the cross-BC contract and maps it to the command's `Price` field, then passes through `Source: Bidding | BuyItNow` as the discriminator. The rename at the saga's entry point (handler → command construction) is the host-side analogue of the evolver-level rename the decider sketches above describe.
+
+This convention was surfaced as a finding (F002) during narrative 002 authoring per `docs/narratives/002-findings.md`; the routing is `document-as-intentional` because the convention is correct as designed, only the workshop documentation was incomplete.
+
 ---
 
 ### Part 3: Compensation and Failure Paths
@@ -646,6 +673,57 @@ Options:
 
 ---
 
+### Part 7: The BidderCreditView Projection
+
+**`@Architect` — Where does the bidder's visible credit balance live?**
+
+Part 4 settled the *authority* question for the credit ledger: the credit ceiling is a per-bid maximum, the DCB in Auctions does not subtract prior charges, and Settlement records `WinnerCharged` in its own financial event stream for audit. What Part 4 did *not* settle is the *read-model* question — what document does Relay's BiddingHub load when composing the `SettlementCompleted` broadcast that carries `remainingCredit: 445.00` to a bidder's phone? Without a named projection, the broadcast handler has no defined source for the field; without a named source, the field's lifecycle is undefined.
+
+The narrative-002 backfill surfaced this gap as Finding 005 (`docs/narratives/002-findings.md`). Narrative 001 Moment 8 references "Settlement's bidder-credit projection" with a definite article, treating it as a named system component; narrative 002 Moment 3 dramatises the credit debit but renders it as "the bidder-credit ledger" without naming a projection precisely to avoid overcommitting to a name the workshop had not yet defined. This Part defines the projection that retroactively legitimizes both narratives' references.
+
+**The projection.**
+
+```csharp
+public sealed class BidderCreditView
+{
+    public Guid BidderId { get; init; }                  // primary key
+    public decimal RemainingCredit { get; init; }
+    public Guid? LastChargedSettlementId { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+}
+```
+
+**Field rationale.**
+
+- `BidderId` — the participant's BidderId from `ParticipantSessionStarted` and `WinnerCharged.WinnerId`. Primary key.
+- `RemainingCredit` — the running balance. Initialised to the assigned credit ceiling at `ParticipantSessionStarted` consumption; decremented by `WinnerCharged.Amount` at each charge. The bidder-visible field; carried verbatim into Relay's `SettlementCompleted` broadcast as `remainingCredit`.
+- `LastChargedSettlementId` — the most recent settlement that debited this bidder. Nullable because a session that has never won a settlement has no charges. Useful for ops-side traceability ("which settlement does this credit balance reflect?") and for idempotency checks if `WinnerCharged` is replayed.
+- `UpdatedAt` — handler-stamped timestamp, not outbox-dispatch time. Distinguishes "no charges yet" (`UpdatedAt = ParticipantSessionStartedAt`) from "charged at least once."
+
+**Lifecycle.**
+
+- **Initialise on `ParticipantSessionStarted`** (cross-BC integration event from Participants). Settlement consumes the event, derives `BidderId` and the assigned credit ceiling, and writes `BidderCreditView { BidderId, RemainingCredit: <ceiling>, LastChargedSettlementId: null, UpdatedAt: <SessionStartedAt> }`. The projection is initialized once per bidder per session.
+- **Update on `WinnerCharged`** (Settlement-internal event). The handler loads the existing `BidderCreditView` by `WinnerCharged.WinnerId` (the `BidderId` correlation), debits `RemainingCredit` by `WinnerCharged.Amount`, sets `LastChargedSettlementId` to the event's `SettlementId`, and updates `UpdatedAt`. Idempotency on replay: if `LastChargedSettlementId` already equals the event's `SettlementId`, the handler no-ops.
+- **No terminal state.** The projection persists for the duration of the session; cleanup is post-MVP and follows whatever session-lifecycle convention Participants establishes when session expiry is implemented.
+
+**Consumer model.**
+
+- **Relay BC's BiddingHub broadcast handler** (slice 6.3, post-M5). When composing the `SettlementCompleted` push to the winning bidder's connection, the handler loads `BidderCreditView` by `BidderId` and reads `RemainingCredit`. The broadcast payload's `remainingCredit` field is the verbatim value at broadcast time. This is the read path that surfaces the bidder's credit balance to her phone (per narrative 001 Moment 8 and narrative 002 Moment 5).
+- **Future bidder-balance endpoint** (post-MVP). When a bidder-facing balance display materializes outside the SettlementCompleted broadcast (e.g., a "your account" view), the endpoint loads `BidderCreditView` directly. The endpoint shape is out of scope for M5; the projection is shaped to support it.
+- **No DCB consumer.** Per Part 4's Option A: the DCB in Auctions does NOT read `BidderCreditView` to subtract prior charges. The DCB validates against the per-bid ceiling, not the running balance.
+
+**Why a Settlement-side projection rather than a Participants-side projection.**
+
+The credit-ledger debit is a Settlement-domain action — `WinnerCharged` is a Settlement-internal event, not a Participants event. The projection's lifecycle is owned by the BC that owns the events feeding it. A Participants-side projection would force Settlement to publish a cross-BC `BidderCharged` integration event for Participants to consume, doubling the contract surface for no clear benefit at MVP scale. Per W003's BC-isolation discipline, the read model lives where the events that update it live.
+
+The naming `BidderCreditView` (not `BidderCreditLedger`) follows CritterBids' `*View` projection convention from `CatalogListingView` and `ListingBidSummary`. The "credit-ledger posture" framing in narrative 002's Setting refers to MVP-vs-real-payment-processor, not to the document's name. The projection is a read model derived from events, not a domain-grade ledger.
+
+> **Decision: `BidderCreditView` projection adopted.** Initialised on `ParticipantSessionStarted`; updated on `WinnerCharged`; consumed by Relay's broadcast handler and any future bidder-balance endpoint. Settlement BC owns the projection. No DCB consumer per Part 4 Option A. Projection lifecycle persists for session duration; post-MVP cleanup follows Participants' session-expiry convention.
+
+This Part was authored at M5-S1 to close narrative 002 Finding 005. The narrative-001 Moment 8 reference to "Settlement's bidder-credit projection" is retroactively legitimized by this Part's naming; narrative 002 Moment 3's prose "bidder-credit ledger" remains as-is since the framing is about MVP posture, not the projection's name.
+
+---
+
 ## Phase 1 Summary
 
 **Vocabulary changes:** None. The Settlement events remain as established in the vocabulary.
@@ -661,6 +739,7 @@ Options:
 | 5 | Credit ledger — does the DCB see charges? | No. Ceiling is per-bid maximum, not running balance. Settlement records charges in its own stream for audit. |
 | 6 | Buy It Now settlement path | Starts in `ReserveChecked(WasMet: true)`. Reserve check skipped for BIN. Seller's BIN price is the agreed price. |
 | 7 | SettlementId strategy | Deterministic UUID v5 from ListingId. Idempotent by construction. |
+| 8 | Bidder-credit read model | `BidderCreditView` Marten document projection. Settlement BC owns it. Initialised on `ParticipantSessionStarted` with assigned credit ceiling; updated on `WinnerCharged`. Consumed by Relay's `SettlementCompleted` broadcast handler and any future bidder-balance endpoint. No DCB consumer per Part 4 Option A. (M5-S1; closes narrative 002 Finding 005.) |
 
 **Parked questions resolved (from prior workshops):**
 
@@ -670,8 +749,9 @@ Options:
 
 - `PendingSettlement` projection (Polecat document) — schema and lifecycle defined
 - Settlement workflow state machine — 7 phases (including `Failed`), transitions explicit
-- Decider pattern sketched as alternative to Wolverine Saga — both approaches documented
+- Decider pattern sketched as alternative to Wolverine Saga — both approaches documented; M5-S1 ADR-019 chose Wolverine Saga as the host with decider semantics preserved
 - Financial event stream — audit log pattern for all settlement events
+- `BidderCreditView` projection (Marten document) — schema, lifecycle, and consumer model defined in Part 7 (added M5-S1; closes narrative 002 Finding 005)
 
 **New questions surfaced:**
 

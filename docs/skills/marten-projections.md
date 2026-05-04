@@ -6,6 +6,8 @@ Complete reference for projection patterns available on Marten — both **native
 
 > **CritterBids status:** EF Core projections are not yet implemented; native Marten projections (inline snapshots, multi-stream) are in active use. Update the corresponding section with concrete findings when the first EF Core projection lands.
 
+> **Pending: M5-S3 amendment (cross-BC-event-seeded projection pattern).** The Settlement BC's `PendingSettlement` projection lands at M5-S3 as the first CritterBids projection seeded from a *cross-BC integration event* (`ListingPublished` from Selling) rather than from same-BC streams. The pattern is structurally distinct from the M3 / M4 same-BC projections (`CatalogListingView`'s sibling-handler pattern is closest but operates on multiple cross-BC events feeding one view; `PendingSettlement` is one cross-BC event seeding one Settlement-internal cache). M5-S3's retrospective is the natural home for the pattern's full documentation in this skill file: the seed-on-publish lifecycle, the load-by-listing-id correlation at workflow-start time, the Pending → Consumed / Expired / Failed status transitions per workshop 003 scenario §8, and the W003 Phase 1 Part 1 Option A retry-on-projection-lag posture. M5-S1 flagged this section as in-scope for that future amendment; do not author the full pattern here until M5-S3 ships and lived experience grounds the documentation.
+
 ---
 
 ## Table of Contents
