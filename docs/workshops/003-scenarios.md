@@ -13,7 +13,9 @@ Implementation-ready scenarios for all Settlement BC components: the decider (pu
 - **Decider tests (Sections 1–6):** Pure function tests. No framework, no harness, no I/O. Written as `Decide(state, command) → events`. Each is a one-line assertion in production code.
 - **Evolver tests (Section 7):** Pure function tests of state folding. `Evolve(state, event) → new state`.
 - **Projection tests (Section 8):** Integration tests against the `PendingSettlement` read model. Verify the row state after each event.
-- **Workflow integration tests (Section 9):** End-to-end scenarios exercising the full settlement flow via the hosting framework (`ProcessManager<TState>` or Wolverine Saga). Scenarios are written to be agnostic to the workflow abstraction — references to Wolverine in Section 9 are about the message bus (retry, inbox dedup), which applies to both hosts.
+- **Workflow integration tests (Section 9):** End-to-end scenarios exercising the full settlement flow via the hosting framework. M5 implements as Wolverine Saga per ADR-019; scenarios remain agnostic to the workflow abstraction so they pass against `ProcessManager<TState>` if the framework primitive is adopted in a future migration. References to Wolverine in Section 9 are about the message bus (retry, inbox dedup), which applies to both hosts.
+
+**Canonical event-payload shapes.** `SettlementInitiated` carries an eight-field payload across decider output (§1.1, §1.2, §1.3) and evolver input (§7.1, §7.2): `SettlementId, ListingId, WinnerId, SellerId, Price, Source, ReservePrice, FeePercentage`, plus `InitiatedAt` as the timestamp on the decider-output renderings. The `ReservePrice` and `FeePercentage` fields are load-bearing for the evolver because subsequent state phases (`SettlementState.ReserveChecked`, `SettlementState.WinnerCharged`, `SettlementState.FeeCalculated`) read them — the decider's initiation output must carry them so the evolver can hydrate state without a follow-up read. `SettlementId` renders on every settlement-internal event payload across §1 through §6 (`SettlementInitiated`, `WinnerCharged`, `FinalValueFeeCalculated`, `SellerPayoutIssued`, `SettlementCompleted`, `PaymentFailed`); it is the stream-correlation field every consumer of the financial event stream needs to attribute the event to a specific settlement instance. `ReserveCheckCompleted` (§2) carries the per-event domain payload (`HammerPrice`, `ReservePrice`, `WasMet`, `CompletedAt`) without `SettlementId` since it is defined as a stream-internal event scoped to the saga's own state machine; downstream consumers do not subscribe to it.
 
 **41 scenarios across nine sections.** The first six are the reason the decider pattern earns its keep: 18 pure-function decider tests and 10 pure-function evolver tests — 28 in total, trivially testable without any framework at all.
 
@@ -46,6 +48,8 @@ Then:   [
             SellerId: participant-001,
             Price: 85.00,
             Source: Bidding,
+            ReservePrice: 50.00,
+            FeePercentage: 10.0,
             InitiatedAt: <now>
           }
         ]
@@ -71,10 +75,15 @@ When:   Decide(null, InitiateSettlement {
 
 Then:   [
           SettlementInitiated {
-            ...
-            Source: BuyItNow,
+            SettlementId: settlement-001,
+            ListingId: listing-A,
+            WinnerId: participant-003,
+            SellerId: participant-001,
             Price: 100.00,
-            ...
+            Source: BuyItNow,
+            ReservePrice: 50.00,
+            FeePercentage: 10.0,
+            InitiatedAt: <now>
           }
         ]
 ```
@@ -270,6 +279,7 @@ When:   Decide(state, CalculateFee)
 
 Then:   [
           FinalValueFeeCalculated {
+            SettlementId: settlement-001,
             HammerPrice: 85.00,
             FeePercentage: 10.0,
             FeeAmount: 8.50,
@@ -294,6 +304,7 @@ When:   Decide(state, CalculateFee)
 
 Then:   [
           FinalValueFeeCalculated {
+            SettlementId: settlement-001,
             HammerPrice: 33.33,
             FeePercentage: 10.0,
             FeeAmount: 3.33,          ← rounded to 2 decimal places

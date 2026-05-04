@@ -90,7 +90,7 @@ Auction-system policy is at MVP defaults inherited from narrative 001 unchanged.
 
 - The `PaymentFailed` branch from charge failure (insufficient credit, payment-provider rejection, ledger-divergence). *(`alternate-path-failure`.)*
 - Invalid-transition paths for `ChargeWinner` from `Initiated` (W003 §3.4; reserve check skipped) and from `WinnerCharged` (W003 §3.3; double-charge prevention). *(`alternate-path-failure`.)*
-- The bidder-credit projection's lifecycle and read-model shape. *(`implementation-detail`; W003 does not define a named bidder-credit projection - see Finding 005 at session close.)*
+- The bidder-credit projection's lifecycle and read-model shape. *(`implementation-detail`; W003 Phase 1 Part 7 names the projection `BidderCreditView` and defines its shape, lifecycle, and consumer model — added at M5-S1 to close Finding 005.)*
 
 ## Moment 4: GreyOwl12's payout clears
 
