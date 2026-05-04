@@ -56,6 +56,14 @@ public class SellingTestFixture : IAsyncLifetime
 
                 services.RunWolverineInSoloMode();
                 services.DisableAllExternalWolverineTransports();
+
+                // Exclude Settlement BC handlers — PendingSettlementHandler (M5-S3) handles
+                // ListingPublished and ListingWithdrawn (events Selling produces). Without
+                // exclusion, the handler would be discovered and attempt to write to a
+                // PendingSettlement schema that isn't registered (AddSettlementModule isn't
+                // called in this fixture). Per critter-stack-testing-patterns.md
+                // §Cross-BC Handler Isolation.
+                services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
             });
         });
     }
@@ -107,5 +115,25 @@ public class SellingTestFixture : IAsyncLifetime
             result = await Host.Scenario(configuration);
         });
         return (tracked, result);
+    }
+}
+
+/// <summary>
+/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Selling test fixture.
+/// PendingSettlementHandler (M5-S3) handles ListingPublished and ListingWithdrawn — events Selling
+/// produces. The Settlement module is not registered here, so the PendingSettlement schema is
+/// absent; the handler would attempt to write to an unregistered schema if discovered.
+/// Per critter-stack-testing-patterns.md §Cross-BC Handler Isolation.
+/// </summary>
+internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Settlement BC inactive — AddSettlementModule not called in Selling fixture; PendingSettlementHandler would write to an unregistered schema",
+                t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+        });
     }
 }

@@ -63,6 +63,13 @@ public class ListingsTestFixture : IAsyncLifetime
                 // would fail code-gen due to the unresolvable ISellerRegistrationService dependency.
                 // See critter-stack-testing-patterns.md §Cross-BC Handler Isolation.
                 services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
+
+                // Exclude Settlement BC handlers — PendingSettlementHandler (M5-S3) handles
+                // ListingPublished, ListingPassed, and ListingWithdrawn against the
+                // PendingSettlement schema. AddSettlementModule() is not called here, so the
+                // schema isn't configured; allowing the handler to be discovered would either
+                // crash on session.Store or land messages in the wrong tracked-bucket.
+                services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
             });
         });
     }
@@ -155,6 +162,26 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Selling BC inactive — ISellerRegistrationService not registered (no AddSellingModule in Listings fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Listings test fixture.
+/// PendingSettlementHandler (M5-S3) handles ListingPublished and other cross-BC events the Listings
+/// projection also consumes. The Settlement module is not registered here, so the PendingSettlement
+/// schema is absent; the handler would either crash on session.Store or interfere with tracked-
+/// bucket assertions if discovered.
+/// </summary>
+internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Settlement BC inactive — AddSettlementModule not called in Listings fixture; PendingSettlementHandler would interfere with handler routing under MultipleHandlerBehavior.Separated",
+                t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
         });
     }
 }

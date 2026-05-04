@@ -18,9 +18,11 @@ namespace CritterBids.Contracts.Selling;
 /// - Selling BC's <c>WithdrawListing</c> command handler (authored at M4-S2). Replaces
 ///   the M3 test-fixture synthesis that stood in as a production-path placeholder at
 ///   M3-S5b close.
-/// Transported via RabbitMQ on two queues (publisher-side routing lands at M4-S2):
+/// Transported via RabbitMQ on three queues (publisher-side routing lands at M4-S2 for
+/// the first two; the third is added at M5-S3):
 /// - <c>auctions-selling-events</c> — existing queue, consumed by Auctions BC.
 /// - <c>listings-selling-events</c> — existing queue, consumed by Listings BC.
+/// - <c>settlement-selling-events</c> — added at M5-S3, consumed by Settlement BC.
 ///
 /// Consumed by:
 /// - Auctions BC (M3): Auction Closing saga transitions to Resolved without emitting any
@@ -34,6 +36,10 @@ namespace CritterBids.Contracts.Selling;
 ///   <c>SessionMembershipHandler</c> sibling class. Exact status field shape
 ///   (<c>Withdrawn</c> as a new enum value vs <c>ClosedReason = "Withdrawn"</c>) is
 ///   M4-D5, decided in M4-S6.
+/// - Settlement BC (M5-S3): <c>PendingSettlement</c> projection transitions
+///   <c>Pending → Expired</c> per workshop 003 scenario §8.5. Consumed via the
+///   "settlement-selling-events" queue; listing withdrawal removes the listing from
+///   the sale path entirely, so the row reaches its absorbing Expired terminal state.
 /// - Relay BC (post-M5): Push "listing withdrawn" notification to bidders and watchers.
 ///   <c>Reason</c> may be surfaced in the notification if present; otherwise a generic
 ///   "listing withdrawn by seller" message is shown.

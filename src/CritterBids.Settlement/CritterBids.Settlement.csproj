@@ -4,10 +4,15 @@
     <!-- WolverineFx.Http.Marten transitively includes WolverineFx.Http, WolverineFx.Marten,
          and Marten — matches the package choice of sibling BCs (Auctions, Listings, Selling).
          Settlement has no HTTP endpoints in M5; the package shape is held consistent across
-         all HTTP-capable Marten BCs to keep adding new endpoints (post-M5, if any) friction-free.
-         No ProjectReference to Contracts in S2 — S3 adds it when ListingPublishedHandler needs
-         CritterBids.Contracts.Selling.ListingPublished as input. -->
+         all HTTP-capable Marten BCs to keep adding new endpoints (post-M5, if any) friction-free. -->
     <PackageReference Include="WolverineFx.Http.Marten" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- M5-S3 first reference: PendingSettlementHandler consumes ListingPublished /
+         ListingWithdrawn (Selling) and ListingPassed (Auctions), and listens to its own
+         BC's SettlementCompleted / PaymentFailed publishes per workshop 003 §8 lifecycle. -->
+    <ProjectReference Include="..\CritterBids.Contracts\CritterBids.Contracts.csproj" />
   </ItemGroup>
 
 </Project>

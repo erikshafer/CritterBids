@@ -6,7 +6,7 @@ Complete reference for projection patterns available on Marten — both **native
 
 > **CritterBids status:** EF Core projections are not yet implemented; native Marten projections (inline snapshots, multi-stream) are in active use. Update the corresponding section with concrete findings when the first EF Core projection lands.
 
-> **Pending: M5-S3 amendment (cross-BC-event-seeded projection pattern).** The Settlement BC's `PendingSettlement` projection lands at M5-S3 as the first CritterBids projection seeded from a *cross-BC integration event* (`ListingPublished` from Selling) rather than from same-BC streams. The pattern is structurally distinct from the M3 / M4 same-BC projections (`CatalogListingView`'s sibling-handler pattern is closest but operates on multiple cross-BC events feeding one view; `PendingSettlement` is one cross-BC event seeding one Settlement-internal cache). M5-S3's retrospective is the natural home for the pattern's full documentation in this skill file: the seed-on-publish lifecycle, the load-by-listing-id correlation at workflow-start time, the Pending → Consumed / Expired / Failed status transitions per workshop 003 scenario §8, and the W003 Phase 1 Part 1 Option A retry-on-projection-lag posture. M5-S1 flagged this section as in-scope for that future amendment; do not author the full pattern here until M5-S3 ships and lived experience grounds the documentation.
+> **CritterBids landed:** the cross-BC-event-seeded projection pattern (a sub-shape of the handler-driven tolerant-upsert pattern) is documented in §6's "Single-Source-Seeded Caches" subsection — Settlement BC's `PendingSettlement` (M5-S3) is the in-repo ground.
 
 ---
 
@@ -607,6 +607,65 @@ public static async Task Handle(
 **Citation:** Marten source `src/Marten/IQuerySession.cs:169` — `Task<T?> LoadAsync<T>(Guid id, CancellationToken token = default) where T : notnull;`. The nullable return type is the whole API contract you lean on.
 
 **In-repo ground:** `src/CritterBids.Listings/ProjectionHandlers/AuctionStatusHandler.cs` (authored M3-S6) and its `ListingSnapshotHandler` sibling — both handle `CatalogListingView` upserts from foreign-BC cascades. See retrospective `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"LoadAsync ?? new" for the arrival-order failure mode that motivated the pattern.
+
+### Single-Source-Seeded Caches — A Sub-Shape of Handler-Driven Projections
+
+The general handler-driven tolerant-upsert pattern above covers projections that *combine* events from multiple sources into one view (`CatalogListingView` is the canonical CritterBids example: M2 Selling fields plus M3 Auctions fields plus M5 Settlement fields, all converging onto one document). A structurally distinct sub-shape arises when **a single source event seeds the projection, and subsequent events transition its lifecycle without combining new informational fields**. The Settlement BC's `PendingSettlement` document is the in-repo ground for this sub-shape (M5-S3).
+
+**The shape:**
+
+| Aspect | Multi-source view (canonical §6) | Single-source-seeded cache (this sub-shape) |
+|---|---|---|
+| Seed event | Many sources contribute fields; no single "first" | One source event creates the row; subsequent events do not add new informational fields |
+| Lifecycle | Fields accumulate; status often a derived projection | Status is the dominant mutation; informational fields are immutable post-seed |
+| Cardinality | Multiple Handle methods, each adds different fields | Multiple Handle methods, each transitions Status only |
+| Consumer model | UI queries; no downstream handler depends on the view | A downstream handler (typically a saga) loads the row at start time as a *cross-BC boundary cache* |
+| Reason for existing | Read-model denormalization for query performance | Cross-BC boundary avoidance: the consumer needs data from another BC at workflow-start time and would otherwise have to query across the boundary |
+
+**Why this distinction matters.** The cache shape is a *structural alternative* to a cross-BC query at workflow-start time. W003 Phase 1 Part 1's framing for `PendingSettlement` is explicit: Settlement needs reserve price, fee percentage, and seller identity when `ListingSold` arrives, but those values were established at `ListingPublished` time (possibly days earlier in a different BC). Settlement could either (a) call across the boundary to Selling at `ListingSold` time, or (b) cache the values at `ListingPublished` time. Option (a) is a BC boundary violation per the modular monolith rules in `CLAUDE.md`. Option (b) is the cache. The cache is the BC-isolation discipline made operational; the projection's purpose is the cache, not a denormalized read model for queries.
+
+**Idempotency under at-least-once redelivery.** Single-source-seeded caches face the same idempotency concern as canonical multi-source views, with one extra wrinkle: the seed handler must not regress an already-terminal row. If a re-delivered `ListingPublished` arrives after the row has transitioned to `Consumed` or `Expired`, the seed handler should preserve the existing terminal status rather than reset it to the initial state. The CritterBids `PendingSettlementHandler.Handle(ListingPublished, ...)` reads the existing row's status into a local variable and uses that as the new row's `Status` field — first-delivery yields `Pending`; re-delivery preserves whatever status the row currently holds.
+
+```csharp
+public static async Task Handle(
+    ListingPublished message,
+    IDocumentSession session,
+    CancellationToken cancellationToken)
+{
+    var existing = await session.LoadAsync<PendingSettlement>(message.ListingId, cancellationToken);
+
+    // First delivery: create with Status = Pending. Re-delivery against an existing row
+    // preserves the row's current Status (which may be terminal if a later event arrived
+    // first under at-least-once redelivery).
+    var status = existing?.Status ?? PendingSettlementStatus.Pending;
+
+    session.Store(new PendingSettlement
+    {
+        Id            = message.ListingId,
+        SellerId      = message.SellerId,
+        // ... other immutable-post-seed fields ...
+        Status        = status,
+    });
+}
+```
+
+**Status preservation under terminal collisions.** Each terminal-status handler (Pending → Expired, Pending → Consumed, Pending → Failed) follows the same shape: load, guard against an already-terminal row, mutate via record `with`, store. The guard collapses to one early-return:
+
+```csharp
+if (existing.Status != PendingSettlementStatus.Pending) return;
+
+session.Store(existing with { Status = PendingSettlementStatus.Expired });
+```
+
+Without the guard, an out-of-order delivery (e.g., `ListingPassed` arriving on a row already `Consumed` because of a redelivery race) would regress the row's terminal status to `Expired`, which would be semantically wrong (the listing was sold and settlement completed; calling it "Expired" would lie). The guard makes terminal statuses absorbing — once reached, no subsequent event can move the row away from them.
+
+**Lifecycle correlation with the consumer's start time.** The cache's purpose is read at workflow-start time by a downstream consumer (in CritterBids: the Settlement saga, landing in M5-S4). The consumer loads the row by the natural correlation key (`ListingId`); if the row is missing, the consumer enters its retry posture per W003 Phase 1 Part 1 Option A (Wolverine's inbox retries the triggering event with backoff until the projection has caught up). The retry policy lives in the consumer, not in the projection — the projection's only job is "seed on first source event; transition status absorbingly". This separation is load-bearing: it lets the cache be eventually consistent without any explicit blocking primitive.
+
+**`Id = ListingId` Marten convention.** When the natural correlation key is also the document's primary key, set the `Id` property to the correlation value. Marten resolves the document key from the `Id` property by convention; no `Identity` override is needed in `ConfigureMarten`. The `LoadAsync<PendingSettlement>(listingId, ct)` call resolves to a single document. Authoring a separate `ListingId` property would force an `Identity(x => x.ListingId)` schema override and complicate query paths.
+
+**No `UseNumericRevisions`.** Tolerant-upsert documents do not need optimistic concurrency at this scale: at-least-once redelivery is handled by the load-mutate-store shape itself, which is naturally idempotent. `UseNumericRevisions(true)` is appropriate for saga documents (where contention between two concurrent saga handlers is a real failure mode) but adds bookkeeping cost without benefit for projection documents updated by single-handler-per-event chains.
+
+**In-repo ground:** `src/CritterBids.Settlement/PendingSettlementHandler.cs` and `src/CritterBids.Settlement/PendingSettlement.cs` (authored M5-S3). Five `Handle(EventType, IDocumentSession, CancellationToken)` overloads on a single static class, one per source event (`ListingPublished` from Selling, `ListingPassed` from Auctions, `ListingWithdrawn` from Selling, `SettlementCompleted` and `PaymentFailed` from Settlement self-publish). Six §8 scenarios from `docs/workshops/003-scenarios.md` covered by `tests/CritterBids.Settlement.Tests/PendingSettlementHandlerTests.cs`. See retrospective `docs/retrospectives/M5-S3-pending-settlement-projection-retrospective.md` for the queue-payload-extension finding (`ListingPassed` added to the `settlement-auctions-events` queue beyond the M5 milestone doc §2's wiring table) and the bidirectional N-1 exclusion observation that surfaced when foreign-BC fixtures broke on the new Settlement handlers.
 
 ---
 
