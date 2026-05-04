@@ -12,6 +12,7 @@
     <Project Path="src/CritterBids.Listings/CritterBids.Listings.csproj" />
     <Project Path="src/CritterBids.Participants/CritterBids.Participants.csproj" />
     <Project Path="src/CritterBids.Selling/CritterBids.Selling.csproj" />
+    <Project Path="src/CritterBids.Settlement/CritterBids.Settlement.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj" />
@@ -20,5 +21,6 @@
     <Project Path="tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj" />
     <Project Path="tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj" />
     <Project Path="tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj" />
+    <Project Path="tests/CritterBids.Settlement.Tests/CritterBids.Settlement.Tests.csproj" />
   </Folder>
 </Solution>
