@@ -229,7 +229,7 @@ Decision recorded as ADR-019 (or analogous slug) per the §2 "Settlement workflo
 
 ### UUID v5 deterministic SettlementId
 
-Per W003 Phase 1 Part 6: `SettlementId = UuidV5(AuctionsNamespace, $"settlement:{ListingId}")`. Idempotent by construction; a duplicate `ListingSold` consumption derives the same `SettlementId` and the workflow's state guard rejects re-initiation. The namespace constant lives in `SettlementsIdentityNamespaces.cs`.
+Per W003 Phase 1 Part 6: `SettlementId = UuidV5(SettlementsIdentityNamespaces.SettlementSaga, $"settlement:{ListingId}")`. Idempotent by construction; a duplicate `ListingSold` consumption derives the same `SettlementId` and the workflow's state guard rejects re-initiation. The namespace constant lives in `SettlementsIdentityNamespaces.cs`. (The original W003 reference to "AuctionsNamespace" was corrected at M5-S4 as a workshop-update finding — the namespace is Settlement-owned per the BC-isolation discipline.)
 
 This is CritterBids' first lived example of UUID v5 namespace-derived stream IDs (M3 Auctions uses UUID v7; M2 Selling uses UUID v7; M1 Participants uses UUID v7). Per `CLAUDE.md`'s ADR 007 reference: "UUID v5 with a BC-specific namespace constant remains available when a natural business key enables deterministic stream creation."
 

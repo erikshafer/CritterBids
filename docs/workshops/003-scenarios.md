@@ -4,7 +4,7 @@ Companion to `003-settlement-bc-deep-dive.md`, Phase 3.
 Implementation-ready scenarios for all Settlement BC components: the decider (pure functions), the evolver (pure functions), the `PendingSettlement` projection, and end-to-end workflow integration.
 
 **Conventions:**
-- Placeholder IDs for readability: `listing-A`, `participant-001` (seller), `participant-002` (winner), `settlement-001` (= `UuidV5(AuctionsNamespace, "settlement:listing-A")`)
+- Placeholder IDs for readability: `listing-A`, `participant-001` (seller), `participant-002` (winner), `settlement-001` (= `UuidV5(SettlementsIdentityNamespaces.SettlementSaga, "settlement:listing-A")`)
 - Timestamps as relative offsets from bidding open (e.g., `T+5:05`) or absolute labels like `T-days`
 - Platform fee: 10% (MVP default)
 - Listing-A configuration: `ReservePrice: 50.00`, `BuyItNowPrice: 100.00`, hammer price on sale: `85.00`

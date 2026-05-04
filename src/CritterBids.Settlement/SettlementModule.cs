@@ -1,5 +1,7 @@
+using CritterBids.Contracts.Settlement;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
+using Wolverine;
 
 namespace CritterBids.Settlement;
 
@@ -16,7 +18,7 @@ public static class SettlementModule
             // provide optimistic concurrency for saga writes (mirrors AuctionClosingSaga
             // from M3-S5). Identity binds the saga document's primary key to the
             // deterministic UUID v5 SettlementId computed at saga-start time per W003
-            // Phase 1 Part 6 (S4 territory).
+            // Phase 1 Part 6 (M5-S4).
             opts.Schema.For<SettlementSaga>()
                 .DatabaseSchemaName("settlement")
                 .Identity(x => x.Id)
@@ -30,22 +32,32 @@ public static class SettlementModule
             // handler's load-mutate-store upsert shape, not optimistic concurrency.
             opts.Schema.For<PendingSettlement>().DatabaseSchemaName("settlement");
 
-            // Event types register at first use (M2 silent-AggregateStreamAsync<T>-null
-            // lesson — registering ahead of Apply / Handle methods can mask bugs). The
-            // Settlement-internal events SettlementInitiated / ReserveCheckCompleted /
-            // WinnerCharged / FinalValueFeeCalculated / SellerPayoutIssued land in S4 with
-            // the saga's Handle methods; the integration-out contracts (already authored
-            // at src/CritterBids.Contracts/Settlement/ in M5-S1) wire publish routes in
-            // Program.cs at S6.
-            //
-            // Cross-BC integration events consumed by PendingSettlementHandler
-            // (ListingPublished / ListingWithdrawn / ListingPassed / SettlementCompleted /
-            // PaymentFailed) are bus-routed via Wolverine, not appended to Marten streams
-            // Settlement owns. AddEventType<T> is for Marten-stream registration only;
-            // bus consumption does not require it.
-            //
-            // BidderCreditView projection registers at S5.
+            // FinancialEventStream — marker class for the per-settlement audit stream per
+            // W003 §"Financial Event Stream". Required by opts.Events.UseMandatoryStreamTypeDeclaration
+            // in Program.cs; sole purpose is satisfying the mandatory-stream-type-declaration
+            // rule at session.Events.StartStream<FinancialEventStream>(sagaId, ...).
+            opts.Schema.For<FinancialEventStream>().DatabaseSchemaName("settlement");
+
+            // Settlement event types — registered at first use per the M2 silent-
+            // AggregateStreamAsync<T>-null lesson. Four stream-internal events authored
+            // at M5-S4 plus the three integration contracts authored at M5-S1 (the
+            // contracts are appended to the financial event stream AND emitted on the
+            // bus per §9.1's six-event stream listing — Marten requires each event type
+            // registered for stream replay / forwarding to resolve the typed payload).
+            // PaymentFailed is registered now even though it doesn't emit until M5-S5;
+            // this saves the M5-S5 module edit.
+            opts.Events.AddEventType<SettlementInitiated>();
+            opts.Events.AddEventType<ReserveCheckCompleted>();
+            opts.Events.AddEventType<WinnerCharged>();
+            opts.Events.AddEventType<FinalValueFeeCalculated>();
+            opts.Events.AddEventType<SellerPayoutIssued>();
+            opts.Events.AddEventType<SettlementCompleted>();
+            opts.Events.AddEventType<PaymentFailed>();
         });
+
+        // Wolverine retry policies. PendingSettlementNotFoundException is the M5-S4
+        // retry-on-projection-lag posture per W003 Phase 1 Part 1 Option A.
+        services.AddSingleton<IWolverineExtension, SettlementsConcurrencyRetryPolicies>();
 
         return services;
     }
