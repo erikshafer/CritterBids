@@ -23,7 +23,7 @@ namespace CritterBids.Contracts.Settlement;
 ///
 /// Field rationale:
 /// - <c>SettlementId</c> — the deterministic UUID v5 stream identifier per W003 Phase 1
-///   Part 6 (<c>UuidV5(AuctionsNamespace, $"settlement:{ListingId}")</c>). Carried so
+///   Part 6 (<c>UuidV5(SettlementsIdentityNamespaces.SettlementSaga, $"settlement:{ListingId}")</c>). Carried so
 ///   downstream consumers can attribute the event to a specific settlement instance and
 ///   so any retry or replay deduplicates against the same identifier.
 /// - <c>ListingId</c> — the source listing whose sale this settlement closes. Listings

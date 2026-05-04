@@ -57,7 +57,7 @@ Each term carries a one-line definition with optional cross-references and "what
 | Term | Definition | Notes |
 |---|---|---|
 | **Settlement** | The financial workflow that runs after a listing resolves to a sale. Settles the buyer charge, fee calculation, and seller payout. Identified by `SettlementId`. | Distinct from Auction Closing - Auctions resolves the bidding outcome; Settlement moves the money. |
-| **SettlementId** | A deterministic UUID v5 derived from `ListingId` (`UuidV5(AuctionsNamespace, $"settlement:{ListingId}")`). Idempotent by construction. | Per W003 Phase 1 Part 6 decision. Distinct from `ListingId`; allows tracing a settlement back to its source listing without conflating identities. |
+| **SettlementId** | A deterministic UUID v5 derived from `ListingId` (`UuidV5(SettlementsIdentityNamespaces.SettlementSaga, $"settlement:{ListingId}")`). Idempotent by construction. | Per W003 Phase 1 Part 6 decision. Distinct from `ListingId`; allows tracing a settlement back to its source listing without conflating identities. The namespace is Settlement-owned per the BC-isolation discipline (M5-S4 workshop-update fix; the original "AuctionsNamespace" reference was a drift). |
 | **PendingSettlement** | A Marten document projection built from `ListingPublished` events. Cached so the Settlement workflow has reserve, fee, and seller data when `ListingSold` arrives without crossing the BC boundary. | Lifecycle states: Pending, Consumed, Expired. Settlement workflow retries with backoff if not found at workflow-start time (W003 Phase 1 Part 1 decision). |
 | **Settlement Workflow** | The seven-phase progression: Initiated → ReserveChecked → WinnerCharged → FeeCalculated → PayoutIssued → Completed. Failure exit at any phase via `PaymentFailed`. | Implementation choice deferred - Wolverine Saga or `ProcessManager<TState>` decider. Same business logic, only hosting differs (W003 Phase 1 Part 2 decision). |
 | **Reserve** | The minimum hammer price below which the listing does not sell at auction. May be null. | Defined in W002 §3 from the bidding-time perspective. Settlement is the financial authority for the binding comparison via `ReserveCheckCompleted`; Auctions' `ReserveMet` is a real-time UX signal only. |
@@ -727,9 +727,9 @@ Options:
 
 **Option B: Deterministic — `SettlementId = ListingId`.** The same Guid is used for both. Trivial idempotency — starting a saga with an ID that already exists is a no-op. But conflates identities.
 
-**Option C: Deterministic via UUID v5 — `SettlementId = UuidV5(SettlementNamespace, ListingId.ToString())`.** Distinct from ListingId but still deterministic. Idempotent by construction. This matches the CritterBids convention used elsewhere (e.g., the Proxy Bid Manager saga correlation key from W002).
+**Option C: Deterministic via UUID v5 — `SettlementId = UuidV5(SettlementsIdentityNamespaces.SettlementSaga, $"settlement:{ListingId}")`.** Distinct from ListingId but still deterministic. Idempotent by construction. This matches the CritterBids convention used elsewhere (e.g., the Proxy Bid Manager saga correlation key from W002 / `AuctionsIdentityNamespaces.ProxyBidManagerSaga`).
 
-> **Decision: Option C adopted.** `SettlementId = UuidV5(AuctionsNamespace, $"settlement:{ListingId}")`. Deterministic, unique per listing, idempotent. Matches the stream ID convention from `CLAUDE.md`.
+> **Decision: Option C adopted.** `SettlementId = UuidV5(SettlementsIdentityNamespaces.SettlementSaga, $"settlement:{ListingId}")`. Deterministic, unique per listing, idempotent. Matches the stream ID convention from `CLAUDE.md` and the BC-isolation discipline — the namespace constant is owned by the Settlement BC, not Auctions. (M5-S4 workshop-update: corrected from the original "AuctionsNamespace" drift; the lived helper at `src/CritterBids.Settlement/SettlementsIdentityNamespaces.cs` is the canonical source.)
 
 ---
 
