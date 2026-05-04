@@ -67,6 +67,36 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
             .ToRabbitQueue("listings-auctions-events");
         opts.ListenToRabbitQueue("listings-auctions-events");
+
+        // M5-S3: Settlement BC subscribes to Selling-source events for the
+        // PendingSettlement projection's lifecycle. ListingPublished seeds the
+        // Pending row (workshop 003 §8.1); ListingWithdrawn transitions to
+        // Expired (§8.5). ListingPublished now carries three publish routes
+        // (listings-selling-events, auctions-selling-events, settlement-selling-
+        // events); ListingWithdrawn has its first real publish route here —
+        // Selling's own publisher is deferred per M3 §3, but the queue is in
+        // place for when it lands.
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
+            .ToRabbitQueue("settlement-selling-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("settlement-selling-events");
+        opts.ListenToRabbitQueue("settlement-selling-events");
+
+        // M5-S3: Settlement BC subscribes to Auctions-source events. ListingPassed
+        // transitions PendingSettlement to Expired (§8.4); ListingSold and
+        // BuyItNowPurchased trigger the Settlement saga in M5-S4 (queue topology
+        // already accommodates them — only the ListingPassed handler fires in S3).
+        // The milestone doc §2 lists ListingSold/BuyItNowPurchased only; ListingPassed
+        // is a queue-payload extension confirmed at M5-S3 scoping (recorded in the
+        // M5-S3 prompt's open questions for milestone-doc amendment in a future
+        // doc-cleanup pass).
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("settlement-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
+            .ToRabbitQueue("settlement-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
+            .ToRabbitQueue("settlement-auctions-events");
+        opts.ListenToRabbitQueue("settlement-auctions-events");
     }
 
     opts.Policies.AutoApplyTransactions();

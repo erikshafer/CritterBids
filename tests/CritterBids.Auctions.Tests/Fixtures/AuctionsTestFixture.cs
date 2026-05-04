@@ -76,6 +76,14 @@ public class AuctionsTestFixture : IAsyncLifetime
                 // handler NoHandlerForEndpointException. The Auctions fixture does not register
                 // AddListingsModule(), so dropping these handlers from discovery is safe.
                 services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
+
+                // Exclude Settlement BC handlers — PendingSettlementHandler (M5-S3) handles
+                // ListingPassed (and others) the same way Listings handlers do. Without this
+                // exclusion the saga's NoRoutes-bucket assertions on ListingPassed flip to
+                // the Sent bucket because Settlement's handler claims a local in-process route.
+                // The Auctions fixture does not register AddSettlementModule(), so the
+                // PendingSettlement schema isn't present and the handler couldn't run anyway.
+                services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
             });
         });
     }
@@ -242,6 +250,27 @@ internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Listings BC inactive — AddListingsModule not called in Auctions fixture; AuctionStatusHandler would shadow saga handlers under MultipleHandlerBehavior.Separated",
                 t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Auctions test fixture.
+/// PendingSettlementHandler (M5-S3) handles ListingPassed (and others) the same way Listings's
+/// AuctionStatusHandler does — under MultipleHandlerBehavior.Separated, the second handler claims
+/// its own endpoint, flipping the saga's NoRoutes-bucket assertions to the Sent bucket. The
+/// Settlement module isn't registered in this fixture, so the PendingSettlement schema isn't
+/// present and the handler couldn't run anyway.
+/// </summary>
+internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Settlement BC inactive — AddSettlementModule not called in Auctions fixture; PendingSettlementHandler would shadow saga handlers under MultipleHandlerBehavior.Separated",
+                t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
         });
     }
 }
