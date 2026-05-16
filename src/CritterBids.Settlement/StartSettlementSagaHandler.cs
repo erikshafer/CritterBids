@@ -25,9 +25,16 @@ namespace CritterBids.Settlement;
 /// exception and retries the inbound message with backoff per W003 Phase 1 Part 1
 /// Option A. The triggering event stays in the queue until the handler succeeds.</para>
 ///
-/// <para><b>M5-S4 scope is bidding source only.</b> The BIN source path
-/// (<c>BuyItNowPurchased</c> consumer + evolver branching to <c>ReserveChecked(WasMet: true)</c>)
-/// lands at M5-S5 per W003 Phase 1 Part 5.</para>
+/// <para><b>Two source overloads — bidding and BIN.</b> The <see cref="ListingSold"/> overload
+/// initiates at <see cref="SettlementStatus.Initiated"/> and self-sends <see cref="CheckReserve"/>
+/// as the first continuation (M5-S4). The <see cref="BuyItNowPurchased"/> overload initiates
+/// at <see cref="SettlementStatus.ReserveChecked"/> directly with <see cref="SettlementSaga.ReserveWasMet"/>
+/// set to <c>true</c>, does NOT append <c>ReserveCheckCompleted</c> (the absence is the
+/// audit signal per W003 §canonical-payload "show me all BIN settlements" query), and
+/// self-sends <see cref="ChargeWinner"/> as the first continuation per W003 Phase 1 Part 5
+/// (M5-S5). The same listing-id can only initiate one settlement — Auctions enforces "BIN
+/// removes after first bid" per M3 lived ground, so the deterministic <c>SettlementId</c>
+/// derivation collides only on re-delivery, never across sources.</para>
 /// </summary>
 public static class StartSettlementSagaHandler
 {
@@ -88,5 +95,71 @@ public static class StartSettlementSagaHandler
                 DateTimeOffset.UtcNow));
 
         return (saga, new OutgoingMessages { new CheckReserve(sagaId) });
+    }
+
+    public static async Task<(SettlementSaga?, OutgoingMessages)> Handle(
+        BuyItNowPurchased message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        // Same PendingSettlement load as the bidding overload — the projection's seller /
+        // fee / reserve fields are needed regardless of source. ReservePrice is loaded but
+        // never compared on the BIN path (BIN skips reserve check by definition).
+        var pending = await session.LoadAsync<PendingSettlement>(
+            message.ListingId, cancellationToken);
+
+        if (pending is null)
+        {
+            throw new PendingSettlementNotFoundException(message.ListingId);
+        }
+
+        var sagaId = SettlementsIdentityNamespaces.SettlementId(message.ListingId);
+
+        // Same deterministic-id idempotency guard as the bidding overload. The same listing
+        // can only settle once across sources — Auctions enforces "BIN removes after first
+        // bid" per M3 lived ground — so existing-saga collisions here are always re-deliveries
+        // of the same BuyItNowPurchased.
+        var existing = await session.LoadAsync<SettlementSaga>(sagaId, cancellationToken);
+        if (existing is not null)
+        {
+            return (null, new OutgoingMessages());
+        }
+
+        var saga = new SettlementSaga
+        {
+            Id = sagaId,
+            ListingId = message.ListingId,
+            WinnerId = message.BuyerId,
+            SellerId = pending.SellerId,
+            HammerPrice = message.Price,
+            ReservePrice = pending.ReservePrice,
+            FeePercentage = pending.FeePercentage,
+            // BIN-source initial state per W003 Phase 1 Part 5: skip the reserve-check phase
+            // entirely. The saga starts at ReserveChecked with ReserveWasMet = true; no
+            // ReserveCheckCompleted event is appended (its absence is the canonical audit
+            // signal for "this was a BIN settlement" per workshop 003 scenario §9.2).
+            Status = SettlementStatus.ReserveChecked,
+            ReserveWasMet = true,
+        };
+
+        // Same financial-event-stream initiation as the bidding overload, but with
+        // Source: BuyItNow and the BIN-side Price field.
+        session.Events.StartStream<FinancialEventStream>(
+            sagaId,
+            new SettlementInitiated(
+                sagaId,
+                message.ListingId,
+                message.BuyerId,
+                pending.SellerId,
+                message.Price,
+                SettlementSource.BuyItNow,
+                pending.ReservePrice,
+                pending.FeePercentage,
+                DateTimeOffset.UtcNow));
+
+        // First self-send is ChargeWinner (not CheckReserve) — the BIN path bypasses the
+        // reserve check entirely. The saga's existing Handle(ChargeWinner) state guard
+        // permits dispatch from ReserveChecked, so no saga-side changes are required.
+        return (saga, new OutgoingMessages { new ChargeWinner(sagaId) });
     }
 }

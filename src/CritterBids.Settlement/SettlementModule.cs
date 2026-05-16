@@ -38,6 +38,16 @@ public static class SettlementModule
             // rule at session.Events.StartStream<FinancialEventStream>(sagaId, ...).
             opts.Schema.For<FinancialEventStream>().DatabaseSchemaName("settlement");
 
+            // BidderCreditView — Settlement BC's per-bidder credit projection per W003
+            // Phase 1 Part 7 (M5-S5). Tolerant-upsert document maintained by
+            // BidderCreditViewHandler from two events: ParticipantSessionStarted
+            // (seed at CreditCeiling) and WinnerCharged (debit by Amount). Marten
+            // resolves the document key via the Id => BidderId expression-bodied
+            // property; no UseNumericRevisions because idempotency lives in the
+            // handler's LastChargedSettlementId equality check, not optimistic
+            // concurrency.
+            opts.Schema.For<BidderCreditView>().DatabaseSchemaName("settlement");
+
             // Settlement event types — registered at first use per the M2 silent-
             // AggregateStreamAsync<T>-null lesson. Four stream-internal events authored
             // at M5-S4 plus the three integration contracts authored at M5-S1 (the

@@ -29,11 +29,20 @@ namespace CritterBids.Settlement;
 /// Re-delivery of <c>ListingSold</c> is handled at <see cref="StartSettlementSagaHandler"/>
 /// via the saga-existence check — no exception, just a no-op return.</para>
 ///
-/// <para><b>M5-S4 scope is happy-path only.</b> The reserve-not-met branch in
-/// <c>Handle(CheckReserve)</c> throws <see cref="NotImplementedException"/> with an explicit
-/// M5-S5 marker; M5-S5 replaces with <c>FailSettlement</c> emission per workshop 003 §3.2.
-/// The BIN-source path (W003 §1.2 / §9.2 / Phase 1 Part 5) is M5-S5 territory; <see cref="StartSettlementSagaHandler"/>
-/// only consumes <c>ListingSold</c> at M5-S4.</para>
+/// <para><b>Failure path lands at M5-S5.</b> The reserve-not-met branch in
+/// <c>Handle(CheckReserve)</c> self-sends <see cref="FailSettlement"/>; the
+/// <c>Handle(FailSettlement)</c> phase appends <see cref="CritterBids.Contracts.Settlement.PaymentFailed"/>
+/// to the financial event stream, emits the integration event, and reaches the
+/// <see cref="SettlementStatus.Failed"/> terminal state via <c>MarkCompleted()</c>. The
+/// failure-path event stream contains exactly three events per workshop 003 scenario §9.3:
+/// <c>SettlementInitiated</c>, <c>ReserveCheckCompleted(WasMet: false)</c>, <c>PaymentFailed</c>.</para>
+///
+/// <para><b>BIN-source path lands at M5-S5.</b> <see cref="StartSettlementSagaHandler"/> accepts
+/// both <c>ListingSold</c> (bidding source) and <c>BuyItNowPurchased</c> (BIN source); the BIN
+/// overload constructs the saga at <see cref="SettlementStatus.ReserveChecked"/> directly with
+/// <see cref="ReserveWasMet"/> = <c>true</c>, skips appending <c>ReserveCheckCompleted</c>
+/// (the absence is the §9.2 audit signal), and self-sends <see cref="ChargeWinner"/> as the
+/// first continuation per W003 Phase 1 Part 5.</para>
 ///
 /// <para><b>Field name convention.</b> <see cref="HammerPrice"/> is the saga's runtime field
 /// (post-initiation per W003 Phase 1 Part 2 Field Name Convention from M5-S1's F002
@@ -76,11 +85,12 @@ public sealed class SettlementSaga : Wolverine.Saga
 
         if (!met)
         {
-            // M5-S5 replaces with: return new OutgoingMessages { new FailSettlement(Id, "ReserveNotMet") };
-            // The W003 §3.2 reserve-not-met defense-in-depth path lands at M5-S5 alongside the
-            // FailSettlement command and PaymentFailed integration emission.
-            throw new NotImplementedException(
-                "Reserve-not-met failure path lands at M5-S5 per W003 §3.2 / §9.3.");
+            // Reserve-not-met defense-in-depth path per W003 §3.2 / §9.3. Self-send
+            // FailSettlement; the FailSettlement handler appends PaymentFailed to the
+            // financial event stream, emits the integration event, and MarkCompleted()s
+            // in Failed terminal state. No ChargeWinner — the failure short-circuits the
+            // remaining four happy-path phases.
+            return new OutgoingMessages { new FailSettlement(Id, "ReserveNotMet") };
         }
 
         return new OutgoingMessages { new ChargeWinner(Id) };
@@ -161,6 +171,38 @@ public sealed class SettlementSaga : Wolverine.Saga
             payoutIssued,
             new CompleteSettlement(Id),
         };
+    }
+
+    public OutgoingMessages Handle(
+        [SagaIdentityFrom(nameof(FailSettlement.SettlementId))] FailSettlement command,
+        IDocumentSession session)
+    {
+        // Terminal-state guard. The reserve-not-met self-send reaches this handler from
+        // ReserveChecked(WasMet: false); post-MVP failure modes may dispatch from later
+        // phases, so the guard rejects only the two terminal states. Wolverine inbox dedup
+        // plus the MarkCompleted() saga-document removal should prevent duplicate
+        // FailSettlement delivery in practice; the guard is the correctness contract.
+        if (Status is SettlementStatus.Completed or SettlementStatus.Failed)
+        {
+            throw new InvalidSettlementTransitionException(
+                Id, Status, nameof(FailSettlement));
+        }
+
+        Status = SettlementStatus.Failed;
+        FailureReason = command.Reason;
+
+        // Integration event — appended to the financial event stream for audit AND emitted
+        // on the bus. The M5-S3 PendingSettlementHandler.Handle(PaymentFailed) fires from
+        // local in-process dispatch and transitions the projection's status to Failed
+        // per workshop 003 scenario §8.7. Cross-BC publish route (Operations consumer)
+        // defers to post-M5 per M5-S5 prompt Item "Explicitly out of scope".
+        var paymentFailed = new CritterBids.Contracts.Settlement.PaymentFailed(
+            Id, ListingId, WinnerId, command.Reason, DateTimeOffset.UtcNow);
+        session.Events.Append(Id, paymentFailed);
+
+        MarkCompleted();
+
+        return new OutgoingMessages { paymentFailed };
     }
 
     public OutgoingMessages Handle(
