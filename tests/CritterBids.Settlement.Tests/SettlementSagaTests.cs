@@ -142,6 +142,17 @@ public class SettlementSagaTests : IAsyncLifetime
         // AuctionClosingSaga's terminal handler (M3-S5).
         var saga = await querySession.LoadAsync<SettlementSaga>(settlementId);
         saga.ShouldBeNull();
+
+        // BidderCreditView lazy-init per M5-S5 / W003 Phase 1 Part 7. This test does not
+        // seed a ParticipantSessionStarted row before dispatching ListingSold, so the
+        // saga-emitted WinnerCharged hits the BidderCreditViewHandler's lazy-init path:
+        // a fresh row is created with RemainingCredit = -Amount as the "no prior state"
+        // sentinel. Asserted here for documentation completeness — BidderCreditViewTests
+        // exercises the same path independently.
+        var bidderCredit = await querySession.LoadAsync<BidderCreditView>(winnerId);
+        bidderCredit.ShouldNotBeNull();
+        bidderCredit.RemainingCredit.ShouldBe(-85m);
+        bidderCredit.LastChargedSettlementId.ShouldBe(settlementId);
     }
 
     // ───────────────────────────────────────────────────────────────────────────

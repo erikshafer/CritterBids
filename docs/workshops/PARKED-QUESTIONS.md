@@ -79,7 +79,7 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 
 Some resolutions depend on external conditions that could change. Flagged here so they're not silently forgotten:
 
-- **W003-P1-3 (Saga vs Process Manager)** depends on `ProcessManager<TState>` framework readiness at M5. If the proposal stalls or is rejected by JasperFx, Section 9 of W003 and its framework-agnostic phrasing are the first things to revisit. **Saga is the only currently-viable host today.**
+- ~~**W003-P1-3 (Saga vs Process Manager)** depends on `ProcessManager<TState>` framework readiness at M5. If the proposal stalls or is rejected by JasperFx, Section 9 of W003 and its framework-agnostic phrasing are the first things to revisit. **Saga is the only currently-viable host today.**~~ **Resolved 2026-05-03 by ADR-019** — Wolverine Saga is the chosen host for the Settlement workflow; the `ProcessManager<TState>` proposal stays out of scope per ADR-019 §Decision. The load-bearing-assumption framing is stale; W003 §9's framework-agnostic phrasing remains intact as historical context but no longer gates a future revisit.
 - **W003-6 (FeePercentage source)** is resolved for MVP only. The per-seller/per-listing override story will resurface when a real fee model is designed.
 - **W001-14 (automated approval chain)** resolved as "single handler chain now, separate handlers later without event vocabulary changes." The vocabulary-stability claim is the load-bearing part.
 

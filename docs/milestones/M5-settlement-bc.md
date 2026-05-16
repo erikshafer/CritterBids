@@ -53,6 +53,7 @@ Total decider + evolver + projection scenarios in scope: **41** (§1-§8 of `003
 | Selling (M2) | `ListingPublished` | Settlement (M5) | Seed `PendingSettlement` projection at publish time so reserve, fee, and seller fields are available when the listing eventually sells |
 | Auctions (M3 / M4) | `ListingSold` | Settlement (M5) | Trigger settlement workflow on the bidding-source happy path |
 | Auctions (M3 / M4) | `BuyItNowPurchased` | Settlement (M5) | Trigger settlement workflow on the BIN path (skips reserve check; per W003 Phase 1 Part 5) |
+| Participants (M1) | `ParticipantSessionStarted` | Settlement (M5) | Initialize `BidderCreditView` row with the bidder's assigned `CreditCeiling` per W003 Phase 1 Part 7 (added at M5-S5; contracts-promotion pre-step lifted `ParticipantSessionStarted` from a Participants-internal record to a cross-BC contract) |
 | Settlement (M5) | `SettlementCompleted` | Listings (M5) and Relay (post-M5) | Update `CatalogListingView.Status` to "settled"; broadcast confirmation push to bidder UIs |
 | Settlement (M5) | `SellerPayoutIssued` | Relay (post-M5) | Broadcast seller-payout notification |
 | Settlement (M5) | `PaymentFailed` | Operations (post-M5) | Surface failure to operator dashboards for intervention |
@@ -61,6 +62,7 @@ New RabbitMQ queue routes:
 
 - `settlement-selling-events` — Settlement listens; consumes `ListingPublished` from the existing `listings-selling-events` queue's publisher routing
 - `settlement-auctions-events` — Settlement listens; consumes `ListingSold` and `BuyItNowPurchased` from existing Auctions publishing
+- `settlement-participants-events` — Settlement listens; consumes `ParticipantSessionStarted` from Participants (added at M5-S5)
 - `listings-settlement-events` — Settlement publishes `SettlementCompleted`; Listings listens
 - (post-M5) `relay-settlement-events`, `operations-settlement-events` — Relay and Operations subscribe when those BCs ship
 
