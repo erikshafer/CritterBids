@@ -1,5 +1,5 @@
+using CritterBids.Contracts.Participants;
 using CritterBids.Participants.Tests.Fixtures;
-using ParticipantSessionStarted = CritterBids.Participants.Features.StartParticipantSession.ParticipantSessionStarted;
 using StartParticipantSessionCommand = CritterBids.Participants.Features.StartParticipantSession.StartParticipantSession;
 
 namespace CritterBids.Participants.Tests.StartParticipantSession;

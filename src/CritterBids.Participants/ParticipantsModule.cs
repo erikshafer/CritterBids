@@ -1,5 +1,5 @@
+using CritterBids.Contracts.Participants;
 using CritterBids.Participants.Features.RegisterAsSeller;
-using CritterBids.Participants.Features.StartParticipantSession;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 

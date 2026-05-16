@@ -1,4 +1,4 @@
-using CritterBids.Participants.Features.StartParticipantSession;
+using CritterBids.Contracts.Participants;
 using SellerRegistered = CritterBids.Participants.Features.RegisterAsSeller.SellerRegistered;
 
 namespace CritterBids.Participants;

@@ -97,6 +97,14 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
             .ToRabbitQueue("settlement-auctions-events");
         opts.ListenToRabbitQueue("settlement-auctions-events");
+
+        // M5-S5: Settlement BC subscribes to ParticipantSessionStarted from the
+        // Participants BC. Seeds BidderCreditViewHandler's per-bidder credit row
+        // at the assigned CreditCeiling per W003 Phase 1 Part 7. Mirrors the
+        // settlement-auctions-events / settlement-selling-events route shapes.
+        opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
+            .ToRabbitQueue("settlement-participants-events");
+        opts.ListenToRabbitQueue("settlement-participants-events");
     }
 
     opts.Policies.AutoApplyTransactions();

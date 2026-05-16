@@ -1,3 +1,4 @@
+using CritterBids.Contracts.Participants;
 using Microsoft.AspNetCore.Authorization;
 using Wolverine.Http;
 using Wolverine.Marten;
