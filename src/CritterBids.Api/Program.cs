@@ -105,6 +105,15 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
             .ToRabbitQueue("settlement-participants-events");
         opts.ListenToRabbitQueue("settlement-participants-events");
+
+        // M5-S6: Settlement → Listings publish route for SettlementCompleted. The
+        // Listings BC's SettlementStatusHandler transitions CatalogListingView.Status
+        // from "Sold" to "Settled" and stamps SettledAt from the event's CompletedAt.
+        // Second lived application of the M3-D2 Path A cross-BC read-model extension
+        // pattern (ADR-014). Mirrors the listings-auctions-events route shape from M3-S6.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("listings-settlement-events");
+        opts.ListenToRabbitQueue("listings-settlement-events");
     }
 
     opts.Policies.AutoApplyTransactions();
