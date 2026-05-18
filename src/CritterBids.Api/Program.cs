@@ -105,6 +105,31 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
             .ToRabbitQueue("settlement-participants-events");
         opts.ListenToRabbitQueue("settlement-participants-events");
+
+        // M5-S6: Settlement → Listings publish route for SettlementCompleted. The
+        // Listings BC's SettlementStatusHandler transitions CatalogListingView.Status
+        // from "Sold" to "Settled" and stamps SettledAt from the event's CompletedAt.
+        // Second lived application of the M3-D2 Path A cross-BC read-model extension
+        // pattern (ADR-014). Mirrors the listings-auctions-events route shape from M3-S6.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("listings-settlement-events");
+        opts.ListenToRabbitQueue("listings-settlement-events");
+
+        // M5-S6: Settlement → Relay publish route for SellerPayoutIssued. Relay BC has
+        // not shipped at M5 close; the route is wired structurally with no consumer
+        // until Relay lands (post-M5). The publish rule is required for
+        // Wolverine.Tracking's tracked.Sent assertions in SellerPayoutIssuedPublishRouteTests
+        // per the wolverine-outbox-tracking memory; without it, the message lands in
+        // tracked.NoRoutes instead of tracked.Sent.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SellerPayoutIssued>()
+            .ToRabbitQueue("relay-settlement-events");
+
+        // M5-S6: Settlement → Operations publish route for PaymentFailed. Operations BC
+        // has not shipped at M5 close; the route is wired structurally for queue-topology
+        // completeness per the M5-S5 retro §"What M5-S6 should know" item #1. No
+        // ListenToRabbitQueue — the Operations consumer ships post-M5.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.PaymentFailed>()
+            .ToRabbitQueue("operations-settlement-events");
     }
 
     opts.Policies.AutoApplyTransactions();

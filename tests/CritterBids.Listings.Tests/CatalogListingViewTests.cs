@@ -57,8 +57,9 @@ public class CatalogListingViewTests : IAsyncLifetime
 
         // Invoke handler directly — no Wolverine pipeline, so SaveChangesAsync() is explicit here.
         // AutoApplyTransactions() only fires when Wolverine dispatches the handler.
+        // M5-S6: handler signature is now async with CancellationToken (load-and-preserve pattern).
         await using var session = _fixture.GetDocumentSession();
-        ListingPublishedHandler.Handle(message, session);
+        await ListingPublishedHandler.Handle(message, session, CancellationToken.None);
         await session.SaveChangesAsync();
     }
 

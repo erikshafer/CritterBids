@@ -683,10 +683,10 @@ src/CritterBids.Listings/
     │                                              ListingUpdated, ListingWithdrawn
     ├── AuctionStatusHandler.cs                ← M3-S6: consumes BiddingOpened,
     │                                              BiddingClosed, ListingSold,
-    │                                              ListingPassed
-    ├── SettlementStatusHandler.cs             ← M4 (planned): PaymentCaptured,
-    │                                              PayoutReleased fields
-    └── ObligationsStatusHandler.cs            ← M5 (planned): ShippedOn,
+    │                                              ListingPassed, BuyItNowPurchased
+    ├── SettlementStatusHandler.cs             ← M5-S6: consumes SettlementCompleted;
+    │                                              "Sold" → "Settled" transition + SettledAt
+    └── ObligationsStatusHandler.cs            ← post-M5 (planned): ShippedOn,
                                                    TrackingNumber, etc.
 ```
 
@@ -712,9 +712,9 @@ public sealed class CatalogListingView
     public int BidCount { get; set; }
     public string? ClosedReason { get; set; }
 
-    // M4 planned — SettlementStatusHandler
-    // public SettlementStatus SettlementStatus { get; set; }
-    // public DateTimeOffset? PaidAt { get; set; }
+    // M5-S6 — SettlementStatusHandler
+    // Status field above gains the "Settled" terminal transition.
+    public DateTimeOffset? SettledAt { get; set; }
 }
 ```
 
@@ -726,7 +726,7 @@ public sealed class CatalogListingView
 
 **Decision boundary — when this shape applies.** Use the one-view/sibling-handlers shape when: (a) the read model is a per-entity rollup; (b) fields originate from two or more BCs; (c) every UI query against the view wants all fields in one round trip. When the read model is genuinely per-BC (e.g. `SellerActivity` summarizing a seller's own listings), a native `MultiStreamProjection` owned by that BC is still the right tool.
 
-**In-repo ground:** `CatalogListingView` established at M2-S7 by `ListingSnapshotHandler`, extended at M3-S6 by `AuctionStatusHandler` with the six auction-status fields listed above. See retrospective `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"M3-D2 resolution" for the Path A decision record.
+**In-repo ground:** `CatalogListingView` established at M2-S7 by `ListingPublishedHandler` (originally named `ListingSnapshotHandler` in early prompts), extended at M3-S6 by `AuctionStatusHandler` with the auction-status fields, extended again at M5-S6 by `SettlementStatusHandler` with the `"Sold"` → `"Settled"` transition and `SettledAt` field. The M5-S6 application is the **second lived example** that triggered ADR-014's body authoring. See [`docs/decisions/014-cross-bc-read-model-extension-shape.md`](../decisions/014-cross-bc-read-model-extension-shape.md) for the canonical decision record and `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"M3-D2 resolution" for the original Path A discovery.
 
 ---
 

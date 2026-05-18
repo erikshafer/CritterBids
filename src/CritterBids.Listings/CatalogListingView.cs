@@ -4,10 +4,12 @@ namespace CritterBids.Listings;
 /// Read model for the catalog listing view.
 /// Populated by <see cref="ListingPublishedHandler"/> when a
 /// <c>CritterBids.Contracts.Selling.ListingPublished</c> integration event arrives,
-/// then extended by <see cref="AuctionStatusHandler"/> as auction integration events
+/// extended by <see cref="AuctionStatusHandler"/> as auction integration events
 /// (<c>BiddingOpened</c>, <c>BidPlaced</c>, <c>BiddingClosed</c>, <c>ListingSold</c>,
 /// <c>ListingPassed</c>, <c>BuyItNowPurchased</c>) arrive over the
-/// <c>listings-auctions-events</c> RabbitMQ queue.
+/// <c>listings-auctions-events</c> RabbitMQ queue, then closed by
+/// <see cref="SettlementStatusHandler"/> when <c>CritterBids.Contracts.Settlement.SettlementCompleted</c>
+/// arrives over the <c>listings-settlement-events</c> queue.
 /// Stored as a Marten document in the "listings" schema.
 /// </summary>
 public sealed record CatalogListingView
@@ -23,8 +25,13 @@ public sealed record CatalogListingView
     public DateTimeOffset PublishedAt { get; init; }
 
     // ─── M3-S6 auction-status fields (additive) ──────────────────────────────
-    // Status transitions: "Published" → "Open" → "Closed" → "Sold" / "Passed".
-    // BIN path: "Published" → "Open" → "Sold" (no "Closed" intermediate).
+    // Status transitions:
+    //   Bidding-sold path: "Published" → "Open" → "Closed" → "Sold" → "Settled"
+    //   BIN path:          "Published" → "Open" → "Sold" → "Settled"
+    //   Passed terminal:   "Published" → "Open" → ("Closed" →) "Passed"
+    // "Settled" added at M5-S6 by SettlementStatusHandler on SettlementCompleted.
+    // "Passed" listings never reach "Settled" — the financial workflow only runs
+    // on the sold paths.
     // String, not enum — symmetry with Format above (M2-S7 precedent, OQ2 Path A).
     public string Status { get; init; } = "Published";
 
@@ -53,4 +60,11 @@ public sealed record CatalogListingView
     // Populated from whichever terminal arrived: BiddingClosed, ListingSold,
     // ListingPassed, or BuyItNowPurchased.
     public DateTimeOffset? ClosedAt { get; init; }
+
+    // ─── M5-S6 settlement-status field (additive) ────────────────────────────
+    // Populated by SettlementStatusHandler from SettlementCompleted.CompletedAt
+    // when the settlement workflow reaches terminal state. Nullable: pre-M5-S6
+    // listings have no settlement; "Passed" listings never reach this state;
+    // listings still in earlier workflow phases remain null.
+    public DateTimeOffset? SettledAt { get; init; }
 }

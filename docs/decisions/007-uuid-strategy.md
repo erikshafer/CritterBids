@@ -1,8 +1,8 @@
 # ADR 007 — UUID Strategy for Stream IDs and Event Row IDs
 
-**Status:** Partially Accepted — stream IDs (✅ Accepted); event row IDs (⏸ Deferred — Gate 1 unconfirmed, Gate 4 re-deferred at M4-S1 to M5-S1 Settlement BC trigger with named owner)
-**Date:** 2026-04-13 (original) · 2026-04-16 (M3-S1 Gate 4 deferral) · 2026-04-20 (M4-S1 Gate 4 second re-evaluation, re-deferred)
-**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession (original) · M3-S1 — Auctions Foundation Decisions (Gate 4 first deferral) · M4-S1 — Auctions Completion Foundation Decisions (Gate 4 second re-evaluation, re-deferred)
+**Status:** ✅ Accepted — stream IDs (UUID v7 by default; UUID v5 with namespace where a natural business key exists); event row IDs (engine default, permanent per the M5 lived-fact closure of Gate 4)
+**Date:** 2026-04-13 (original) · 2026-04-16 (M3-S1 Gate 4 deferral) · 2026-04-20 (M4-S1 Gate 4 re-deferral) · 2026-05-17 (M5-S6 Gate 4 lived-fact closure)
+**Milestone:** M1-S5 — Slice 0.2: StartParticipantSession (original) · M3-S1 — Auctions Foundation Decisions (Gate 4 first deferral) · M4-S1 — Auctions Completion Foundation Decisions (Gate 4 re-deferral) · M5-S6 — Settlement Outbound Publish Routes + ADR-014 + M5 Close (Gate 4 closed by lived fact)
 
 ---
 
@@ -227,6 +227,73 @@ BC. Stream IDs remain UUID v7 per the accepted Stream ID Decision section.
 | Gate 2 — Polecat 2 exposes the same | ✅ Closed (N/A per ADR 011) |
 | Gate 3 — `Guid.CreateVersion7()` in net10.0 | ✅ Confirmed (M1-S5) |
 | Gate 4 — JasperFx guidance for Auctions-scale write workloads | ⏸ Re-deferred — trigger: M5-S1 (Settlement BC foundation decisions); owner: Erik |
+
+---
+
+## Event Row ID Decision — Closed by Lived Fact (M5 close, 2026-05-17)
+
+**Status:** ✅ Closed. Engine-default row IDs are the **permanent posture** for CritterBids.
+
+**Trigger fired at M5-S1 (2026-04-29), PR #25.** The M4-S1 re-deferral set M5-S1 as the
+forcing function for closure (with the option of one further amendment if the gate stayed
+in deferral after that). JasperFx guidance was still not in hand at M5-S1; the Settlement
+BC foundation-decisions session deferred the row-ID question for the duration of M5
+implementation, with the explicit understanding that the M5 close retro would close the
+gate by lived-fact rather than carry yet another re-deferral. That close lands now.
+
+**Lived-fact evidence at M5 close:**
+
+Settlement BC shipped three event-row-bearing surfaces under the engine default through
+M5-S3, M5-S4, and M5-S5 without surfacing any row-ID-related friction:
+
+- **`PendingSettlement` Marten document (M5-S3)** — five integration events drive the
+  projection lifecycle (`ListingPublished`, `ListingPassed`, `ListingWithdrawn`,
+  `SettlementCompleted`, `PaymentFailed`). Tolerant-upsert + status-preservation guards;
+  zero row-ID-related incidents.
+- **Financial event stream (M5-S4)** — six-event happy-path stream per settlement
+  (`SettlementInitiated`, `ReserveCheckCompleted`, `WinnerCharged`,
+  `FinalValueFeeCalculated`, `SellerPayoutIssued`, `SettlementCompleted`). All saga
+  integration tests green; `FetchStreamAsync` queries the stream by `SettlementId`
+  with engine-default row IDs; no observed read-path latency issue.
+- **`BidderCreditView` Marten document (M5-S5)** — seeded from
+  `ParticipantSessionStarted` (Participants cross-BC contract); debited by Settlement-
+  internal `WinnerCharged`. Idempotency contract via `LastChargedSettlementId` equality;
+  lazy-init negative-credit sentinel for cross-queue race; zero row-ID friction.
+
+The cumulative test surface at M5 close — 26 Settlement tests + the cross-BC integration
+tests in Listings (14) and Auctions (36) that exercise the Settlement event flow
+transitively — runs green under engine-default row IDs.
+
+**Why close by lived fact rather than re-defer one more time:**
+
+The original re-deferral rationale (M3-S1, M4-S1) was: insert-locality benefits surface
+under sustained high-write load that the test suite does not exercise; closing prematurely
+walks through a one-way door while a reversible option remains. At M5 close that calculus
+inverts. The Settlement BC is the last Marten BC the CritterBids backend ships in M5
+scope; future BCs (Relay, Obligations, Operations) are post-M5 and any row-ID strategy
+adopted now would not apply uniformly to them anyway. M5-S1's re-deferral committed to
+closure at M5 close, and the lived behavior across three event-row surfaces is concrete
+evidence that engine-default row IDs are adequate for the CritterBids workload at the
+M5-shipped scale. Further deferral would be drift without an additional decision window.
+
+**Subsequent row-ID strategy questions become separate ADRs.** If a future incident
+surfaces row-ID friction in production — sustained high-write load on the Auctions BC
+beyond what the M3 test surface exercised, or page-split observations on the financial
+event stream under conference-demo conditions — that incident motivates a new ADR with
+its own evidence section. This ADR's Gate 4 stops being open after M5 close; the question
+is not re-deferred indefinitely.
+
+**Named owner for the JasperFx follow-up:** Erik. The follow-up is no longer a blocker
+to a CritterBids decision (closed by lived fact above); it remains a useful conversation
+to have with the JasperFx team for the framework's own roadmap, but its outcome does not
+change CritterBids' posture.
+
+| Gate | Status as of 2026-05-17 |
+|---|---|
+| Gate 1 — Marten 8 exposes event row ID generation seam | 🟡 Unconfirmed (no longer load-bearing for CritterBids per the lived-fact close) |
+| Gate 2 — Polecat 2 exposes the same | ✅ Closed (N/A per ADR 011) |
+| Gate 3 — `Guid.CreateVersion7()` in net10.0 | ✅ Confirmed (M1-S5) |
+| Gate 4 — JasperFx guidance for Auctions-scale write workloads | ✅ **Closed by lived fact (M5-S6, 2026-05-17)** — engine default permanent across all CritterBids Marten BCs |
 
 ---
 
