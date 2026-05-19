@@ -175,12 +175,19 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
 builder.Services.AddWolverineHttp();
 builder.Services.AddAuthentication();
 builder.Services.AddAuthorization();
+builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapWolverineEndpoints();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUI(c => c.SwaggerEndpoint("/openapi/v1.json", "CritterBids API"));
+}
 
 return await app.RunJasperFxCommands(args);
 
