@@ -214,6 +214,58 @@ public class AuctionsTestFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Seed a <see cref="Session"/> aggregate stream directly with the supplied first event
+    /// (and optional follow-up events for §5.4 and §5.7 scenarios that need an already-
+    /// started or already-attached state). Bypasses the <see cref="CreateSessionHandler"/>
+    /// dispatch path — appropriate for scenario tests that need to land at a specific
+    /// state in the aggregate's lifecycle without re-running the full create + attach +
+    /// start command sequence. Same shape as <see cref="SeedAuctionClosingSagaAsync"/>'s
+    /// direct-store pattern but on an event stream rather than a document.
+    /// </summary>
+    public async Task<Guid> SeedSessionAsync(
+        string title = "Workshop 002 Flash Session",
+        int durationMinutes = 5,
+        IReadOnlyList<Guid>? attachedListingIds = null,
+        DateTimeOffset? startedAt = null)
+    {
+        var sessionId = Guid.CreateVersion7();
+        var createdAt = DateTimeOffset.UtcNow;
+
+        var events = new List<object>
+        {
+            new CritterBids.Contracts.Auctions.SessionCreated(
+                SessionId: sessionId,
+                Title: title,
+                DurationMinutes: durationMinutes,
+                CreatedAt: createdAt),
+        };
+
+        if (attachedListingIds is not null)
+        {
+            foreach (var listingId in attachedListingIds)
+            {
+                events.Add(new CritterBids.Contracts.Auctions.ListingAttachedToSession(
+                    SessionId: sessionId,
+                    ListingId: listingId,
+                    AttachedAt: createdAt));
+            }
+        }
+
+        if (startedAt is not null)
+        {
+            events.Add(new CritterBids.Contracts.Auctions.SessionStarted(
+                SessionId: sessionId,
+                ListingIds: attachedListingIds ?? Array.Empty<Guid>(),
+                StartedAt: startedAt.Value));
+        }
+
+        await using var session = GetDocumentSession();
+        session.Events.StartStream<Session>(sessionId, events);
+        await session.SaveChangesAsync();
+        return sessionId;
+    }
+
+    /// <summary>
     /// Seed an Auctions-side <see cref="PublishedListings"/> cache row directly. M4-S5
     /// added this projection (sourced from <c>ListingPublished</c> on the existing
     /// <c>auctions-selling-events</c> queue wired at M3-S3). Two consumers read it within
