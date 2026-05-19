@@ -514,6 +514,40 @@ The endpoint reported is the *default* type-named endpoint, **not** a handler's 
 
 ---
 
+## Saga-to-Saga Cascades — Eager / Single-Cycle Under `SendMessageAndWaitAsync`
+
+A saga whose `OutgoingMessages` emit a command that another saga reacts to (and so on) forms a recursive cascade. `Wolverine.Tracking.SendMessageAndWaitAsync` is observed to wait for the **full cascade**, not just the first dispatch — every envelope (including recursively emitted ones) completes before the awaited tracked session returns. In CritterBids the M4-S4 §4.10 two-proxy bidding war runs ~10 alternating `PlaceBid` ↔ `BidPlaced` ↔ `ProxyBidObserved` hops between two `ProxyBidManagerSaga` instances and completes inside a single ~1-second tracked invocation.
+
+### Implication for test shape
+
+Assertions on **final state** work cleanly with one `SendMessageAndWaitAsync` call. No polling, no `Task.Delay`, no second dispatch needed.
+
+```csharp
+var tracked = await host.TrackActivity()
+    .DoNotAssertOnExceptionsDetected()
+    .Timeout(TimeSpan.FromSeconds(30))   // generous upper bound — cascade is fast in practice
+    .SendMessageAndWaitAsync(new BidPlaced(/* trigger */));
+
+// Assert end-state after the entire cascade settles:
+(await fixture.LoadSaga<WeakerSaga>(id)).ShouldBeNull();              // exhausted + deleted
+(await fixture.LoadSaga<StrongerSaga>(id)).Status.ShouldBe(Active);   // winning side
+tracked.NoRoutes.MessagesOf<TerminationEvent>().ShouldHaveSingleItem();
+```
+
+### What the cascade requires
+
+For the cascade to actually run multiple steps, every cascaded command must complete its handler successfully. DCB validators (M3-S4 `PlaceBidHandler`) reject commands when the listing stream lacks the events they expect, which silently halts the cascade at step one. **Seed the upstream Marten state** (`SeedListingStreamAsync` + `SeedAuctionClosingSagaAsync` in the CritterBids fixture) before dispatching the trigger.
+
+### Assertion-bucket cross-cut when adding a handler
+
+Adding a new BC-local handler for a cascade-produced event flips that event's `tracked.*` bucket assignment. CritterBids M4-S4 example: the four `AuctionClosingSagaTests.Close_*` tests previously asserted `tracked.NoRoutes.MessagesOf<ListingSold/ListingPassed>()` because no Auctions handler existed for those outcome events (Listings + Settlement handlers were fixture-excluded). After `ProxyBidDispatchHandler` gained `Handle(ListingSold)` / `Handle(ListingPassed)`, the cascade messages flipped to `tracked.Sent`. The cause is unavoidable — the dispatcher always runs even with empty fan-out, so the cascade outcome event is now a routed message. Pre-emptive search of test fixtures for `tracked.NoRoutes.MessagesOf<X>()` is the cheapest way to discover affected tests before they fail.
+
+### In-repo ground
+
+`tests/CritterBids.Auctions.Tests/ProxyBidManagerSagaTests.cs` (M4-S4) §`TwoProxies_WeakerExhausts_StrongerWins` exercises the bidding-war cascade end-to-end in a single tracked invocation. `tests/CritterBids.Auctions.Tests/AuctionClosingSagaTests.cs` carries the bucket-flip examples (Close_ReserveMet_ProducesListingSold and three siblings) updated at M4-S4 close.
+
+---
+
 ## Scheduled Messages and Timeouts
 
 Use `bus.ScheduleAsync()` for delayed delivery. This is the only justified `IMessageBus` use in handlers.
