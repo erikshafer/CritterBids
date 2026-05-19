@@ -64,4 +64,7 @@ public class SellerListing
         Status = ListingStatus.Published;
         PublishedAt = @event.PublishedAt;
     }
+
+    public void Apply(ListingWithdrawn @event) =>
+        Status = ListingStatus.Withdrawn;
 }

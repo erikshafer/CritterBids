@@ -23,6 +23,7 @@ public static class SellingModule
             opts.Events.AddEventType<ListingApproved>();
             opts.Events.AddEventType<ListingRejected>();
             opts.Events.AddEventType<ListingPublished>();
+            opts.Events.AddEventType<ListingWithdrawn>();
         });
 
         services.AddTransient<ISellerRegistrationService, SellerRegistrationService>();
