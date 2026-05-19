@@ -50,6 +50,16 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("auctions-selling-events");
         opts.ListenToRabbitQueue("auctions-selling-events");
 
+        // M4-S2: Selling-side WithdrawListing producer landed; route the contract
+        // event to the two consuming queues that previously received only the
+        // M3-S5b test-fixture synthesis. settlement-selling-events is the third
+        // consumer and was already pre-wired in the M5-S3 block below — do not
+        // duplicate that route here.
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("listings-selling-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("auctions-selling-events");
+
         // M3-S6: Auctions BC publishes auction-status events to the Listings BC's
         // CatalogListingView projection. All six events share one queue so the
         // consumer endpoint binds once. BuyItNowPurchased is included per M3-S6
