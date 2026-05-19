@@ -64,6 +64,22 @@ public class SellingTestFixture : IAsyncLifetime
                 // called in this fixture). Per critter-stack-testing-patterns.md
                 // §Cross-BC Handler Isolation.
                 services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
+
+                // Exclude Auctions BC handlers — AuctionClosingSaga handles ListingWithdrawn
+                // (event Selling now produces as of M4-S2) and ListingPublishedHandler handles
+                // ListingPublished. Both operate on Auctions-owned schema (Listing aggregate,
+                // AuctionClosingSaga document) registered by AddAuctionsModule(), which this
+                // fixture does not call. The saga lookup throws UnknownSagaException without
+                // exclusion. Mirrors the Settlement-fixture pattern.
+                services.AddSingleton<IWolverineExtension>(new AuctionsBcDiscoveryExclusion());
+
+                // Exclude Listings BC handlers — ListingSnapshotHandler / AuctionStatusHandler /
+                // SettlementStatusHandler operate on CatalogListingView, whose schema mapping
+                // comes from AddListingsModule(). Mirrors the Settlement-fixture pattern; added
+                // alongside the Auctions exclusion at M4-S2 to keep the Selling fixture's
+                // cross-BC exclusion posture consistent across all foreign BCs that consume
+                // Selling-produced contracts.
+                services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
             });
         });
     }
@@ -134,6 +150,46 @@ internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Settlement BC inactive — AddSettlementModule not called in Selling fixture; PendingSettlementHandler would write to an unregistered schema",
                 t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Auctions BC handlers from Wolverine's handler discovery in the Selling test fixture.
+/// AuctionClosingSaga handles ListingWithdrawn (added at M4-S2 as a real producer) and
+/// ListingPublishedHandler handles ListingPublished — both operate on schema registered by
+/// AddAuctionsModule(), which the Selling fixture does not call. The saga lookup throws
+/// UnknownSagaException without exclusion.
+/// </summary>
+internal sealed class AuctionsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Auctions BC inactive — AddAuctionsModule not called in Selling fixture; AuctionClosingSaga / Listing schema absent",
+                t => t.Namespace?.StartsWith("CritterBids.Auctions") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Listings BC handlers from Wolverine's handler discovery in the Selling test fixture.
+/// CatalogListingView projection handlers (ListingSnapshotHandler, AuctionStatusHandler,
+/// SettlementStatusHandler) require schema mappings from AddListingsModule(), which the Selling
+/// fixture does not call. Pre-empts the same failure shape that the Settlement and Auctions
+/// exclusions guard against.
+/// </summary>
+internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Listings BC inactive — AddListingsModule not called in Selling fixture; CatalogListingView schema absent",
+                t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
         });
     }
 }
