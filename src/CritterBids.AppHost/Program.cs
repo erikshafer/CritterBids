@@ -21,7 +21,11 @@ var rabbitMq = builder.AddRabbitMQ("rabbitmq")
     .WithManagementPlugin()
     .WithContainerRuntimeArgs("--label", $"com.docker.compose.project={dockerProject}");
 
+// Aspire does not auto-propagate ASPNETCORE_ENVIRONMENT to child projects — without
+// this, the API boots as "Production" even when the AppHost is in Development, which
+// defeats any `app.Environment.IsDevelopment()` guards (e.g. the OpenAPI/SwaggerUI map).
 builder.AddProject<Projects.CritterBids_Api>("critterbids-api")
+    .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
     .WithReference(postgres)
     .WithReference(rabbitMq)
     .WaitFor(postgres)
