@@ -450,6 +450,60 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         exhausted.MaxAmount.ShouldBe(45m);
     }
 
+    // ─── Scenario 4.11 ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task RegisterProxy_WhileOutbid_WaitsForNextCompetingBid()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var participant002 = Guid.CreateVersion7();
+        var participant003 = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, participant002);
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        // Workshop 002 §4.11: participant-003 holds the high at $40 before participant-002
+        // registers a proxy. The proxy is reactive only — registration alone does NOT cause
+        // an immediate counter-bid. The proxy waits for the NEXT BidPlaced from someone
+        // other than participant-002 to trigger.
+        await _fixture.SeedListingStreamAsync(listingId, sellerId, closeAt, startingBid: 25m);
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt,
+            bidCount: 1,
+            currentHighBid: 40m,
+            currentHighBidderId: participant003);
+
+        // Seed the credit ceiling so the start handler doesn't throw the not-found exception.
+        await _fixture.SeedParticipantCreditCeilingAsync(participant002, creditCeiling: 500m);
+
+        // RegisterProxyBid is single-handler — Invoke is correct here (not Send).
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .InvokeMessageAndWaitAsync(new RegisterProxyBid(
+                ListingId: listingId,
+                BidderId: participant002,
+                MaxAmount: 60m));
+
+        // Workshop assertion: ProxyBidRegistered emitted, saga created at Active, but NO
+        // PlaceBid emission — the proxy is reactive and does not retroactively counter the
+        // existing high bid from before registration.
+        var registered = tracked.NoRoutes.MessagesOf<ProxyBidRegistered>().ShouldHaveSingleItem();
+        registered.BidderId.ShouldBe(participant002);
+
+        tracked.Sent.MessagesOf<PlaceBid>().ShouldBeEmpty();
+        tracked.NoRoutes.MessagesOf<PlaceBid>().ShouldBeEmpty();
+
+        var saga = await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId);
+        saga.ShouldNotBeNull();
+        saga!.Status.ShouldBe(ProxyBidManagerStatus.Active);
+        saga.MaxAmount.ShouldBe(60m);
+        saga.BidderCreditCeiling.ShouldBe(500m);
+        saga.LastBidAmount.ShouldBe(0m);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private async Task SeedProxySagaAsync(
