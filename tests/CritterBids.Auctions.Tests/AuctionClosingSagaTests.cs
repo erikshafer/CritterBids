@@ -314,9 +314,16 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         // Dispatch via the bus — the fixture's session-scoped AppendListingWithdrawnAsync
         // does not forward (per M3-S5 retro §OQ4), and the Selling-side publisher remains
         // deferred (M3 §3), so the test acts as the synthetic producer.
+        //
+        // M4-S4 pre-emptive fix: SendMessageAndWaitAsync instead of InvokeMessageAndWaitAsync.
+        // After S4 adds ProxyBidDispatchHandler.Handle(ListingWithdrawn), ListingWithdrawn
+        // has two BC-local handlers (AuctionClosingSaga + the dispatcher). InvokeAsync is
+        // single-handler-targeted under MultipleHandlerBehavior.Separated and would surface
+        // NoHandlerForEndpointException at the default endpoint — see wolverine-sagas.md
+        // §"Multiple Handlers + Separated — Send, Don't Invoke" (authored at M4-S3 close).
         var tracked = await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
-            .InvokeMessageAndWaitAsync(new ListingWithdrawn(
+            .SendMessageAndWaitAsync(new ListingWithdrawn(
                 ListingId: listingId,
                 WithdrawnBy: Guid.NewGuid(),
                 Reason: null,
