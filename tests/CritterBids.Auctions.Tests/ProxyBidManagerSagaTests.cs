@@ -1,5 +1,6 @@
 using CritterBids.Auctions.Tests.Fixtures;
 using CritterBids.Contracts.Auctions;
+using CritterBids.Contracts.Selling;
 using Wolverine.Tracking;
 
 namespace CritterBids.Auctions.Tests;
@@ -201,6 +202,88 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         saga.ShouldNotBeNull();
         saga!.Status.ShouldBe(ProxyBidManagerStatus.Active);
         saga.LastBidAmount.ShouldBe(50m);
+    }
+
+    // ─── Scenario 4.6 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListingSold_CompletesSaga()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
+
+        await SeedProxySagaAsync(listingId, bidderId, maxAmount: 75m);
+
+        await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .SendMessageAndWaitAsync(new ListingSold(
+                ListingId: listingId,
+                SellerId: Guid.CreateVersion7(),
+                WinnerId: Guid.CreateVersion7(),
+                HammerPrice: 75m,
+                BidCount: 5,
+                SoldAt: DateTimeOffset.UtcNow));
+
+        // Saga document deleted by MarkCompleted (Wolverine.Saga.cs MarkCompleted contract).
+        // The terminal handler sets Status = ListingClosed; MarkCompleted() then deletes the
+        // document, so LoadAsync returns null. Mirrors AuctionClosingSaga's terminal shape.
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
+    }
+
+    // ─── Scenario 4.7 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListingPassed_CompletesSaga()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
+
+        await SeedProxySagaAsync(listingId, bidderId, maxAmount: 75m);
+
+        await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .SendMessageAndWaitAsync(new ListingPassed(
+                ListingId: listingId,
+                Reason: "ReserveNotMet",
+                HighestBid: 40m,
+                BidCount: 3,
+                PassedAt: DateTimeOffset.UtcNow));
+
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
+    }
+
+    // ─── Scenario 4.8 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListingWithdrawn_CompletesSaga()
+    {
+        var listingId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        // The Auctions BC has two ListingWithdrawn handlers (AuctionClosingSaga +
+        // ProxyBidDispatchHandler). The AuctionClosingSaga path requires an existing saga
+        // doc — seed one alongside the proxy so the within-BC fan-out doesn't surface
+        // UnknownSagaException from the closing saga's missing-saga branch.
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt);
+        await SeedProxySagaAsync(listingId, bidderId, maxAmount: 75m);
+
+        await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .SendMessageAndWaitAsync(new ListingWithdrawn(
+                ListingId: listingId,
+                WithdrawnBy: Guid.NewGuid(),
+                Reason: null,
+                WithdrawnAt: DateTimeOffset.UtcNow));
+
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
     }
 
     // ─── Helpers ─────────────────────────────────────────────────────────────

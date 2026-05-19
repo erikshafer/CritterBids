@@ -109,4 +109,49 @@ public sealed class ProxyBidManagerSaga : Wolverine.Saga
                 CreditCeiling: BidderCreditCeiling),
         };
     }
+
+    // ─── M4-S4 terminal handlers (Workshop 002 §4.6 / §4.7 / §4.8) ─────────────
+    //
+    // All three terminal events flow through ProxyBidDispatchHandler, which queries active
+    // sagas on the listing and emits one wrapped command (ProxyListingXxxObserved) per
+    // match. The wrapped command's SagaId field drives Wolverine's standard property-pull
+    // correlation. Each handler is idempotent under at-least-once redelivery via the
+    // Status guard — a late dispatch arriving after the saga has already terminated
+    // (Exhausted or ListingClosed) is silently absorbed.
+    //
+    // Static NotFound absorbers are essential: the saga document is deleted by
+    // MarkCompleted() at the previous terminal step, but a redelivered or out-of-order
+    // ProxyListingXxxObserved may still target the deleted id. Without the absorber,
+    // Wolverine throws UnknownSagaException. Symmetric pattern with
+    // AuctionClosingSaga.NotFound(CloseAuction) at line 146.
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingSoldObserved.SagaId))] ProxyListingSoldObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingSoldObserved message) => new();
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingPassedObserved.SagaId))] ProxyListingPassedObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingPassedObserved message) => new();
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingWithdrawnObserved.SagaId))] ProxyListingWithdrawnObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingWithdrawnObserved message) => new();
 }
