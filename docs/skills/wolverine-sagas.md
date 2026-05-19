@@ -381,6 +381,139 @@ The two shapes coexist in the same project because the underlying business proce
 
 ---
 
+## Composite-Key Correlation — the Dispatcher Pattern
+
+Wolverine's `[SagaIdentityFrom]` resolves the saga id by **reading a single named property** off the inbound message. Verified against the codegen frame at `Wolverine.Persistence.Sagas.PullSagaIdFromMessageFrame`:
+
+```csharp
+// PullSagaIdFromMessageFrame.GenerateCode — pseudocode
+writer.Write($"Guid sagaId = {message}.{sagaIdMember.Name};");
+writer.Write($"if (sagaId == default && !Guid.TryParse(envelope.SagaId, out sagaId)) sagaId = {message}.{sagaIdMember.Name};");
+```
+
+There is **no expression resolver, no method-based identity, no delegate hook.** If your saga's id is a derived composite that no inbound contract carries, you cannot use `[SagaIdentityFrom]` directly against the inbound contract.
+
+### When this matters
+
+`AuctionClosingSaga.Id = ListingId` and `SettlementSaga.Id = UuidV5(ns, $"settlement:{ListingId}")` both work the standard way because the inbound contract carries the lookup key — `ListingId` for AuctionClosingSaga, `SettlementId` (computed before dispatch by the start handler) for SettlementSaga.
+
+The Proxy Bid Manager saga (M4-S3) is structurally different. Its id is `UuidV5(ns, $"{ListingId}:{BidderId}")` — a derived composite that no inbound `BidPlaced` carries. Worse, a single `BidPlaced` may target N proxy sagas (one per registered bidder on the listing); no single field on `BidPlaced` could address them all.
+
+### The dispatcher pattern (Path C)
+
+Introduce an Auctions-internal command and a small non-saga handler that bridges the gap:
+
+```csharp
+// 1. Internal command carrying the resolved SagaId + the original payload.
+public sealed record ProxyBidObserved(
+    Guid SagaId,
+    Guid ListingId,
+    Guid BidId,
+    Guid BidderId,
+    decimal Amount,
+    int BidCount,
+    bool IsProxy,
+    DateTimeOffset PlacedAt);
+
+// 2. Non-saga handler that queries active sagas on this listing and fans out.
+public static class ProxyBidDispatchHandler
+{
+    public static async Task<OutgoingMessages> Handle(
+        BidPlaced message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var sagas = await session.Query<ProxyBidManagerSaga>()
+            .Where(s => s.ListingId == message.ListingId
+                        && s.Status == ProxyBidManagerStatus.Active)
+            .ToListAsync(cancellationToken);
+
+        var outgoing = new OutgoingMessages();
+        foreach (var saga in sagas)
+        {
+            outgoing.Add(new ProxyBidObserved(saga.Id, message.ListingId, /* ... */));
+        }
+        return outgoing;
+    }
+}
+
+// 3. Saga correlates via the standard property-pull path against the wrapped command.
+public sealed class ProxyBidManagerSaga : Saga
+{
+    public Guid Id { get; set; }
+    /* ... */
+
+    public OutgoingMessages Handle(
+        [SagaIdentityFrom(nameof(ProxyBidObserved.SagaId))] ProxyBidObserved message)
+    {
+        /* react to the wrapped bid */
+    }
+}
+```
+
+### Why not a field on the original contract
+
+For sagas with a one-to-one relationship between an inbound event and a saga instance, you could add a `XxxSagaId` field to the contract and have the producer compute the v5 hash before emission. The Proxy Bid Manager case is **one-to-many** — a single `BidPlaced` targets every active proxy on the listing — so the field-on-contract path is not available.
+
+### Where the cost lands
+
+- The dispatcher runs one Marten query per inbound event (cheap key-range scan in production; the saga document doesn't exist before `RegisterProxyBid`).
+- The fan-out emits N internal commands, each dispatched in its own scope.
+- The saga's reactive Handle is a normal `[SagaIdentityFrom]` handler — no new Wolverine mechanism.
+- Each saga's own-bid vs competing-bid branching is local; the dispatcher is correlation infrastructure, not business logic.
+
+### In-repo ground
+
+`src/CritterBids.Auctions/ProxyBidDispatchHandler.cs` (M4-S3) bridges `BidPlaced` to N `ProxyBidObserved` deliveries. The full path is the first lived composite-key saga correlation in CritterBids. M4-S3 retrospective §"OQ1 resolution" carries the original three-path decision (A: resolver-based `[SagaIdentityFrom]` — unavailable; B: field on contract — unavailable for one-to-many; C: dispatcher — selected).
+
+---
+
+## Multiple Handlers + `MultipleHandlerBehavior.Separated` — Send, Don't Invoke
+
+When two handlers in the same BC subscribe to the same message type under `MultipleHandlerBehavior.Separated`, the bus dispatch path matters:
+
+- `IMessageBus.InvokeAsync` is **single-handler-targeted** — it does not fan out. Under Separated mode with multiple handlers, it falls through to the default `local://{type}/` endpoint, which has no handler attached. `Wolverine.Runtime.Handlers.NoHandlerForEndpointException` surfaces from `HandlerGraph.cs:178–205` (the sticky-resolution branch).
+- `IMessageBus.SendAsync` / `PublishAsync` (the publish path) **fans out** to each handler's auto-assigned sticky queue per the convention at `HandlerChain.cs:351–353` (queue name = handler type's lowercased full name).
+
+In integration tests with `Wolverine.Tracking`:
+
+```csharp
+// ❌ WRONG — InvokeMessageAndWaitAsync(msg) calls c.InvokeAsync(msg).
+//   With multiple handlers under Separated, throws NoHandlerForEndpointException
+//   at `local://critterbids.contracts.auctions.bidplaced/` (the default endpoint
+//   that has no sticky chain bound).
+var tracked = await host.TrackActivity()
+    .InvokeMessageAndWaitAsync(new BidPlaced(/* ... */));
+
+// ✅ CORRECT — SendMessageAndWaitAsync(msg) calls c.SendAsync(msg).
+//   Fans out to both handler sticky queues; each runs in its own scope.
+var tracked = await host.TrackActivity()
+    .DoNotAssertOnExceptionsDetected()
+    .SendMessageAndWaitAsync(new BidPlaced(/* ... */));
+```
+
+`UseFastEventForwarding` itself uses `Context.PublishAsync` (see `PublishIncomingEventsBeforeCommit.cs` in Wolverine.Marten), so forwarded events fan out correctly in production. The trap is test code using the invoke path against a message that gained a second handler.
+
+### Symptom shape
+
+```
+Wolverine.Runtime.Handlers.NoHandlerForEndpointException :
+  No handlers for message type {Type} at endpoint local://{type}/.
+  This is usually because of 'sticky' handler to endpoint configuration.
+```
+
+The endpoint reported is the *default* type-named endpoint, **not** a handler's auto-assigned queue. If you see this on a message that worked before adding a second handler in the same BC, switch the test dispatch from invoke to send.
+
+### When `InvokeAsync` is still correct
+
+`InvokeAsync` is correct for messages with exactly one handler — it preserves the call-and-wait-for-handler semantics that the publish path does not. For dispatch tests of a command with a single handler (the M2.5 / M3-S4 / M4-S2 pattern), keep using `InvokeMessageAndWaitAsync`. The switch to `SendMessageAndWaitAsync` is targeted: only when the dispatched message type has > 1 handler under Separated mode.
+
+### In-repo ground
+
+`tests/CritterBids.Auctions.Tests/ProxyBidManagerSagaTests.cs` (M4-S3) uses `SendMessageAndWaitAsync` for the three scenarios that dispatch `BidPlaced` (4.2 / 4.4 / 4.5) because `BidPlaced` gained `ProxyBidDispatchHandler` alongside the existing `AuctionClosingSaga.Handle(BidPlaced)`. The 4.1 scenario (`RegisterProxyBid` — single handler) and `PlaceBidDispatchTests` (M3-S4, dispatches `PlaceBid` — single handler) continue to use `InvokeMessageAndWaitAsync`.
+
+---
+
 ## Scheduled Messages and Timeouts
 
 Use `bus.ScheduleAsync()` for delayed delivery. This is the only justified `IMessageBus` use in handlers.
