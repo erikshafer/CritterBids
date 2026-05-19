@@ -3,7 +3,7 @@
 **Milestone:** M4 — Auctions BC Completion
 **Session:** S2 of 7 (plus pre-drafted S4b and S5b split slots)
 **Prompt file:** `docs/prompts/implementations/M4-S2-selling-withdraw-listing.md`
-**Baseline:** 86 tests passing · `dotnet build` 0 errors, 0 warnings · M4-S1 complete
+**Baseline:** 115 tests passing · `dotnet build` 0 errors, 0 warnings · M4-S1 complete · M5 shipped (S1–S6, retro at `docs/retrospectives/M5-retrospective.md`) — see "M5 drift" note below
 
 ---
 
@@ -95,6 +95,14 @@ Seven entries, all substantive reads. At the README's guidance ceiling.
   - `opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>().ToRabbitQueue("listings-selling-events");`
   Both target queues already exist with bound listeners. No new `ListenToRabbitQueue(...)` calls —
   Auctions and Listings each already listen to their respective `*-selling-events` queue from M2/M3.
+
+  **M5 drift note (added 2026-05-18 at session-resumption):** M5-S3 already wired the third route
+  `Contracts.Selling.ListingWithdrawn → settlement-selling-events` in anticipation of M4-S2 landing
+  (see `Program.cs:81-82` with its explanatory comment). Do **not** re-add that line; the route is
+  in production code and Settlement's `PendingSettlementHandler` already consumes the contract
+  through fixture-synthesized events. M4-S2 is purely the two listed Auctions/Listings routes plus
+  the producer that makes M5-S3's pre-wired Settlement route fire against a real publisher for the
+  first time.
 
 - **Four `CritterBids.Selling.Tests` additions**:
   - `WithdrawListingTests.WithdrawListing_Published_ProducesListingWithdrawn` — direct handler-call
@@ -245,9 +253,10 @@ Seven entries, all substantive reads. At the README's guidance ceiling.
   `AppendListingWithdrawnAsync` updated to mark it a unit-test shortcut with a pointer to the
   new real-producer integration test. No behaviour change.
 - [ ] `dotnet build` — 0 errors, 0 warnings.
-- [ ] `dotnet test` — 90 passing (86 baseline + 4 new: 3 Selling + 1 Selling dispatch) — plus
-  any new Auctions integration test count (1 expected, so 91 total). No test deletions; no
-  regressions elsewhere.
+- [ ] `dotnet test` — 119 passing (115 baseline + 4 new: 3 Selling + 1 Selling dispatch) — plus
+  any new Auctions integration test count (1 expected, so 120 total). No test deletions; no
+  regressions elsewhere. The 115 baseline is post-M5 close (1 Api + 1 Contracts + 6 Participants
+  + 14 Listings + 32 Selling + 25 Settlement + 36 Auctions per the M5 retrospective).
 - [ ] `docs/retrospectives/M4-S2-selling-withdraw-listing-retrospective.md` — written; records
   the final handler shape (happy path + two rejects), the domain-vs-contract split decision
   if any friction surfaced, the cross-BC integration test mechanism actually landed (direct
