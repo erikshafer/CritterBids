@@ -50,6 +50,23 @@ public static class AuctionsModule
             // the handler's existing-row guard, not optimistic concurrency.
             opts.Schema.For<ParticipantCreditCeiling>().DatabaseSchemaName("auctions");
 
+            // PublishedListings (M4-S5) — Auctions-side cache of Selling's ListingPublished /
+            // ListingWithdrawn payload, sourced from the existing auctions-selling-events queue
+            // (wired at M3-S3). Third lived application of the M4-D4 duplicate-projection
+            // pattern (first: Settlement.BidderCreditView at M5-S5; second:
+            // ParticipantCreditCeiling above at M4-S4). Two consumers within Auctions read
+            // this projection: AttachListingToSession's handler (Workshop 002 §5.3 reject-
+            // not-published check) and SessionStartedHandler (per-listing BiddingOpened
+            // payload for the fan-out). Field shape is OQ1 Path A (full BiddingOpened-
+            // precursor payload) per the M4-S5 session-open resolution. No AddEventType
+            // for ListingPublished / ListingWithdrawn — handler-consumed integration events
+            // route by Wolverine independently of Marten event-type registration per M4-S4
+            // OQ8. The two events ARE registered above (line 74 ListingWithdrawn for the
+            // M3 fixture-synthesis path; ListingPublished is not currently registered
+            // because the M3 ListingPublishedHandler does not append to a Marten stream —
+            // it starts one).
+            opts.Schema.For<PublishedListings>().DatabaseSchemaName("auctions");
+
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
