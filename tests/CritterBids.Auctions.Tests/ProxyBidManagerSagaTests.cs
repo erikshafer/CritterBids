@@ -384,6 +384,72 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
     }
 
+    // ─── Scenario 4.10 ───────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TwoProxies_WeakerExhausts_StrongerWins()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var participant002 = Guid.CreateVersion7();
+        var participant003 = Guid.CreateVersion7();
+        var saga002Id = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, participant002);
+        var saga003Id = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, participant003);
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        // Listing stream + closing saga: PlaceBidHandler validates each cascaded PlaceBid
+        // against the DCB state on the listing stream. Without the BiddingOpened seed each
+        // PlaceBid is rejected and the cascade stops at step one. AuctionClosingSaga.Handle
+        // runs for every BidPlaced — needs an existing saga doc, otherwise UnknownSagaException
+        // halts the within-BC fan-out.
+        await _fixture.SeedListingStreamAsync(listingId, sellerId, closeAt, startingBid: 25m);
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt);
+
+        // Workshop 002 §4.10 seed: proxy-002 MaxAmount $50 + ceiling $500; proxy-003
+        // MaxAmount $45 + ceiling $200. Escalation runs until proxy-003 attempts
+        // min($47, $45, $200) = $45 against competing $46 → not > $46 → exhausts.
+        // Final: proxy-002 wins at $46, proxy-003 exhausted.
+        await SeedProxySagaAsync(listingId, participant002,
+            maxAmount: 50m, bidderCreditCeiling: 500m);
+        await SeedProxySagaAsync(listingId, participant003,
+            maxAmount: 45m, bidderCreditCeiling: 200m);
+
+        // proxy-003 fires first against participant-002's notional high — the trigger event.
+        // The cascade then alternates: saga-002 reacts to $31 → PlaceBid $32 →
+        // PlaceBidHandler appends BidPlaced $32 → forwarded → saga-003 reacts → ...
+        // M4-S4 OQ7 first-run signal: SendMessageAndWaitAsync's TrackedSession waits for
+        // every queued envelope (including the cascade's recursive PlaceBid/BidPlaced
+        // fan-outs), so the whole bidding war completes before this await returns.
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .Timeout(TimeSpan.FromSeconds(30))
+            .SendMessageAndWaitAsync(new BidPlaced(
+                ListingId: listingId,
+                BidId: Guid.CreateVersion7(),
+                BidderId: participant003,
+                Amount: 31m,
+                BidCount: 1,
+                IsProxy: true,
+                PlacedAt: DateTimeOffset.UtcNow));
+
+        // Final state:
+        //  - proxy-003 exhausted → saga doc deleted by MarkCompleted
+        //  - proxy-002 still Active (the winner; its $46 was its own-bid tracking emission)
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(saga003Id)).ShouldBeNull();
+
+        var saga002 = await _fixture.LoadSaga<ProxyBidManagerSaga>(saga002Id);
+        saga002.ShouldNotBeNull();
+        saga002!.Status.ShouldBe(ProxyBidManagerStatus.Active);
+
+        var exhausted = tracked.NoRoutes.MessagesOf<ProxyBidExhausted>().ShouldHaveSingleItem();
+        exhausted.BidderId.ShouldBe(participant003);
+        exhausted.MaxAmount.ShouldBe(45m);
+    }
+
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
     private async Task SeedProxySagaAsync(
