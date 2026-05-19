@@ -30,6 +30,16 @@ public static class AuctionsModule
                 .Identity(x => x.Id)
                 .UseNumericRevisions(true);
 
+            // Proxy Bid Manager saga document (M4-S3). Composite-key correlation: the
+            // Id is the deterministic UUID v5 of (ListingId, BidderId) via
+            // AuctionsIdentityHelpers.ProxyBidManagerSagaId. Numeric revisions guard
+            // saga writes — the existing AuctionsConcurrencyRetryPolicies (ConcurrencyException
+            // entry) retries conflicts uniformly across both saga document types.
+            opts.Schema.For<ProxyBidManagerSaga>()
+                .DatabaseSchemaName("auctions")
+                .Identity(x => x.Id)
+                .UseNumericRevisions(true);
+
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
