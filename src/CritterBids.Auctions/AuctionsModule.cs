@@ -90,6 +90,17 @@ public static class AuctionsModule
             // any Marten stream.
             opts.Events.AddEventType<ListingWithdrawn>();
 
+            // M4-S5: Session aggregate event types. All three are appended to the Session
+            // stream (SessionCreated via StartStream<Session>; ListingAttachedToSession and
+            // SessionStarted via [WriteAggregate]). UseFastEventForwarding forwards them as
+            // in-process Wolverine messages — SessionStartedHandler consumes SessionStarted
+            // locally. The same three events are also published to the listings-auctions-
+            // events RabbitMQ queue for the M4-S6 Listings consumer (route added in
+            // Program.cs).
+            opts.Events.AddEventType<SessionCreated>();
+            opts.Events.AddEventType<ListingAttachedToSession>();
+            opts.Events.AddEventType<SessionStarted>();
+
             // DCB tag-type registration. ListingStreamId wraps Guid because .NET 10 added
             // Variant/Version public properties to Guid, which trips ValueTypeInfo's
             // "exactly one public gettable property" rule. See ListingStreamId.cs.
@@ -105,6 +116,13 @@ public static class AuctionsModule
             // on each load rather than snapshotted. S4 introduces the Apply() methods that
             // make this projection non-trivial.
             opts.Projections.LiveStreamAggregation<Listing>();
+
+            // M4-S5: Session aggregate also live-aggregated. Sealed-record functional Apply
+            // shape (returns new instance via `with`); static Create method handles the
+            // SessionCreated first event. First in-Auctions [WriteAggregate]-routed
+            // aggregate (Listing uses DCB, not [WriteAggregate]); OQ8 names the halt-and-
+            // consult discipline if codegen fails on AttachListingToSession / StartSession.
+            opts.Projections.LiveStreamAggregation<Session>();
         });
 
         // DCB concurrency retry policies. DcbConcurrencyException (Marten.Events.Dcb,
