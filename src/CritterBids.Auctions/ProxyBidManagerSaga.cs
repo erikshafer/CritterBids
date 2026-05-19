@@ -85,18 +85,38 @@ public sealed class ProxyBidManagerSaga : Wolverine.Saga
             return new OutgoingMessages();
         }
 
-        // Competing bid — scenario 4.2. Workshop 002 increment is $1 under $100, $5 at $100+.
-        // Inline math per CLAUDE.md's "premature abstraction" rule; S4's retro decides
-        // extraction if the exhaustion + bidding-war scenarios warrant it.
+        // Competing bid — scenarios 4.2 / 4.3 / 4.9. Workshop 002 increment: $1 under $100,
+        // $5 at $100+. Inline math (third co-located copy alongside PlaceBidHandler.cs:174-175
+        // and the bidding-war cascade); S4 retro decides extraction per CLAUDE.md's
+        // "three similar lines is better than a premature abstraction" rule.
         var increment = message.Amount >= 100m ? 5m : 1m;
-        var nextBid = message.Amount + increment;
 
-        if (nextBid > MaxAmount)
+        // M4-S4 exhaustion calc (Workshop 002 §4.9, corrected formula — the workshop's
+        // first-pass example using competing $195 was inconsistent; the inline correction
+        // below it uses competing $200 to show the true exhaustion case). The next defensive
+        // bid is the minimum of three caps: the natural next-increment-above-competing,
+        // the proxy's MaxAmount, and the bidder's overall credit ceiling. If that minimum
+        // doesn't strictly exceed the competing bid, the proxy can't beat the current bid
+        // and exhausts.
+        var capped = Math.Min(Math.Min(message.Amount + increment, MaxAmount), BidderCreditCeiling);
+
+        if (capped <= message.Amount)
         {
-            // TODO(M4-S4): emit ProxyBidExhausted, set Status = Exhausted, MarkCompleted().
-            // Exhaustion-branch scenarios 4.3 + 4.9 (credit-ceiling cap) are S4 scope per
-            // M4-S3 prompt "Explicitly out of scope". S3 leaves headroom-exceeded as a no-op.
-            return new OutgoingMessages();
+            // Exhaustion is terminal: emit the audit event (M4-S4 OQ2 Path a — bus-only via
+            // OutgoingMessages, no AddEventType, lands in tracked.NoRoutes per the M4-S3
+            // ProxyBidRegistered precedent), transition state, and MarkCompleted() to delete
+            // the saga document. Cross-BC consumer is post-M5 Relay per
+            // src/CritterBids.Contracts/Auctions/ProxyBidExhausted.cs.
+            Status = ProxyBidManagerStatus.Exhausted;
+            MarkCompleted();
+            return new OutgoingMessages
+            {
+                new ProxyBidExhausted(
+                    ListingId: ListingId,
+                    BidderId: BidderId,
+                    MaxAmount: MaxAmount,
+                    ExhaustedAt: message.PlacedAt),
+            };
         }
 
         return new OutgoingMessages
@@ -105,8 +125,53 @@ public sealed class ProxyBidManagerSaga : Wolverine.Saga
                 ListingId: message.ListingId,
                 BidId: Guid.CreateVersion7(),
                 BidderId: BidderId,
-                Amount: nextBid,
+                Amount: capped,
                 CreditCeiling: BidderCreditCeiling),
         };
     }
+
+    // ─── M4-S4 terminal handlers (Workshop 002 §4.6 / §4.7 / §4.8) ─────────────
+    //
+    // All three terminal events flow through ProxyBidDispatchHandler, which queries active
+    // sagas on the listing and emits one wrapped command (ProxyListingXxxObserved) per
+    // match. The wrapped command's SagaId field drives Wolverine's standard property-pull
+    // correlation. Each handler is idempotent under at-least-once redelivery via the
+    // Status guard — a late dispatch arriving after the saga has already terminated
+    // (Exhausted or ListingClosed) is silently absorbed.
+    //
+    // Static NotFound absorbers are essential: the saga document is deleted by
+    // MarkCompleted() at the previous terminal step, but a redelivered or out-of-order
+    // ProxyListingXxxObserved may still target the deleted id. Without the absorber,
+    // Wolverine throws UnknownSagaException. Symmetric pattern with
+    // AuctionClosingSaga.NotFound(CloseAuction) at line 146.
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingSoldObserved.SagaId))] ProxyListingSoldObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingSoldObserved message) => new();
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingPassedObserved.SagaId))] ProxyListingPassedObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingPassedObserved message) => new();
+
+    public void Handle(
+        [SagaIdentityFrom(nameof(ProxyListingWithdrawnObserved.SagaId))] ProxyListingWithdrawnObserved message)
+    {
+        if (Status != ProxyBidManagerStatus.Active) return;
+        Status = ProxyBidManagerStatus.ListingClosed;
+        MarkCompleted();
+    }
+
+    public static OutgoingMessages NotFound(ProxyListingWithdrawnObserved message) => new();
 }

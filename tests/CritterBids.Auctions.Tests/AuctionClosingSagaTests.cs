@@ -136,13 +136,17 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         var biddingClosed = tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
         biddingClosed.ListingId.ShouldBe(listingId);
 
-        var sold = tracked.NoRoutes.MessagesOf<ListingSold>().ShouldHaveSingleItem();
+        // M4-S4: ListingSold now has a local Auctions handler (ProxyBidDispatchHandler);
+        // the cascade message lands in tracked.Sent rather than tracked.NoRoutes.
+        // BiddingClosed still has no local Auctions handler — it stays in NoRoutes.
+        var sold = tracked.Sent.MessagesOf<ListingSold>().ShouldHaveSingleItem();
         sold.ListingId.ShouldBe(listingId);
         sold.SellerId.ShouldBe(sellerId);
         sold.WinnerId.ShouldBe(winnerId);
         sold.HammerPrice.ShouldBe(85m);
         sold.BidCount.ShouldBe(12);
 
+        tracked.Sent.MessagesOf<ListingPassed>().ShouldBeEmpty();
         tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldBeEmpty();
 
         // Saga document deleted by MarkCompleted.
@@ -170,12 +174,15 @@ public class AuctionClosingSagaTests : IAsyncLifetime
 
         tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
 
-        var passed = tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
+        // M4-S4: ListingPassed now has a local Auctions handler (ProxyBidDispatchHandler);
+        // the cascade message lands in tracked.Sent rather than tracked.NoRoutes.
+        var passed = tracked.Sent.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
         passed.ListingId.ShouldBe(listingId);
         passed.Reason.ShouldBe("ReserveNotMet");
         passed.HighestBid.ShouldBe(40m);
         passed.BidCount.ShouldBe(5);
 
+        tracked.Sent.MessagesOf<ListingSold>().ShouldBeEmpty();
         tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
         (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
     }
@@ -198,11 +205,13 @@ public class AuctionClosingSagaTests : IAsyncLifetime
 
         tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
 
-        var passed = tracked.NoRoutes.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
+        // M4-S4: see Close_ReserveNotMet_ProducesListingPassed — ListingPassed flips to Sent.
+        var passed = tracked.Sent.MessagesOf<ListingPassed>().ShouldHaveSingleItem();
         passed.Reason.ShouldBe("NoBids");
         passed.HighestBid.ShouldBeNull();
         passed.BidCount.ShouldBe(0);
 
+        tracked.Sent.MessagesOf<ListingSold>().ShouldBeEmpty();
         tracked.NoRoutes.MessagesOf<ListingSold>().ShouldBeEmpty();
         (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();
     }
@@ -314,9 +323,16 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         // Dispatch via the bus — the fixture's session-scoped AppendListingWithdrawnAsync
         // does not forward (per M3-S5 retro §OQ4), and the Selling-side publisher remains
         // deferred (M3 §3), so the test acts as the synthetic producer.
+        //
+        // M4-S4 pre-emptive fix: SendMessageAndWaitAsync instead of InvokeMessageAndWaitAsync.
+        // After S4 adds ProxyBidDispatchHandler.Handle(ListingWithdrawn), ListingWithdrawn
+        // has two BC-local handlers (AuctionClosingSaga + the dispatcher). InvokeAsync is
+        // single-handler-targeted under MultipleHandlerBehavior.Separated and would surface
+        // NoHandlerForEndpointException at the default endpoint — see wolverine-sagas.md
+        // §"Multiple Handlers + Separated — Send, Don't Invoke" (authored at M4-S3 close).
         var tracked = await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
-            .InvokeMessageAndWaitAsync(new ListingWithdrawn(
+            .SendMessageAndWaitAsync(new ListingWithdrawn(
                 ListingId: listingId,
                 WithdrawnBy: Guid.NewGuid(),
                 Reason: null,
@@ -362,7 +378,8 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         var tracked = await TrackAndDispatchCloseAsync(listingId, extendedCloseAt);
 
         tracked.NoRoutes.MessagesOf<BiddingClosed>().ShouldHaveSingleItem();
-        var sold = tracked.NoRoutes.MessagesOf<ListingSold>().ShouldHaveSingleItem();
+        // M4-S4: ListingSold flips to tracked.Sent — see Close_ReserveMet_ProducesListingSold.
+        var sold = tracked.Sent.MessagesOf<ListingSold>().ShouldHaveSingleItem();
         sold.HammerPrice.ShouldBe(85m);
         sold.BidCount.ShouldBe(12);
         (await _fixture.LoadSaga<AuctionClosingSaga>(listingId)).ShouldBeNull();

@@ -40,6 +40,16 @@ public static class AuctionsModule
                 .Identity(x => x.Id)
                 .UseNumericRevisions(true);
 
+            // ParticipantCreditCeiling (M4-S4) — Auctions-side projection of per-participant
+            // credit ceilings sourced from ParticipantSessionStarted on the
+            // auctions-participants-events queue. Second lived application of the M4-D4
+            // duplicate-projection pattern (first: Settlement.BidderCreditView at M5-S5).
+            // The Id => BidderId expression-bodied alias is resolved by Marten via the Id
+            // property convention; no Identity override required (mirrors BidderCreditView's
+            // shape from SettlementModule.cs). No UseNumericRevisions — idempotency lives in
+            // the handler's existing-row guard, not optimistic concurrency.
+            opts.Schema.For<ParticipantCreditCeiling>().DatabaseSchemaName("auctions");
+
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
@@ -98,5 +108,13 @@ internal sealed class AuctionsConcurrencyRetryPolicies : IWolverineExtension
 
         options.OnException<DcbConcurrencyException>()
             .RetryWithCooldown(100.Milliseconds(), 250.Milliseconds());
+
+        // M4-S4: ParticipantCreditCeiling projection-lag retry. Mirrors the M5-S4
+        // SettlementsConcurrencyRetryPolicies shape (PendingSettlementNotFoundException
+        // with the same three-step cooldown ladder). Re-queues RegisterProxyBid when the
+        // auctions-participants-events projection is a few milliseconds behind; the
+        // triggering command stays in the queue until the projection catches up.
+        options.OnException<ParticipantCreditCeilingNotFoundException>()
+            .RetryWithCooldown(100.Milliseconds(), 250.Milliseconds(), 500.Milliseconds());
     }
 }

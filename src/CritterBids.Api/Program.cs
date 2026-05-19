@@ -116,6 +116,16 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("settlement-participants-events");
         opts.ListenToRabbitQueue("settlement-participants-events");
 
+        // M4-S4: Auctions BC subscribes to ParticipantSessionStarted from the
+        // Participants BC. Seeds ParticipantCreditCeilingHandler's per-bidder ceiling
+        // row consumed at saga-start by StartProxyBidManagerSagaHandler to populate
+        // ProxyBidManagerSaga.BidderCreditCeiling. Second lived application of the
+        // M4-D4 duplicate-projection pattern (first: Settlement.BidderCreditView at
+        // M5-S5 above). Separate queue per BC preserves consumer isolation.
+        opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
+            .ToRabbitQueue("auctions-participants-events");
+        opts.ListenToRabbitQueue("auctions-participants-events");
+
         // M5-S6: Settlement → Listings publish route for SettlementCompleted. The
         // Listings BC's SettlementStatusHandler transitions CatalogListingView.Status
         // from "Sold" to "Settled" and stamps SettledAt from the event's CompletedAt.
