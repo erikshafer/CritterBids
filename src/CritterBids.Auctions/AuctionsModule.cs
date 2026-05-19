@@ -108,5 +108,13 @@ internal sealed class AuctionsConcurrencyRetryPolicies : IWolverineExtension
 
         options.OnException<DcbConcurrencyException>()
             .RetryWithCooldown(100.Milliseconds(), 250.Milliseconds());
+
+        // M4-S4: ParticipantCreditCeiling projection-lag retry. Mirrors the M5-S4
+        // SettlementsConcurrencyRetryPolicies shape (PendingSettlementNotFoundException
+        // with the same three-step cooldown ladder). Re-queues RegisterProxyBid when the
+        // auctions-participants-events projection is a few milliseconds behind; the
+        // triggering command stays in the queue until the projection catches up.
+        options.OnException<ParticipantCreditCeilingNotFoundException>()
+            .RetryWithCooldown(100.Milliseconds(), 250.Milliseconds(), 500.Milliseconds());
     }
 }

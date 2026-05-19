@@ -193,6 +193,27 @@ public class AuctionsTestFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Seed an Auctions-side <see cref="ParticipantCreditCeiling"/> row directly. M4-S4
+    /// added this projection (sourced from <c>ParticipantSessionStarted</c> on the
+    /// <c>auctions-participants-events</c> queue); <see cref="StartProxyBidManagerSagaHandler"/>
+    /// reads it at saga-start and throws <see cref="ParticipantCreditCeilingNotFoundException"/>
+    /// on miss. Test fixtures bypass the cross-BC event flow by seeding the projection
+    /// row directly — workshop default <c>500m</c> (participant-002's ceiling per Workshop
+    /// 002 setup) keeps S3-era scenarios safely above their exhaustion thresholds.
+    /// </summary>
+    public async Task SeedParticipantCreditCeilingAsync(Guid bidderId, decimal creditCeiling = 500m)
+    {
+        await using var session = GetDocumentSession();
+        session.Store(new ParticipantCreditCeiling
+        {
+            BidderId      = bidderId,
+            CreditCeiling = creditCeiling,
+            RegisteredAt  = DateTimeOffset.UtcNow,
+        });
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
     /// Append a synthetic ListingWithdrawn event to an existing listing stream, tagged so
     /// UseFastEventForwarding picks it up. Originally authored at M3-S5b as a stand-in for
     /// the absent Selling-side producer; as of M4-S2 the real producer lives in

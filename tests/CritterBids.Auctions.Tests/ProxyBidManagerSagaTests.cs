@@ -52,6 +52,11 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         var bidderId = Guid.CreateVersion7();
         var expectedSagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
 
+        // M4-S4: seed the ParticipantCreditCeiling projection row that
+        // StartProxyBidManagerSagaHandler reads at saga-start. Without this seed the
+        // handler throws ParticipantCreditCeilingNotFoundException after retries exhaust.
+        await _fixture.SeedParticipantCreditCeilingAsync(bidderId, creditCeiling: 500m);
+
         var tracked = await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
             .InvokeMessageAndWaitAsync(new RegisterProxyBid(
@@ -67,9 +72,10 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         saga.MaxAmount.ShouldBe(75m);
         saga.Status.ShouldBe(ProxyBidManagerStatus.Active);
         saga.LastBidAmount.ShouldBe(0m);
-        // S3 OQ4 Path c — credit ceiling is populated at S4; default-zero in S3 because the
-        // S3 scenarios don't reach the cap.
-        saga.BidderCreditCeiling.ShouldBe(0m);
+        // M4-S4: credit ceiling now populated from the projection seeded above (S3 OQ4
+        // Path c resolved). The S3-era zero default was the placeholder before the
+        // projection landed.
+        saga.BidderCreditCeiling.ShouldBe(500m);
 
         // ProxyBidRegistered is emitted via OutgoingMessages with no cross-BC consumer wired
         // — Relay (post-M5) is the only known consumer per the contract's docstring. Lands in
@@ -199,7 +205,11 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
 
     // ─── Helpers ─────────────────────────────────────────────────────────────
 
-    private async Task SeedProxySagaAsync(Guid listingId, Guid bidderId, decimal maxAmount)
+    private async Task SeedProxySagaAsync(
+        Guid listingId,
+        Guid bidderId,
+        decimal maxAmount,
+        decimal bidderCreditCeiling = 500m)
     {
         var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
         await using var session = _fixture.GetDocumentSession();
@@ -209,7 +219,10 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
             ListingId = listingId,
             BidderId = bidderId,
             MaxAmount = maxAmount,
-            BidderCreditCeiling = 0m,
+            // M4-S4: scenarios that don't exercise the credit-ceiling cap inherit the
+            // workshop default ($500 — participant-002's ceiling per Workshop 002 setup).
+            // Scenario 4.9 overrides to $200 to drive the cap-triggered exhaustion path.
+            BidderCreditCeiling = bidderCreditCeiling,
             LastBidAmount = 0m,
             Status = ProxyBidManagerStatus.Active,
         });

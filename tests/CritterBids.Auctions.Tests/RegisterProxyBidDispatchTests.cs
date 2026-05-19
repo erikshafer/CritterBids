@@ -42,6 +42,11 @@ public class RegisterProxyBidDispatchTests : IAsyncLifetime
         var bidderId = Guid.CreateVersion7();
         var expectedSagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, bidderId);
 
+        // M4-S4: the start handler now loads ParticipantCreditCeiling at saga-start; seed
+        // the projection row first so the handler does not throw
+        // ParticipantCreditCeilingNotFoundException.
+        await _fixture.SeedParticipantCreditCeilingAsync(bidderId, creditCeiling: 500m);
+
         var tracked = await _fixture.Host.TrackActivity()
             .DoNotAssertOnExceptionsDetected()
             .InvokeMessageAndWaitAsync(new RegisterProxyBid(

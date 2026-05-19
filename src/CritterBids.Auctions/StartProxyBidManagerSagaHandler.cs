@@ -24,12 +24,18 @@ namespace CritterBids.Auctions;
 /// reaches <c>tracked.NoRoutes</c> — the same fixture-stance pattern Settlement's
 /// SellerPayoutIssued/PaymentFailed routes follow at M5-S6.</para>
 ///
-/// <para><b>Credit-ceiling field (M4-S3 OQ4 Path c).</b>
-/// <see cref="ProxyBidManagerSaga.BidderCreditCeiling"/> is initialized to <c>0m</c> — S3's
-/// four scenarios (4.1 / 4.2 / 4.4 / 4.5) don't consult it. The cap-enforcing branch ships
-/// at M4-S4 alongside the credit-ceiling lookup (likely an Auctions-side
-/// <c>ParticipantCreditCeiling</c> projection — the M4-D4 duplicate-projection pattern
-/// applied a second time).</para>
+/// <para><b>Credit-ceiling lookup (M4-S4 — M4-S3 OQ4 deferred path resolved).</b>
+/// <see cref="ProxyBidManagerSaga.BidderCreditCeiling"/> is populated from the
+/// Auctions-side <see cref="ParticipantCreditCeiling"/> projection (M4-D4 duplicate-
+/// projection pattern, second lived application — first was Settlement's
+/// <c>BidderCreditView</c> at M5-S5). If the projection has not caught up from
+/// <c>ParticipantSessionStarted</c> on the <c>auctions-participants-events</c> queue, the
+/// handler throws <see cref="ParticipantCreditCeilingNotFoundException"/>;
+/// <see cref="AuctionsConcurrencyRetryPolicies"/> catches and re-queues with progressive
+/// backoff (mirrors the M5-S4 <c>PendingSettlementNotFoundException</c> shape from
+/// <c>SettlementsConcurrencyRetryPolicies</c>). The race essentially never fires in
+/// practice — participants establish their credit ceiling well before they register a
+/// proxy bid.</para>
 /// </summary>
 public static class StartProxyBidManagerSagaHandler
 {
@@ -51,13 +57,21 @@ public static class StartProxyBidManagerSagaHandler
             return (null, new OutgoingMessages());
         }
 
+        // Load the bidder's credit ceiling from the local Auctions projection. Throws on
+        // not-found; the retry policy in AuctionsConcurrencyRetryPolicies re-queues the
+        // command with backoff until the projection catches up from the
+        // auctions-participants-events queue.
+        var ceiling = await session.LoadAsync<ParticipantCreditCeiling>(
+            message.BidderId, cancellationToken)
+            ?? throw new ParticipantCreditCeilingNotFoundException(message.BidderId);
+
         var saga = new ProxyBidManagerSaga
         {
             Id = sagaId,
             ListingId = message.ListingId,
             BidderId = message.BidderId,
             MaxAmount = message.MaxAmount,
-            BidderCreditCeiling = 0m,
+            BidderCreditCeiling = ceiling.CreditCeiling,
             LastBidAmount = 0m,
             Status = ProxyBidManagerStatus.Active,
         };
