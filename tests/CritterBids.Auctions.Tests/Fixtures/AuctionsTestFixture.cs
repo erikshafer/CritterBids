@@ -194,11 +194,15 @@ public class AuctionsTestFixture : IAsyncLifetime
 
     /// <summary>
     /// Append a synthetic ListingWithdrawn event to an existing listing stream, tagged so
-    /// UseFastEventForwarding picks it up. Used by scenario 3.10 only — the Selling-side
-    /// publisher is deferred per milestone doc §3, so the test fixture is the sole producer.
-    /// Note: session-scoped appends do not forward; for forwarding-driven dispatch the test
-    /// uses Host.InvokeMessageAndWaitAsync(new ListingWithdrawn(...)) instead. This helper
-    /// exists for future stream-replay scenarios where the event must live on the stream.
+    /// UseFastEventForwarding picks it up. Originally authored at M3-S5b as a stand-in for
+    /// the absent Selling-side producer; as of M4-S2 the real producer lives in
+    /// <c>CritterBids.Selling.WithdrawListingHandler</c>.
+    ///
+    /// Unit-test shortcut, kept after M4-S2 for coverage economy. Real-producer integration
+    /// coverage lives in <c>RealSellingProducerSagaTerminationTests</c>, which dispatches
+    /// the actual Selling <c>WithdrawListing</c> command through a combined Selling+Auctions
+    /// Wolverine runtime. Continue to use this helper for saga-replay or fixture-seeding
+    /// scenarios that only need the event shape on the stream.
     /// </summary>
     public async Task AppendListingWithdrawnAsync(Guid listingId)
     {
