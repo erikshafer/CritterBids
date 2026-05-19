@@ -127,6 +127,53 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         auto.Amount.ShouldBe(46m);
     }
 
+    // ─── Scenario 4.3 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CompetingBid_NextBidExceedsMax_ProducesProxyBidExhausted()
+    {
+        var listingId = Guid.CreateVersion7();
+        var proxyBidderId = Guid.CreateVersion7();
+        var competingBidderId = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, proxyBidderId);
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt);
+
+        // Workshop 002 §4.3: MaxAmount $75. Competing bid arrives at $75 → next defensive
+        // bid would be min($76, $75, $500) = $75, which is NOT strictly > $75 → exhaustion.
+        await SeedProxySagaAsync(listingId, proxyBidderId, maxAmount: 75m);
+
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .SendMessageAndWaitAsync(new BidPlaced(
+                ListingId: listingId,
+                BidId: Guid.CreateVersion7(),
+                BidderId: competingBidderId,
+                Amount: 75m,
+                BidCount: 1,
+                IsProxy: false,
+                PlacedAt: DateTimeOffset.UtcNow));
+
+        // No PlaceBid emission — saga exhausted instead.
+        tracked.Sent.MessagesOf<PlaceBid>().ShouldBeEmpty();
+
+        // ProxyBidExhausted is bus-only per M4-S4 OQ2 (no AddEventType registration); the
+        // contract's cross-BC consumer is post-M5 Relay, so the event lands in NoRoutes
+        // until Relay subscribes. Same shape as ProxyBidRegistered at M4-S3.
+        var exhausted = tracked.NoRoutes.MessagesOf<ProxyBidExhausted>().ShouldHaveSingleItem();
+        exhausted.ListingId.ShouldBe(listingId);
+        exhausted.BidderId.ShouldBe(proxyBidderId);
+        exhausted.MaxAmount.ShouldBe(75m);
+
+        // Saga document deleted by MarkCompleted.
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
+    }
+
     // ─── Scenario 4.4 ────────────────────────────────────────────────────────
 
     [Fact]
@@ -202,6 +249,57 @@ public class ProxyBidManagerSagaTests : IAsyncLifetime
         saga.ShouldNotBeNull();
         saga!.Status.ShouldBe(ProxyBidManagerStatus.Active);
         saga.LastBidAmount.ShouldBe(50m);
+    }
+
+    // ─── Scenario 4.9 ────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CompetingBidAtCeiling_ProducesProxyBidExhausted()
+    {
+        var listingId = Guid.CreateVersion7();
+        var proxyBidderId = Guid.CreateVersion7();
+        var competingBidderId = Guid.CreateVersion7();
+        var sagaId = AuctionsIdentityHelpers.ProxyBidManagerSagaId(listingId, proxyBidderId);
+        var closeAt = DateTimeOffset.UtcNow.AddHours(1);
+
+        await _fixture.SeedAuctionClosingSagaAsync(
+            listingId,
+            status: AuctionClosingStatus.Active,
+            scheduledCloseAt: closeAt,
+            originalCloseAt: closeAt);
+
+        // Workshop 002 §4.9 corrected example: MaxAmount $300, BidderCreditCeiling $200,
+        // competing bid $200. Next defensive bid = min($201, $300, $200) = $200, which is
+        // NOT strictly > $200 → exhaustion. The credit ceiling caps the proxy even though
+        // the per-listing MaxAmount has plenty of headroom — proves the three-way min.
+        await SeedProxySagaAsync(
+            listingId,
+            proxyBidderId,
+            maxAmount: 300m,
+            bidderCreditCeiling: 200m);
+
+        var tracked = await _fixture.Host.TrackActivity()
+            .DoNotAssertOnExceptionsDetected()
+            .SendMessageAndWaitAsync(new BidPlaced(
+                ListingId: listingId,
+                BidId: Guid.CreateVersion7(),
+                BidderId: competingBidderId,
+                Amount: 200m,
+                BidCount: 4,
+                IsProxy: false,
+                PlacedAt: DateTimeOffset.UtcNow));
+
+        tracked.Sent.MessagesOf<PlaceBid>().ShouldBeEmpty();
+
+        var exhausted = tracked.NoRoutes.MessagesOf<ProxyBidExhausted>().ShouldHaveSingleItem();
+        exhausted.ListingId.ShouldBe(listingId);
+        exhausted.BidderId.ShouldBe(proxyBidderId);
+        // MaxAmount on the event is the proxy's configured MaxAmount, NOT the credit ceiling
+        // — per ProxyBidExhausted.cs payload, the event reports the user's intended ceiling.
+        // Relay's "your proxy has been exceeded" notification renders the original cap.
+        exhausted.MaxAmount.ShouldBe(300m);
+
+        (await _fixture.LoadSaga<ProxyBidManagerSaga>(sagaId)).ShouldBeNull();
     }
 
     // ─── Scenario 4.6 ────────────────────────────────────────────────────────
