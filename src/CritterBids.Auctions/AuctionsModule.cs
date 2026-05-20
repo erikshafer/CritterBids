@@ -50,6 +50,23 @@ public static class AuctionsModule
             // the handler's existing-row guard, not optimistic concurrency.
             opts.Schema.For<ParticipantCreditCeiling>().DatabaseSchemaName("auctions");
 
+            // PublishedListings (M4-S5) — Auctions-side cache of Selling's ListingPublished /
+            // ListingWithdrawn payload, sourced from the existing auctions-selling-events queue
+            // (wired at M3-S3). Third lived application of the M4-D4 duplicate-projection
+            // pattern (first: Settlement.BidderCreditView at M5-S5; second:
+            // ParticipantCreditCeiling above at M4-S4). Two consumers within Auctions read
+            // this projection: AttachListingToSession's handler (Workshop 002 §5.3 reject-
+            // not-published check) and SessionStartedHandler (per-listing BiddingOpened
+            // payload for the fan-out). Field shape is OQ1 Path A (full BiddingOpened-
+            // precursor payload) per the M4-S5 session-open resolution. No AddEventType
+            // for ListingPublished / ListingWithdrawn — handler-consumed integration events
+            // route by Wolverine independently of Marten event-type registration per M4-S4
+            // OQ8. The two events ARE registered above (line 74 ListingWithdrawn for the
+            // M3 fixture-synthesis path; ListingPublished is not currently registered
+            // because the M3 ListingPublishedHandler does not append to a Marten stream —
+            // it starts one).
+            opts.Schema.For<PublishedListings>().DatabaseSchemaName("auctions");
+
             // Event types register at first use (M2 key learning — registering ahead of
             // Apply() methods causes silent null returns from AggregateStreamAsync<T>).
             // BiddingOpened is produced by ListingPublishedHandler (S3); the bid-batch below
@@ -73,6 +90,17 @@ public static class AuctionsModule
             // any Marten stream.
             opts.Events.AddEventType<ListingWithdrawn>();
 
+            // M4-S5: Session aggregate event types. All three are appended to the Session
+            // stream (SessionCreated via StartStream<Session>; ListingAttachedToSession and
+            // SessionStarted via [WriteAggregate]). UseFastEventForwarding forwards them as
+            // in-process Wolverine messages — SessionStartedHandler consumes SessionStarted
+            // locally. The same three events are also published to the listings-auctions-
+            // events RabbitMQ queue for the M4-S6 Listings consumer (route added in
+            // Program.cs).
+            opts.Events.AddEventType<SessionCreated>();
+            opts.Events.AddEventType<ListingAttachedToSession>();
+            opts.Events.AddEventType<SessionStarted>();
+
             // DCB tag-type registration. ListingStreamId wraps Guid because .NET 10 added
             // Variant/Version public properties to Guid, which trips ValueTypeInfo's
             // "exactly one public gettable property" rule. See ListingStreamId.cs.
@@ -88,6 +116,13 @@ public static class AuctionsModule
             // on each load rather than snapshotted. S4 introduces the Apply() methods that
             // make this projection non-trivial.
             opts.Projections.LiveStreamAggregation<Listing>();
+
+            // M4-S5: Session aggregate also live-aggregated. Sealed-record functional Apply
+            // shape (returns new instance via `with`); static Create method handles the
+            // SessionCreated first event. First in-Auctions [WriteAggregate]-routed
+            // aggregate (Listing uses DCB, not [WriteAggregate]); OQ8 names the halt-and-
+            // consult discipline if codegen fails on AttachListingToSession / StartSession.
+            opts.Projections.LiveStreamAggregation<Session>();
         });
 
         // DCB concurrency retry policies. DcbConcurrencyException (Marten.Events.Dcb,

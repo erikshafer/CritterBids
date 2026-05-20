@@ -76,6 +76,17 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("listings-auctions-events");
         opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
             .ToRabbitQueue("listings-auctions-events");
+
+        // M4-S5: Auctions BC publishes the Session-aggregate trio to the same
+        // listings-auctions-events queue. Listings consumes them at M4-S6 in the new
+        // SessionMembershipHandler sibling class. No new queue — the M3-S6 ListenTo
+        // below covers the Auctions → Listings traffic for the entire BC.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionCreated>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingAttachedToSession>()
+            .ToRabbitQueue("listings-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionStarted>()
+            .ToRabbitQueue("listings-auctions-events");
         opts.ListenToRabbitQueue("listings-auctions-events");
 
         // M5-S3: Settlement BC subscribes to Selling-source events for the

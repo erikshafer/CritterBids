@@ -214,6 +214,111 @@ public class AuctionsTestFixture : IAsyncLifetime
     }
 
     /// <summary>
+    /// Seed a <see cref="Session"/> aggregate stream directly with the supplied first event
+    /// (and optional follow-up events for §5.4 and §5.7 scenarios that need an already-
+    /// started or already-attached state). Bypasses the <see cref="CreateSessionHandler"/>
+    /// dispatch path — appropriate for scenario tests that need to land at a specific
+    /// state in the aggregate's lifecycle without re-running the full create + attach +
+    /// start command sequence. Same shape as <see cref="SeedAuctionClosingSagaAsync"/>'s
+    /// direct-store pattern but on an event stream rather than a document.
+    /// </summary>
+    public async Task<Guid> SeedSessionAsync(
+        string title = "Workshop 002 Flash Session",
+        int durationMinutes = 5,
+        IReadOnlyList<Guid>? attachedListingIds = null,
+        DateTimeOffset? startedAt = null)
+    {
+        var sessionId = Guid.CreateVersion7();
+        var createdAt = DateTimeOffset.UtcNow;
+
+        var events = new List<object>
+        {
+            new CritterBids.Contracts.Auctions.SessionCreated(
+                SessionId: sessionId,
+                Title: title,
+                DurationMinutes: durationMinutes,
+                CreatedAt: createdAt),
+        };
+
+        if (attachedListingIds is not null)
+        {
+            foreach (var listingId in attachedListingIds)
+            {
+                events.Add(new CritterBids.Contracts.Auctions.ListingAttachedToSession(
+                    SessionId: sessionId,
+                    ListingId: listingId,
+                    AttachedAt: createdAt));
+            }
+        }
+
+        if (startedAt is not null)
+        {
+            events.Add(new CritterBids.Contracts.Auctions.SessionStarted(
+                SessionId: sessionId,
+                ListingIds: attachedListingIds ?? Array.Empty<Guid>(),
+                StartedAt: startedAt.Value));
+        }
+
+        await using var session = GetDocumentSession();
+        session.Events.StartStream<Session>(sessionId, events);
+        await session.SaveChangesAsync();
+        return sessionId;
+    }
+
+    /// <summary>
+    /// Seed an Auctions-side <see cref="PublishedListings"/> cache row directly. M4-S5
+    /// added this projection (sourced from <c>ListingPublished</c> on the existing
+    /// <c>auctions-selling-events</c> queue wired at M3-S3). Two consumers read it within
+    /// Auctions at handler hot-paths: <c>AttachListingToSession</c>'s handler
+    /// (Workshop 002 §5.3 reject-not-published check) and <see cref="SessionStartedHandler"/>'s
+    /// per-listing fan-out (Workshop 002 §5.5).
+    ///
+    /// <para>Workshop 002 default parameter values per "Listing-A" preamble:
+    /// <c>StartingBid: $25</c>, no reserve, no BIN, no extended bidding. Defaults stay
+    /// explicit in the signature so test bodies show their data choices — same precedent
+    /// as <see cref="SeedParticipantCreditCeilingAsync"/> from M4-S4.</para>
+    ///
+    /// <para><c>Duration</c> defaults to <c>null</c> (Flash format); Timed-format tests
+    /// pass an explicit non-null TimeSpan. Both shapes are valid for the projection's
+    /// field contract; the Flash null shape is the one Session fan-out tests use, since
+    /// fan-out reads <c>DurationMinutes</c> off the Session aggregate (OQ5 Path B), not
+    /// off this projection.</para>
+    /// </summary>
+    public async Task SeedPublishedListingAsync(
+        Guid listingId,
+        Guid sellerId,
+        decimal startingBid = 25m,
+        decimal? reservePrice = null,
+        decimal? buyItNowPrice = null,
+        TimeSpan? duration = null,
+        bool extendedBiddingEnabled = false,
+        TimeSpan? extendedBiddingTriggerWindow = null,
+        TimeSpan? extendedBiddingExtension = null,
+        DateTimeOffset? publishedAt = null,
+        PublishedListingsStatus status = PublishedListingsStatus.Published)
+    {
+        await using var session = GetDocumentSession();
+        session.Store(new PublishedListings
+        {
+            Id                            = listingId,
+            SellerId                      = sellerId,
+            StartingBid                   = startingBid,
+            ReservePrice                  = reservePrice,
+            BuyItNowPrice                 = buyItNowPrice,
+            Duration                      = duration,
+            ExtendedBiddingEnabled        = extendedBiddingEnabled,
+            ExtendedBiddingTriggerWindow  = extendedBiddingTriggerWindow,
+            ExtendedBiddingExtension      = extendedBiddingExtension,
+            PublishedAt                   = publishedAt ?? DateTimeOffset.UtcNow,
+            WithdrawnAt                   = status == PublishedListingsStatus.Withdrawn
+                                              ? DateTimeOffset.UtcNow
+                                              : null,
+            Status                        = status,
+        });
+        await session.SaveChangesAsync();
+    }
+
+    /// <summary>
     /// Append a synthetic ListingWithdrawn event to an existing listing stream, tagged so
     /// UseFastEventForwarding picks it up. Originally authored at M3-S5b as a stand-in for
     /// the absent Selling-side producer; as of M4-S2 the real producer lives in
