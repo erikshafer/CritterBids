@@ -146,6 +146,43 @@ public class ListingsTestFixture : IAsyncLifetime
         await using var session = GetDocumentSession();
         return await session.LoadAsync<CatalogListingView>(listingId);
     }
+
+    // ─── M4-S6 session-membership helpers ─────────────────────────────────────
+
+    /// <summary>
+    /// Seed a CatalogListingView document at Status = "Published" with SessionId
+    /// pre-populated — convenience for tests that want the post-attach baseline without
+    /// running the full ListingPublished → ListingAttachedToSession dispatch chain. The
+    /// SessionStartedAt field is left null; tests exercising SessionStarted invoke
+    /// AuctionsSessionHandler.Handle(SessionStarted) directly after seeding.
+    /// </summary>
+    public async Task SeedSessionAttachedListingAsync(
+        Guid sessionId,
+        Guid listingId,
+        Guid? sellerId = null,
+        string title = "Mint Condition Foil Black Lotus",
+        string format = "Flash",
+        decimal startingBid = 50_000m,
+        decimal? buyItNow = 150_000m,
+        TimeSpan? duration = null,
+        DateTimeOffset? publishedAt = null)
+    {
+        await using var session = GetDocumentSession();
+        session.Store(new CatalogListingView
+        {
+            Id          = listingId,
+            SellerId    = sellerId ?? Guid.CreateVersion7(),
+            Title       = title,
+            Format      = format,
+            StartingBid = startingBid,
+            BuyItNow    = buyItNow,
+            Duration    = duration,
+            PublishedAt = publishedAt ?? DateTimeOffset.UtcNow,
+            Status      = "Published",
+            SessionId   = sessionId,
+        });
+        await session.SaveChangesAsync();
+    }
 }
 
 /// <summary>

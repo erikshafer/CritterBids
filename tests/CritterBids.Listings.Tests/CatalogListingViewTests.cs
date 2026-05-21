@@ -426,4 +426,296 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.ClosedAt.ShouldBe(purchasedAt);
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
     }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // M4-S6 — Session-membership + Withdrawn extension (milestone doc §7)
+    //
+    // Sibling handlers per ADR-014 Sub-Option A (resolved at M4-S6 session open):
+    //   - AuctionsSessionHandler consumes ListingAttachedToSession + SessionStarted
+    //   - SellingListingWithdrawnHandler consumes ListingWithdrawn
+    // Direct handler invocation (no bus dispatch) per the M3-S6 in-fixture note above.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ListingAttachedToSession_SetsSessionId()
+    {
+        // Arrange — view at Status = "Published" baseline (seeded directly; the M2
+        // SeedCatalogEntry path is exercised separately in the earlier tests).
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var sessionId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        var attached = new ListingAttachedToSession(
+            SessionId: sessionId,
+            ListingId: listingId,
+            AttachedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        await InvokeAuctionHandlerAsync<ListingAttachedToSession>(
+            AuctionsSessionHandler.Handle, attached);
+
+        // Assert — SessionId populated; all prior fields preserved
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.SessionId.ShouldBe(sessionId);
+        view.SessionStartedAt.ShouldBeNull();         // not started yet
+        view.Status.ShouldBe("Published");            // attach does not transition status
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
+
+    [Fact]
+    public async Task SessionStarted_SetsSessionStartedAtForMemberListings()
+    {
+        // Arrange — three views all attached to the same session; one stray view in a
+        // different session-or-no-session state. The fan-out should touch only the three.
+        var sessionId = Guid.CreateVersion7();
+        var memberA = Guid.CreateVersion7();
+        var memberB = Guid.CreateVersion7();
+        var memberC = Guid.CreateVersion7();
+        var unrelated = Guid.CreateVersion7();
+        var unrelatedSeller = Guid.CreateVersion7();
+
+        await _fixture.SeedSessionAttachedListingAsync(sessionId, memberA);
+        await _fixture.SeedSessionAttachedListingAsync(sessionId, memberB);
+        await _fixture.SeedSessionAttachedListingAsync(sessionId, memberC);
+        await _fixture.SeedCatalogListingViewAsync(unrelated, unrelatedSeller);
+
+        var startedAt = DateTimeOffset.UtcNow;
+        var started = new SessionStarted(
+            SessionId: sessionId,
+            ListingIds: new[] { memberA, memberB, memberC },
+            StartedAt: startedAt);
+
+        // Act
+        await InvokeAuctionHandlerAsync<SessionStarted>(
+            AuctionsSessionHandler.Handle, started);
+
+        // Assert — every member listing carries SessionStartedAt; the unrelated row is
+        // untouched (SessionId still null, SessionStartedAt still null).
+        var viewA = await _fixture.LoadCatalogListingViewAsync(memberA);
+        var viewB = await _fixture.LoadCatalogListingViewAsync(memberB);
+        var viewC = await _fixture.LoadCatalogListingViewAsync(memberC);
+        var viewUnrelated = await _fixture.LoadCatalogListingViewAsync(unrelated);
+
+        viewA.ShouldNotBeNull();
+        viewB.ShouldNotBeNull();
+        viewC.ShouldNotBeNull();
+        viewUnrelated.ShouldNotBeNull();
+
+        viewA!.SessionStartedAt.ShouldBe(startedAt);
+        viewA.SessionId.ShouldBe(sessionId);
+        viewB!.SessionStartedAt.ShouldBe(startedAt);
+        viewB.SessionId.ShouldBe(sessionId);
+        viewC!.SessionStartedAt.ShouldBe(startedAt);
+        viewC.SessionId.ShouldBe(sessionId);
+
+        viewUnrelated!.SessionStartedAt.ShouldBeNull();
+        viewUnrelated.SessionId.ShouldBeNull();
+    }
+
+    [Theory]
+    [InlineData("Published")]    // attached but session never started
+    [InlineData("Open")]          // Workshop 002 §5 "attach withdrawn between attach and start" path
+    public async Task ListingWithdrawn_SetsCatalogStatusWithdrawn(string startingStatus)
+    {
+        // Arrange — view at the given legal pre-state. If the test data is "Open",
+        // we run BiddingOpened first to land the transition (mirrors the M3-S6
+        // BidPlaced_UpdatesCatalogHighBid test's two-step arrangement shape).
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        if (startingStatus == "Open")
+        {
+            await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+                ListingId: listingId,
+                SellerId: sellerId,
+                StartingBid: 50_000m,
+                ReserveThreshold: 75_000m,
+                BuyItNowPrice: 150_000m,
+                ScheduledCloseAt: DateTimeOffset.UtcNow.AddHours(24),
+                ExtendedBiddingEnabled: false,
+                ExtendedBiddingTriggerWindow: null,
+                ExtendedBiddingExtension: null,
+                MaxDuration: TimeSpan.FromDays(7),
+                OpenedAt: DateTimeOffset.UtcNow));
+        }
+
+        var withdrawnAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        var withdrawn = new ListingWithdrawn(
+            ListingId: listingId,
+            WithdrawnBy: sellerId,
+            Reason: null,
+            WithdrawnAt: withdrawnAt);
+
+        // Act
+        await InvokeAuctionHandlerAsync<ListingWithdrawn>(
+            SellingListingWithdrawnHandler.Handle, withdrawn);
+
+        // Assert — Withdrawn terminal landed; ClosedAt stamped from WithdrawnAt
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Withdrawn");
+        view.ClosedAt.ShouldBe(withdrawnAt);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");  // M2 field preserved
+    }
+
+    [Fact]
+    public async Task SiblingHandlers_CoexistOnSameView_NoOverwrites()
+    {
+        // Arrange — exercise a realistic Flash arrival order:
+        //   ListingPublished (seed) → ListingAttachedToSession → BiddingOpened →
+        //   BidPlaced → SessionStarted
+        // Each handler owns a disjoint field set; this test pins that none of them
+        // clobbers another's writes (additive-field discipline per ADR-014 §"Decision"
+        // §3 — "Disjoint field sets per handler").
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var sessionId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+
+        // Step 1 — ListingPublished seeds the M2 fields via the seed handler.
+        await SeedCatalogEntry(listingId, sellerId);
+
+        // Step 2 — ListingAttachedToSession sets SessionId.
+        var attachedAt = DateTimeOffset.UtcNow;
+        await InvokeAuctionHandlerAsync<ListingAttachedToSession>(
+            AuctionsSessionHandler.Handle,
+            new ListingAttachedToSession(sessionId, listingId, attachedAt));
+
+        // Step 3 — BiddingOpened sets Status = "Open" + ScheduledCloseAt.
+        var scheduledCloseAt = DateTimeOffset.UtcNow.AddHours(24);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: scheduledCloseAt,
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        // Step 4 — BidPlaced sets the bid fields.
+        await InvokeAuctionHandlerAsync<BidPlaced>(AuctionStatusHandler.Handle, new BidPlaced(
+            ListingId: listingId,
+            BidId: Guid.CreateVersion7(),
+            BidderId: bidderId,
+            Amount: 60_000m,
+            BidCount: 1,
+            IsProxy: false,
+            PlacedAt: DateTimeOffset.UtcNow));
+
+        // Step 5 — SessionStarted sets SessionStartedAt.
+        var startedAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        await InvokeAuctionHandlerAsync<SessionStarted>(AuctionsSessionHandler.Handle, new SessionStarted(
+            SessionId: sessionId,
+            ListingIds: new[] { listingId },
+            StartedAt: startedAt));
+
+        // Assert — every field from every handler lands at its expected value with no
+        // mutual overwrite. M2 / M3-S6 / M4-S6 contributions all co-exist on the row.
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+
+        // M2 fields (ListingPublishedHandler)
+        view!.SellerId.ShouldBe(sellerId);
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");
+        view.Format.ShouldBe("Timed");
+        view.StartingBid.ShouldBe(50_000m);
+
+        // M3-S6 fields (AuctionStatusHandler)
+        view.Status.ShouldBe("Open");                 // BiddingOpened; not regressed by later events
+        view.ScheduledCloseAt.ShouldBe(scheduledCloseAt);
+        view.CurrentHighBid.ShouldBe(60_000m);
+        view.CurrentHighBidderId.ShouldBe(bidderId);
+        view.BidCount.ShouldBe(1);
+
+        // M4-S6 fields (AuctionsSessionHandler)
+        view.SessionId.ShouldBe(sessionId);
+        view.SessionStartedAt.ShouldBe(startedAt);
+
+        // M5-S6 field is null (no SettlementCompleted dispatched)
+        view.SettledAt.ShouldBeNull();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // M4-S6 — Cross-BC composition test (OQ3 Path α terminal-state pin)
+    //
+    // Closes the M4-S5 retro's "What M4-S6 should know" §"OQ3 Path α" observation
+    // gap: the fan-out emits BiddingOpened for every listing in SessionStarted's
+    // ListingIds — including withdrawn listings. This test asserts that the
+    // catalog's Withdrawn-preservation guard (AuctionStatusHandler.Handle(BiddingOpened),
+    // M4-S6) holds the row at "Withdrawn" rather than flipping it back to "Open".
+    //
+    // Load-bearing for the M4 milestone doc §3 stance ("Defensive pre-filtering at
+    // StartSession time is post-MVP hardening") — without this assertion, that
+    // stance is assumption; with it, it's observed behaviour.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task BiddingOpened_AfterListingWithdrawn_PreservesWithdrawnStatus()
+    {
+        // Arrange — seed a view at Status = "Published" (the natural state for a Flash
+        // listing that's been attached and is awaiting its session's start). Capture the
+        // pre-composition ScheduledCloseAt so the assertion can prove the guard didn't
+        // advance it.
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var sessionId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        // Step 1 — Listing is attached to the session (Status stays Published).
+        await InvokeAuctionHandlerAsync<ListingAttachedToSession>(
+            AuctionsSessionHandler.Handle,
+            new ListingAttachedToSession(sessionId, listingId, DateTimeOffset.UtcNow));
+
+        var preCompositionView = await _fixture.LoadCatalogListingViewAsync(listingId);
+        preCompositionView.ShouldNotBeNull();
+        preCompositionView!.Status.ShouldBe("Published");
+        preCompositionView.ScheduledCloseAt.ShouldBeNull();      // never opened
+
+        // Step 2 — Seller withdraws the listing before the session starts. Status
+        // transitions Published → Withdrawn; ClosedAt is stamped from WithdrawnAt.
+        var withdrawnAt = DateTimeOffset.UtcNow.AddSeconds(1);
+        await InvokeAuctionHandlerAsync<ListingWithdrawn>(
+            SellingListingWithdrawnHandler.Handle,
+            new ListingWithdrawn(
+                ListingId: listingId,
+                WithdrawnBy: sellerId,
+                Reason: null,
+                WithdrawnAt: withdrawnAt));
+
+        // Step 3 — The Auctions fan-out emits BiddingOpened for this listing anyway
+        // (no defensive pre-filtering at StartSession time per M4 milestone doc §3).
+        var fanOutScheduledCloseAt = DateTimeOffset.UtcNow.AddHours(24);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: fanOutScheduledCloseAt,
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        // Assert — Status stays Withdrawn (not Open). The guard is total per OQ5
+        // Path α: ScheduledCloseAt is NOT advanced even though the BiddingOpened
+        // event carries one. SessionId is preserved (still attached to the session).
+        // SessionStartedAt is null (this test does not dispatch SessionStarted).
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Withdrawn");                       // NOT "Open"
+        view.ScheduledCloseAt.ShouldBeNull();                     // NOT fanOutScheduledCloseAt
+        view.ClosedAt.ShouldBe(withdrawnAt);                      // preserved from withdrawal
+        view.SessionId.ShouldBe(sessionId);                       // attach fact preserved
+        view.SessionStartedAt.ShouldBeNull();                     // SessionStarted not dispatched here
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");   // M2 field preserved
+    }
 }
