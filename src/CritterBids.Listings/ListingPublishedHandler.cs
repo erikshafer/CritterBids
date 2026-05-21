@@ -20,6 +20,14 @@ namespace CritterBids.Listings;
 /// row. The M2-S7 unconditional-Store pattern is replaced because M5-S6's tolerant-upsert
 /// posture on SettlementStatusHandler can produce a Status = "Settled" minimal row before
 /// ListingPublished arrives in that edge case.
+///
+/// M4-S6 amendment: the preservation block uses an explicit named-field allow-list, so
+/// fields added at M4-S6 (<see cref="CatalogListingView.SessionId"/> and
+/// <see cref="CatalogListingView.SessionStartedAt"/>) require their own preservation
+/// lines. Without these lines, re-delivery of <c>ListingPublished</c> after
+/// <see cref="AuctionsSessionHandler"/> or <see cref="SellingListingWithdrawnHandler"/>
+/// has touched the row would silently null the session-membership fields and regress the
+/// Withdrawn terminal back to "Published".
 /// </summary>
 public static class ListingPublishedHandler
 {
@@ -45,7 +53,9 @@ public static class ListingPublishedHandler
 
             // Downstream-handler fields — preserved from the existing row if present,
             // default if first delivery. Prevents re-delivery from regressing an
-            // already-advanced row's Status / timestamps / bid state.
+            // already-advanced row's Status / timestamps / bid state. The list is
+            // append-only across milestones: every new sibling-handler field below
+            // CatalogListingView's M2 block adds a line here.
             Status              = existing?.Status ?? "Published",
             ScheduledCloseAt    = existing?.ScheduledCloseAt,
             CurrentHighBid      = existing?.CurrentHighBid,
@@ -57,6 +67,8 @@ public static class ListingPublishedHandler
             FinalHighestBid     = existing?.FinalHighestBid,
             ClosedAt            = existing?.ClosedAt,
             SettledAt           = existing?.SettledAt,
+            SessionId           = existing?.SessionId,         // M4-S6
+            SessionStartedAt    = existing?.SessionStartedAt,  // M4-S6
         });
     }
 }
