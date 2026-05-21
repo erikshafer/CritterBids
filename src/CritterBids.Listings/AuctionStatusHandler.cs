@@ -20,6 +20,16 @@ namespace CritterBids.Listings;
 /// construct a minimal view with Id set and M2 fields at default; mutate the auction-status
 /// fields via record `with`; session.Store. AutoApplyTransactions commits after Handle()
 /// returns. No OutgoingMessages, no IMessageBus.
+///
+/// M4-S6 amendment: <see cref="Handle(BiddingOpened, IDocumentSession, CancellationToken)"/>
+/// carries a Withdrawn-preservation guard. The Auctions-side fan-out emits
+/// <c>BiddingOpened</c> for every listing in <c>SessionStarted.ListingIds</c> regardless
+/// of <c>PublishedListings.Status</c>; the guard is the load-bearing edit that pins the
+/// OQ3 Path α terminal state observed in the cross-BC composition test
+/// (<see cref="CatalogListingView.Status"/> stays <c>"Withdrawn"</c>; the catalog is the
+/// source of truth for the user-facing terminal). See ADR-014 §"Decision" §4 and the
+/// M4-S6 retrospective. The other five Handle methods on this class do NOT carry the
+/// guard — only <c>BiddingOpened</c> is on the fan-out's emission path.
 /// </summary>
 public static class AuctionStatusHandler
 {
@@ -30,6 +40,17 @@ public static class AuctionStatusHandler
     {
         var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
             ?? new CatalogListingView { Id = message.ListingId };
+
+        // M4-S6: Withdrawn-preservation guard for OQ3 Path α (BiddingOpened arriving at
+        // a withdrawn listing via the Session fan-out). The Auctions-side fan-out emits
+        // BiddingOpened for every listing in SessionStarted.ListingIds regardless of
+        // PublishedListings.Status (M4 milestone doc §3 — "Defensive pre-filtering at
+        // StartSession time is post-MVP hardening"). The catalog handler is the source
+        // of truth: Withdrawn is terminal and absorbing; the fan-out's emission no-ops.
+        // ScheduledCloseAt is not advanced either — symmetric with the M5-S6
+        // SettlementStatusHandler total-guard shape. See M4-S6 retrospective + ADR-014
+        // amendment.
+        if (view.Status == "Withdrawn") return;
 
         session.Store(view with
         {

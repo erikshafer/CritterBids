@@ -678,16 +678,25 @@ Read models accumulate fields across milestones as new BCs start contributing. T
 ```
 src/CritterBids.Listings/
 ├── CatalogListingView.cs                      ← single view, all fields
-└── ProjectionHandlers/
-    ├── ListingSnapshotHandler.cs              ← M2-S7: consumes ListingPublished,
-    │                                              ListingUpdated, ListingWithdrawn
-    ├── AuctionStatusHandler.cs                ← M3-S6: consumes BiddingOpened,
-    │                                              BiddingClosed, ListingSold,
-    │                                              ListingPassed, BuyItNowPurchased
-    ├── SettlementStatusHandler.cs             ← M5-S6: consumes SettlementCompleted;
-    │                                              "Sold" → "Settled" transition + SettledAt
-    └── ObligationsStatusHandler.cs            ← post-M5 (planned): ShippedOn,
-                                                   TrackingNumber, etc.
+├── ListingPublishedHandler.cs                 ← M2-S7 seed handler: consumes
+│                                                 ListingPublished. Amended at M5-S6
+│                                                 + M4-S6 with named-field load-and-
+│                                                 preserve discipline.
+├── AuctionStatusHandler.cs                    ← M3-S6: consumes BiddingOpened,
+│                                                 BidPlaced, BiddingClosed, ListingSold,
+│                                                 ListingPassed, BuyItNowPurchased.
+│                                                 Amended at M4-S6 with Withdrawn-
+│                                                 preservation guard on BiddingOpened.
+├── SettlementStatusHandler.cs                 ← M5-S6: consumes SettlementCompleted;
+│                                                 "Sold" → "Settled" transition + SettledAt
+├── AuctionsSessionHandler.cs                  ← M4-S6: consumes ListingAttachedToSession,
+│                                                 SessionStarted. Sets SessionId,
+│                                                 SessionStartedAt.
+├── SellingListingWithdrawnHandler.cs          ← M4-S6: consumes ListingWithdrawn.
+│                                                 "Published"/"Open" → "Withdrawn"
+│                                                 transition + ClosedAt.
+└── ObligationsStatusHandler.cs                ← post-M5 (planned): ShippedOn,
+                                                  TrackingNumber, etc.
 ```
 
 Each handler class owns a disjoint field set on the same `CatalogListingView`. No handler reads fields owned by another handler. Additions are purely additive — existing handlers never need to change when a new milestone lands.
@@ -696,7 +705,7 @@ Each handler class owns a disjoint field set on the same `CatalogListingView`. N
 // CatalogListingView.cs — grows additively; no fields removed across milestones
 public sealed class CatalogListingView
 {
-    // M2-S7 — ListingSnapshotHandler
+    // M2-S7 — ListingPublishedHandler
     public required Guid Id { get; set; }
     public required Guid SellerId { get; set; }
     public required string Title { get; set; }
@@ -715,6 +724,12 @@ public sealed class CatalogListingView
     // M5-S6 — SettlementStatusHandler
     // Status field above gains the "Settled" terminal transition.
     public DateTimeOffset? SettledAt { get; set; }
+
+    // M4-S6 — AuctionsSessionHandler (Sub-Option A of ADR-014's sub-question)
+    // Status field above also gains the "Withdrawn" terminal transition,
+    // landed by the sibling SellingListingWithdrawnHandler.
+    public Guid? SessionId { get; set; }
+    public DateTimeOffset? SessionStartedAt { get; set; }
 }
 ```
 
@@ -726,7 +741,39 @@ public sealed class CatalogListingView
 
 **Decision boundary — when this shape applies.** Use the one-view/sibling-handlers shape when: (a) the read model is a per-entity rollup; (b) fields originate from two or more BCs; (c) every UI query against the view wants all fields in one round trip. When the read model is genuinely per-BC (e.g. `SellerActivity` summarizing a seller's own listings), a native `MultiStreamProjection` owned by that BC is still the right tool.
 
-**In-repo ground:** `CatalogListingView` established at M2-S7 by `ListingPublishedHandler` (originally named `ListingSnapshotHandler` in early prompts), extended at M3-S6 by `AuctionStatusHandler` with the auction-status fields, extended again at M5-S6 by `SettlementStatusHandler` with the `"Sold"` → `"Settled"` transition and `SettledAt` field. The M5-S6 application is the **second lived example** that triggered ADR-014's body authoring. See [`docs/decisions/014-cross-bc-read-model-extension-shape.md`](../decisions/014-cross-bc-read-model-extension-shape.md) for the canonical decision record and `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"M3-D2 resolution" for the original Path A discovery.
+**In-repo ground:** `CatalogListingView` established at M2-S7 by `ListingPublishedHandler` (originally named `ListingSnapshotHandler` in early prompts), extended at M3-S6 by `AuctionStatusHandler` with the auction-status fields, extended again at M5-S6 by `SettlementStatusHandler` with the `"Sold"` → `"Settled"` transition and `SettledAt` field, and extended a **third time at M4-S6** by `AuctionsSessionHandler` (session-membership fields) and `SellingListingWithdrawnHandler` (the `"Withdrawn"` terminal transition). The M5-S6 application is the second lived example that triggered ADR-014's body authoring; the M4-S6 application is the **third lived example** that resolved the ADR's deferred multi-source-sibling sub-question to **Sub-Option A** (one handler class per source BC, single-source per sibling — `AuctionsSessionHandler` and `SellingListingWithdrawnHandler` ship as two single-source siblings rather than one merged class). See [`docs/decisions/014-cross-bc-read-model-extension-shape.md`](../decisions/014-cross-bc-read-model-extension-shape.md) for the canonical decision record (including the M4-S6 amendment), `docs/retrospectives/M3-S6-listings-catalog-auction-status-retrospective.md` §"M3-D2 resolution" for the original Path A discovery, and `docs/retrospectives/M4-S6-listings-catalog-session-and-withdrawn-retrospective.md` for the sub-question resolution's lived rationale.
+
+### Status-Preservation Guards
+
+The handlers in §"View Extension Across Milestones" share a string-valued `Status` field but each owns one or more *transitions*, never the full vocabulary. When events arrive out of order — a real possibility under at-least-once redelivery across multiple RabbitMQ queues — a handler that unconditionally advances `Status` will regress already-terminal rows. The **status-preservation guard** is a one-line early-return that pins each handler's transition to its expected pre-state(s).
+
+The lived shape: load by id; if the existing `Status` is outside the expected pre-state(s), return without `session.Store`. No empty Marten write, no exception, no telemetry — the no-op composes cleanly with `AutoApplyTransactions` (no envelope to commit). Three lived examples at M4-S6 close:
+
+```csharp
+// M5-S6 — SettlementStatusHandler.Handle(SettlementCompleted)
+// Only the "Sold" → "Settled" transition is legal.
+if (existing.Status != "Sold") return;
+
+// M4-S6 — AuctionStatusHandler.Handle(BiddingOpened)
+// Withdrawn is absorbing — the Session fan-out's emission for an already-
+// withdrawn listing must not flip Status back to "Open". OQ3 Path α
+// terminal-state pin (see ADR-014 §Consequences).
+if (view.Status == "Withdrawn") return;
+
+// M4-S6 — SellingListingWithdrawnHandler.Handle(ListingWithdrawn)
+// Only "Published" and "Open" are legal pre-states. The four other
+// vocabularies ("Closed", "Sold", "Passed", "Settled") are absorbing
+// terminals — a late ListingWithdrawn must not regress them.
+if (existing.Status is not ("Published" or "Open")) return;
+```
+
+**When to add a guard.** Anywhere two or more sibling handlers can write the same `Status` field, the second-arriving handler needs to check the pre-state. The guard is symmetric: total no-op or total advance — no partial-field write that would advertise the new transition while leaving inconsistent shoulder fields (e.g., `Status = "Withdrawn"` with `ScheduledCloseAt` still advanced by the fan-out's `BiddingOpened`).
+
+**Guard placement.** Top-of-method, after `LoadAsync`, before any `session.Store`. Path A (top-of-method load-and-return) is the M3-S6 / M5-S6 / M4-S6 lived shape. Path B (conditional `with` expression) was considered at M4-S6 and rejected: Marten would still execute the `Store` call on the no-op branch, wasting a write and possibly bumping `Version`.
+
+**Guard composition with `OutgoingMessages` or `IMessageBus`.** Currently no in-repo handler combines a preservation guard with cascade emission. If one ever does, the guard's early return must precede any cascade — emitting cascade events for a no-op transition would publish lies about state.
+
+**Authoritative cite for the M4-S6 OQ3 Path α resolution:** `tests/CritterBids.Listings.Tests/CatalogListingViewTests.cs` — `BiddingOpened_AfterListingWithdrawn_PreservesWithdrawnStatus`. The test seeds a `"Published"` view, attaches it to a session, dispatches `ListingWithdrawn`, then dispatches `BiddingOpened` (simulating the Session fan-out's emission for a withdrawn-attached listing) and asserts `Status` stays `"Withdrawn"`, `ScheduledCloseAt` stays null, `SessionId` is preserved. Backs the M4 milestone doc §3 "post-MVP hardening" stance on observed behaviour.
 
 ---
 
