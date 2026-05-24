@@ -4,9 +4,9 @@
   </PropertyGroup>
   <!-- Aspire hosting packages -->
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.3.3" />
-    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.3.3" />
-    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.3.3" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.3.5" />
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.3.5" />
+    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.3.5" />
   </ItemGroup>
   <!-- Wolverine -->
   <ItemGroup>
@@ -31,8 +31,8 @@
   <ItemGroup>
     <PackageVersion Include="Alba" Version="8.5.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.11.0" />
-    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.11.0" />
+    <PackageVersion Include="Testcontainers.MsSql" Version="4.12.0" />
+    <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
