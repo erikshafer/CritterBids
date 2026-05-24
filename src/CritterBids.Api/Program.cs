@@ -218,6 +218,7 @@ if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
     app.UseSwaggerUI(c => c.SwaggerEndpoint("/openapi/v1.json", "CritterBids API"));
+    app.MapGet("/", () => Results.Redirect("/swagger"));
 }
 
 return await app.RunJasperFxCommands(args);
