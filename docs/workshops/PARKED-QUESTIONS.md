@@ -2,7 +2,7 @@
 
 Cross-workshop tracker for questions raised during Event Modeling sessions. Open questions at the top; resolved questions below with the resolving workshop noted.
 
-**Last updated:** 2026-04-16
+**Last updated:** 2026-05-27
 **Workshops covered:** W001 (Flash Session Demo-Day Journey), W002 (Auctions BC), W003 (Settlement BC), W004 (Selling BC)
 
 IDs are stable: `W00X-N` where N is the question number within the workshop where it was originally raised.
@@ -20,7 +20,7 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W001-11 | Auto-navigate ops to LiveBoard on session start? | W001 Ph3 | Frontend | Frontend workshop. |
 | W001-12 | "Closing..." UI state between timer-zero and outcome? | W001 Ph3 | Frontend / Auctions | Frontend workshop. |
 | W001-13 | How does seller provide tracking? Dedicated screen or inline? | W001 Ph3 | Frontend / Obligations | Frontend workshop. |
-| W001-15 | Frontend milestone: one or split participant/ops? | W001 Ph4 | Milestone scoping | Resolve at M6 planning. |
+| W001-15 | Frontend milestone: one or split participant/ops? | W001 Ph4 | Milestone scoping | Deferred to M8 planning. M6 = Obligations + Relay; M7 = Operations BC; M8 = Frontends + deployment. |
 | W002-8 | Two-proxy bidding war: worth a specific integration test? | W002 Ph3 | Auctions BC (M4) | Proxy Bid Manager saga deferred to M4 per `M3-auctions-bc.md` non-goals. Moves with the saga — confirm at M4 test time. Likely yes; scenario 4.10 covers it. |
 | W003-1 | What happens if `SellerPayoutIssued` fails (infrastructure issue)? | W003 Ph1 | Settlement / Ops | Wolverine retries for transient. Permanent failures need operator tooling. Ops workshop. |
 | W003-2 | Post-MVP compensation when real payment processor is wired in? | W003 Ph1 | Settlement BC | Refund-winner step before terminating. Parked until payment integration. |
