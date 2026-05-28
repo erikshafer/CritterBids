@@ -43,9 +43,9 @@ The Auctions BC is the only one whose `src/` layout matches the "flat vertical-s
 
 | Artifact | Status | Notes |
 |---|---|---|
-| [`README.md`](./README.md) | Phase 1 gate | Updated at every gate. |
+| [`README.md`](./README.md) | Phase 2 gate | Updated at every gate. |
 | [`bcs/`](./bcs/) | Complete | All 8 dossiers written: 5 Implemented/Partial + 3 Planned-only. |
-| [`workflows/`](./workflows/) | Pending | One file per cross-BC process (Phase 2). |
+| [`workflows/`](./workflows/) | Complete | 6 cross-BC process traces: publish-to-bidding-open, timed-listing-close, buy-it-now, proxy-bidding, post-sale-obligations, flash-session. |
 | [`glossary.md`](./glossary.md) | Stub | Seeded; populated in Phase 3. |
 | [`gaps-and-drift.md`](./gaps-and-drift.md) | Stub | Populated in Phase 4. |
 | [`lessons.md`](./lessons.md) | Stub | Populated in Phase 5 — the only evaluative artifact. |
