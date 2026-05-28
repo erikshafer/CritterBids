@@ -2,7 +2,6 @@
 
 [![.NET](https://img.shields.io/badge/.NET-10-512BD4?logo=dotnet&logoColor=white)](https://dotnet.microsoft.com/download/dotnet/10.0)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Marten-336791?logo=postgresql&logoColor=white)](https://martendb.io/)
-[![SQL Server](https://img.shields.io/badge/SQL_Server-Polecat-CC2927?logo=microsoftsqlserver&logoColor=white)](https://polecat.netlify.app/)
 [![RabbitMQ](https://img.shields.io/badge/RabbitMQ-4.x-FF6600?logo=rabbitmq&logoColor=white)](https://www.rabbitmq.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Build](https://github.com/erikshafer/CritterBids/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/erikshafer/CritterBids/actions/workflows/ci.yml)
@@ -13,7 +12,7 @@
 
 ## What Is CritterBids?
 
-CritterBids is a working, demonstrable auction platform built on the [Critter Stack](https://wolverine.netlify.app/) — JasperFx's suite of .NET libraries including **Wolverine** (messaging and command handling), **Marten** (event sourcing + document storage over PostgreSQL), and **Polecat** (the equivalent over SQL Server). MVP runs on PostgreSQL via Marten across all eight BCs; a post-MVP swap demonstrates the Critter Stack's storage-agnostic programming model (ADR 011).
+CritterBids is a working, demonstrable auction platform built on the [Critter Stack](https://wolverine.netlify.app/) — JasperFx's suite of .NET libraries including **Wolverine** (messaging and command handling), **Marten** (event sourcing + document storage over PostgreSQL), and **Polecat** (used for SQL Server storage-swap demonstrations). The current branch runs on PostgreSQL via Marten (ADR 011); the Polecat path is preserved as a post-MVP storage-agnostic demo.
 
 CritterBids is one of several open-source reference architectures showcasing the Critter Stack across different domains. The auction domain was chosen because competitive real-time bidding surfaces patterns — contention, time pressure, multi-audience projections — that simpler domains don't.
 
@@ -27,11 +26,11 @@ Auctions are a natural fit for event-driven architecture. The core mechanic — 
 
 | Pattern | How CritterBids demonstrates it |
 |---|---|
-| **Dynamic Consistency Boundaries (DCB)** | Concurrent bidders contending over the same lot — the canonical DCB scenario, not a contrived one |
+| **Dynamic Consistency Boundaries (DCB)** | Concurrent bidders contending over the same listing — the canonical DCB scenario, not a contrived one |
 | **Sagas and process managers** | Auction closing, proxy bid manager, post-sale obligations, and anti-snipe extended bidding are four distinct saga shapes |
 | **Projections by audience** | Sellers, participants, ops staff, and finance all need radically different views of the same event streams |
 | **Real-time transport** | SignalR is load-bearing — the live bid feed is the participant experience, not a demo flourish |
-| **Storage agnosticism** | All eight BCs run on PostgreSQL via Marten in MVP; the same patterns run against Polecat on SQL Server, preserved as a post-MVP swap demo |
+| **Storage agnosticism** | Current implementation runs on PostgreSQL via Marten; the same patterns are preserved for a post-MVP Polecat/SQL Server swap demo |
 | **Transport agnosticism** | RabbitMQ for MVP, then a live swap to Azure Service Bus — one config change, no BC-level refactor |
 
 Any audience can follow a live bidding session, whether or not they know what an event store is. That makes it an unusually effective teaching vehicle.
@@ -49,7 +48,7 @@ CritterBids is a **modular monolith** — a single deployable unit organized int
 
 This gives the boundary enforcement of microservices without the distributed systems overhead. The full stack runs on a single VPS.
 
-### Bounded Contexts
+### Bounded Contexts (MVP target)
 
 | BC | Storage | Key Patterns |
 |---|---|---|
@@ -62,7 +61,7 @@ This gives the boundary enforcement of microservices without the distributed sys
 | **Settlement** | PostgreSQL / Marten | Saga, financial event stream, reserve evaluation |
 | **Operations** | PostgreSQL / Marten | Cross-BC projections, SignalR ops dashboard |
 
-All eight BCs run on PostgreSQL via Marten for MVP (ADR 011 — All-Marten Pivot). The original design placed Participants, Settlement, and Operations on SQL Server via Polecat to give BI tooling and compliance teams direct query access without an ETL layer — that rationale is preserved as a post-MVP stretch goal, where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
+Current code in this branch includes the Auctions, Selling, Listings, Participants, and Settlement BC modules. All MVP-target BCs run on PostgreSQL via Marten (ADR 011 — All-Marten Pivot), and the Polecat rationale is preserved as a post-MVP stretch goal where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
 
 ---
 
@@ -90,7 +89,7 @@ The standard eBay-style format. A seller creates a listing, configures a duratio
 
 ### Flash Listings (Session-Based)
 
-An Operations staff member creates a Session, attaches listings, and starts it. All listings open simultaneously and close together — typically 5 to 10 minutes later. Extended bidding can fire on individual lots.
+An Operations staff member creates a Session, attaches listings, and starts it. All listings open simultaneously and close together — typically 5 to 10 minutes later. Extended bidding can fire on individual listings.
 
 Flash Sessions exist for live conference and meetup demonstrations. They use the same Auctions BC mechanics as timed listings — the same saga, the same DCB enforcement, the same anti-snipe logic. The Session is an optional coordination container, not a separate system.
 
@@ -102,11 +101,11 @@ The ideal live demonstration:
 
 1. Presenter shows a QR code or URL
 2. Audience scans — receives an anonymous session with a generated display name and a hidden credit ceiling
-3. A Flash Session starts — three to five lots, five to ten minutes, everything live on the projector
+3. A Flash Session starts — three to five listings, five to ten minutes, everything live on the projector
 4. Audience bids. Extended bidding fires. The ops dashboard shows saga state, bid feed, and settlement activity in real time.
-5. Lots close. Winners are declared. The audience watched it happen.
+5. Listings close. Winners are declared. The audience watched it happen.
 
-This scenario directly shapes architectural decisions. Anonymous frictionless onboarding, SignalR reliability under load, a projector-legible ops dashboard, and a single `docker compose up` deployment are all first-class constraints — not afterthoughts.
+This scenario directly shapes architectural decisions. Anonymous frictionless onboarding, SignalR reliability under load, a projector-legible ops dashboard, and a single Aspire-driven local run command are all first-class constraints — not afterthoughts.
 
 ---
 
@@ -146,7 +145,7 @@ dotnet run --project src/CritterBids.AppHost --launch-profile https
 
 The dashboard will be at `https://localhost:17019`.
 
-The participant frontend (`critterbids-web`) and ops dashboard (`critterbids-ops`) are separate React apps in `src/frontend/`.
+The participant frontend and ops dashboard are planned React apps tracked in the milestone docs and may not be present in every branch/worktree.
 
 ---
 
@@ -161,14 +160,9 @@ CritterBids/
 │   ├── CritterBids.Auctions/     # Auctions BC
 │   ├── CritterBids.Selling/      # Selling BC
 │   ├── CritterBids.Listings/     # Listings BC
-│   ├── CritterBids.Obligations/  # Obligations BC
-│   ├── CritterBids.Relay/        # Relay BC (SignalR push)
 │   ├── CritterBids.Participants/ # Participants BC
 │   ├── CritterBids.Settlement/   # Settlement BC
-│   ├── CritterBids.Operations/   # Operations BC
-│   └── frontend/
-│       ├── critterbids-web/      # Participant-facing SPA
-│       └── critterbids-ops/      # Staff ops dashboard
+│   └── [additional BC modules and frontends added by milestone]
 ├── tests/
 │   └── [BC integration and unit test projects]
 └── docs/
@@ -197,7 +191,7 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 
 ## Roadmap
 
-**MVP** — A working, demonstrable auction platform suitable for a live conference demo with audience participation. All 8 BCs, both listing formats, both React frontends, full `docker compose up` deployment.
+**MVP** — A working, demonstrable auction platform suitable for a live conference demo with audience participation. Eight BCs and both listing formats on Marten/PostgreSQL, with Aspire-based local orchestration.
 
 **Post-MVP milestones (planned):**
 
