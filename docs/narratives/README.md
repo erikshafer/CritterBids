@@ -182,6 +182,26 @@ When in doubt, prefer extending an existing narrative's Setting or per-Moment al
 
 Every narrative ships its retrospective in the same file, appended after the `## Deferred from this narrative` section. The retrospective shape mirrors the workshop §12 convention with narrative-flavored content. The first authored narrative establishes the canonical retrospective structure for subsequent narratives to mirror.
 
+## Document History convention (ADR 020)
+
+Per ADR 020 (Spec-Delta Closure Loop), every session that amends a narrative appends a row to that narrative's `## Document History` section. The row is the fourth step of the closure loop: the prompt declared the spec delta, the session executed, the retro confirmed the delta landed, and the Document History records the amendment in the spec itself.
+
+Row format:
+
+```markdown
+- **YYYY-MM-DD** — `<prompt-slug>`: one-sentence summary of the amendment.
+```
+
+Examples:
+
+- `- **2026-05-28** — `M6-S1-obligation-bc-scaffold`: Added Moment 4 covering obligation-stall edge case per W005 slice 4.2.`
+- `- **2026-06-04** — `M6-S3-relay-bidding-hub`: Moment 5 Response paragraph amended to reflect lived BiddingHub broadcast (previously forward-spec only).`
+- `- **2026-06-11** — `M6-S5-operations-dashboard-readmodel`: Cast section gained Operations as onstage in Moment 7; boundaries_touched frontmatter unchanged.`
+
+The Document History rows are the narrative's version trail. The frontmatter does not gain a `version` key (the bounded vocabulary v1 stands; ADR 020 names this explicitly). The row count plus dates carry the same information.
+
+**Backfill is not required.** Narratives 001 through 005 are not retroactively required to add rows for sessions that predate ADR 020. The next session that touches a narrative authored before ADR 020 adds its row and any subsequent session does likewise. The Document History section may therefore be absent in narratives that have not been touched post-ADR-020; this is expected and not a defect.
+
 ## Index
 
 | # | Status | Journey | Scope | Slices |
@@ -195,3 +215,4 @@ Every narrative ships its retrospective in the same file, appended after the `##
 ## Document history
 
 - **v0.1** (2026-04-26): Authored as foundation-refresh Phase 1 Item 3. Lifts CritterCab's narratives README v0.1 dialect: bounded frontmatter v1, prose-paragraph Moment body (Guardrail 1), single-named-protagonist + omniscient-narrator voice, seven disposition tags, forward-looking bidirectional referencing. Adapted for CritterBids' auction domain (bidder / seller / auctioneer / operator protagonist roles; auction-domain event and Ubiquitous-Language examples). Index empty; Phase 2 authors first narrative.
+- **v0.2** (2026-05-28): ADR 020 adoption. Added the "Document History convention (ADR 020)" section naming the per-session row format and the explicit no-backfill stance. Frontmatter vocabulary v1 unchanged (no `version` key added); the Document History rows carry the version trail. Existing narratives 001 through 005 are not retroactively required to add rows for pre-ADR-020 sessions.
