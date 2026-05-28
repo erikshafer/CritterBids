@@ -23,3 +23,9 @@ _No entries yet — Phase 0 raised no unresolvable items. The Phase 0 inventory 
 The wiring described in the contract is not present in the code path. Either the docstring is aspirational, or the field is intended to be set by a different mechanism not yet implemented.
 
 **Could not be reconciled because:** the discrepancy is between contract intent and code behavior — both are sources of truth in their own register. Recorded for Phase 4 as drift but flagged here because the **intended** behavior cannot be determined from code alone.
+
+---
+
+## Phase 6
+
+No new open questions surfaced through synthesis. Phase 6 reviewed every dossier, workflow, glossary entry, gap-register row, and lesson against the source paths they cite and against each other; no fact-level ambiguity remained unresolved. OQ-P2-01 above is the only unresolvable item in the corpus at close.
