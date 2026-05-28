@@ -43,12 +43,12 @@ The Auctions BC is the only one whose `src/` layout matches the "flat vertical-s
 
 | Artifact | Status | Notes |
 |---|---|---|
-| [`README.md`](./README.md) | Phase 4 gate | Updated at every gate. |
+| [`README.md`](./README.md) | Phase 5 gate | Updated at every gate. |
 | [`bcs/`](./bcs/) | Complete | All 8 dossiers written: 5 Implemented/Partial + 3 Planned-only. |
 | [`workflows/`](./workflows/) | Complete | 6 cross-BC process traces: publish-to-bidding-open, timed-listing-close, buy-it-now, proxy-bidding, post-sale-obligations, flash-session. |
 | [`glossary.md`](./glossary.md) | Complete | ~60 terms swept from vision docs, code, and house naming rules; drift cross-referenced to `gaps-and-drift.md`. |
 | [`gaps-and-drift.md`](./gaps-and-drift.md) | Complete | 13 doc-vs-code, 14 declared-but-not-built, 9 declared-but-not-wired entries. |
-| [`lessons.md`](./lessons.md) | Stub | Populated in Phase 5 — the only evaluative artifact. |
+| [`lessons.md`](./lessons.md) | Complete | 14 lessons + "what we'd weigh differently"; the only evaluative artifact. Storage-arc lesson #1 covers ADR 008→009→010→011. |
 | [`synthesis.md`](./synthesis.md) | Stub | Authored in Phase 6. |
 | [`OPEN-QUESTIONS.md`](./OPEN-QUESTIONS.md) | Stub | Appended to as the extraction proceeds. |
 
