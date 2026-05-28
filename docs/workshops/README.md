@@ -19,6 +19,7 @@ Plus a shared [`PARKED-QUESTIONS.md`](PARKED-QUESTIONS.md) that captures out-of-
 | **W002** | Auctions BC — DCB, Auction Closing saga, Proxy Bid Manager saga, bidding mechanics | [`002-scenarios.md`](002-scenarios.md) | [`002-auctions-bc-deep-dive.md`](002-auctions-bc-deep-dive.md) |
 | **W003** | Settlement BC — reserve check, fee calculation, payout, failure paths | [`003-scenarios.md`](003-scenarios.md) | [`003-settlement-bc-deep-dive.md`](003-settlement-bc-deep-dive.md) |
 | **W004** | Selling BC — seller registration, listing lifecycle, relist, cross-BC validation | [`004-scenarios.md`](004-scenarios.md) | [`004-selling-bc-deep-dive.md`](004-selling-bc-deep-dive.md) |
+| **W005** | Obligations BC — post-sale coordination saga, cancellable reminders, escalation/recovery, auto-confirm delivery, dispute sub-workflow | [`005-scenarios.md`](005-scenarios.md) | [`005-obligations-bc-deep-dive.md`](005-obligations-bc-deep-dive.md) |
 
 **Cross-workshop:**
 - [`PARKED-QUESTIONS.md`](PARKED-QUESTIONS.md) — questions raised during any workshop that were deferred (out of scope for the workshop, unresolved by available information, or awaiting external input)
@@ -49,7 +50,7 @@ Workshops are numbered sequentially with a zero-padded three-digit prefix and a 
 {NNN}-{slug}-journey.md                  — user-journey workshop output
 ```
 
-The next workshop is **W005**. Check this index before creating one to confirm the next available number.
+The next workshop is **W006**. Check this index before creating one to confirm the next available number.
 
 ---
 
