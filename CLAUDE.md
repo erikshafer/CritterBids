@@ -26,6 +26,7 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
    - **[docs/vision/domain-events.md](./docs/vision/domain-events.md)** — canonical event vocabulary
    - **[docs/skills/README.md](./docs/skills/README.md)** — skill index, load before implementing
    - **[docs/decisions/README.md](./docs/decisions/README.md)** — ADR index, naming convention, next available number
+   - **[openspec/README.md](./openspec/README.md)** — OpenSpec workspace (M6-adopting BCs only, per ADR 021); ignore if you are working an M1–M5 BC
 
 4. **Before implementing anything:**
    - Check `docs/vision/bounded-contexts.md` for BC boundaries
@@ -52,6 +53,23 @@ docs/decisions/*.md (ADRs)               ← Architectural decisions with ration
     ↑
 docs/milestones/*.md                     ← Scope per milestone
 ```
+
+### OpenSpec workspace (M6-adopting BCs only)
+
+```
+openspec/                                ← OpenSpec CLI workspace (peer to docs/, CLI-hardcoded)
+├── README.md                            ← workspace orientation, capability + adoption ledgers
+├── specs/<capability>/spec.md           ← accumulated capability spec, one per adopting BC
+└── changes/<slug>/                      ← active change proposals (proposal/design/tasks/delta-spec)
+    └── archive/YYYY-MM-DD-<slug>/       ← completed changes, preserved verbatim
+
+.github/prompts/opsx-*.prompt.md         ← Copilot slash commands (do not edit; OpenSpec-managed)
+.github/skills/openspec-*/SKILL.md       ← OpenSpec workflow skills (do not edit; OpenSpec-managed)
+```
+
+The OpenSpec workspace is in scope only for M6 Obligations (adopting) and for any M6 BC that opts in at its own opening session (Relay, Operations). M1–M5 BCs do not use OpenSpec and the workspace is irrelevant to their slices. See `openspec/README.md` and ADR 021 for the full adoption ledger.
+
+`docs/skills/` is CritterBids' Critter-Stack-pattern library; `.github/skills/` is OpenSpec's workflow-mechanic library. The two are differently scoped and do not duplicate content. Edit only `docs/skills/`.
 
 ---
 
