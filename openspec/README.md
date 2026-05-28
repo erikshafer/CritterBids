@@ -71,7 +71,7 @@ Per ADR 021, capability names are kebab-case and one-per-BC. Names are proposed 
 
 | BC | Capability name | Status | Confirmed at |
 |---|---|---|---|
-| Obligations | `obligation-lifecycle` | proposed | M6 Obligations opening (TBD) |
+| Obligations | `obligation-lifecycle` | confirmed | M6 Obligations opening (2026-05-28) |
 | Relay | `bid-relay` | proposed (working) | M6 Relay opening (TBD) |
 | Operations | `operator-dashboards` | proposed (working) | M6 Operations opening (TBD) |
 
@@ -81,7 +81,7 @@ Update this table when each BC's opening session lands.
 
 | BC | Adoption decision | Decided at |
 |---|---|---|
-| Obligations | ✅ adopt (per ADR 021) | M6 design-opening pending |
+| Obligations | ✅ adopt (per ADR 021) | M6 design-opening (2026-05-28) |
 | Relay | ⏸ evaluate at opening | — |
 | Operations | ⏸ evaluate at opening | — |
 
