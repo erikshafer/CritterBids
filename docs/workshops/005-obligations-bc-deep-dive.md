@@ -36,7 +36,16 @@ From the vision docs and earlier workshops, Obligations has:
 
 ## Narrative Cross-References
 
-This workshop's slices will be implemented by **Narrative 006 — `006-seller-fulfills-post-sale-obligation.md`** (next available narrative number; to be authored in the M6 design sequence after this workshop, per ADR 017 step 4). The narrative is forward-spec at authoring time (Obligations is unshipped; M6 ship target). This section is the inverse index per the narratives README bidirectional-referencing convention and is completed when narrative 006 lands.
+This workshop's happy-path slices (5.1–5.4) are implemented by **Narrative 006 — [`006-seller-fulfills-post-sale-obligation.md`](../narratives/006-seller-fulfills-post-sale-obligation.md)** (authored in the M6 design sequence after this workshop, per ADR 017 step 4). The narrative is forward-spec at authoring time (Obligations is unshipped; M6 ship target). Per the narratives README bidirectional-referencing convention, this consolidated block is the inverse index:
+
+| W005 slice | Narrative 006 Moment |
+|---|---|
+| 5.1 — Start post-sale coordination | Moment 1 (the obligation begins) |
+| 5.2 — Shipping reminder fires | Moment 2 (the reminder nudges him) |
+| 5.3 — Seller provides tracking (cancels reminders) | Moment 3 (he ships and provides tracking) |
+| 5.4 — Delivery auto-confirms → fulfilled | Moment 4 (delivery auto-confirms; obligation fulfilled) |
+
+Slices 5.5–5.8 (escalation, recovery, and the two dispute slices) are deferred to successor narratives and are not yet cross-referenced.
 
 ---
 
