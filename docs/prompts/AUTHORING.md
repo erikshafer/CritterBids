@@ -26,6 +26,8 @@ These are the prose rules every prompt obeys. They exist so that prompts stay te
 
 10. **Prompts are drafted, reviewed, and committed before the session runs.** Ad-hoc prompts typed into a chat window are not session prompts. They live in the appropriate `docs/prompts/<subdir>/` directory, under version control, as the durable record of what was asked for.
 
+11. **Every prompt declares its spec delta.** Per ADR 020, each implementation and narrative prompt carries a `## Spec delta` section: two to four lines in spec-shaped terms naming what the canonical spec gains when this session ships (a new Moment in a narrative, a new slice's GWT coverage in a workshop, an amended event payload, a new forward-constraint, a new ADR). The retro's `## Spec delta — landed?` paragraph will be measured against this declaration. Silence here means the session has no spec consequence — say so explicitly rather than omitting the section.
+
 ## Implementation prompt template
 
 For prompts in `implementations/`. Other subdirectory prompts (narratives, decisions, workshops, skills, foundation) adapt this template to their artifact's shape.
@@ -63,6 +65,14 @@ Bulleted. What this session must not touch. Reference the milestone doc's non-go
 
 Any convention decisions this session is responsible for encoding in code for the first time. Point at the skill file that owns the rule.
 
+## Spec delta
+
+Two to four lines in spec-shaped terms naming what the canonical spec gains when this session ships. Per ADR 020. Examples:
+
+- `docs/narratives/00X-{slug}.md` gains a Document History row covering Moment N (slice X.Y) — happy-path implemented and visible in `ListingDetailView`.
+- `docs/workshops/00X-{slug}.md` §"Slice X.Y" GWT scenarios 3 and 4 gain runnable test coverage; scenario 5 remains deferred per the prompt's out-of-scope.
+- No spec consequence: this session is a chore / dependency bump / infrastructure-only change. (State this explicitly rather than omitting the section.)
+
 ## Acceptance criteria
 
 Checklist the session must satisfy before opening the PR.
@@ -84,3 +94,4 @@ Anything the agent should flag rather than decide unilaterally.
 
 - **v0.1** (2026-04-26): Authored as part of foundation-refresh Phase 1 Item 5. Carries forward the ten rules and template skeleton from the pre-subdivision `README.md` v0.1, expanded with subdirectory-specific adaptations.
 - **v0.2** (2026-04-28): Foundation refresh Phase 5 Item 2 amendment. Rule 3 grew the joint-authority clause for milestone doc plus narrative. The implementation prompt template gained a `Narrative:` metadata line. The "Adapting" section confirmed `docs/prompts/narratives/001-bidder-wins-flash-auction.md` as the canonical narrative-prompt example. No new template authored.
+- **v0.3** (2026-05-28): ADR 020 adoption. Rule 11 added ("Every prompt declares its spec delta"). The implementation prompt template gained a `## Spec delta` section between *Conventions to pin or follow* and *Acceptance criteria*. Non-implementation prompt adaptations inherit the section unchanged: narrative prompts cite the narrative's Document History; workshop prompts cite the workshop's; decision prompts cite the new ADR they author. Chore / dependency / infrastructure prompts state "No spec consequence" explicitly rather than omitting the section.

@@ -110,6 +110,26 @@ For the rare slice that does not anchor to a narrative (likely operator
 runbooks or infrastructure-only changes), explain why and note whether a
 follow-up narrative is warranted.
 
+## Spec delta - landed?
+
+One paragraph per ADR 020. Confirm whether the planned `## Spec delta`
+from the session prompt landed as written, names any divergence, and
+cites the spec amendments that followed. A retro without this paragraph
+is incomplete.
+
+Three shapes:
+
+- **Landed as written.** "The narrative 00X Document History gained a
+  row for Moment N as the prompt declared; the workshop required no
+  amendment. See `docs/narratives/00X-{slug}.md` § Document History."
+- **Landed with divergence.** "The narrative gained the planned row;
+  additionally, scenario X.Y in workshop 00X required a status-vocabulary
+  amendment surfaced mid-session (routed via `workshop-update`
+  finding). See `docs/workshops/00X-{slug}.md` § Document History."
+- **No spec consequence.** "Prompt declared no spec consequence; this
+  session was a chore / dependency bump / infrastructure-only change.
+  No narrative, workshop, or ADR was amended."
+
 ## Verification checklist
 
 - [x] One item per acceptance criterion from the session prompt.
@@ -186,6 +206,12 @@ build on this one.
 10. **Retros are committed in the same PR as the session's code.** A
     session without a retro is a session whose lessons evaporate. The retro
     is part of the deliverable, not a follow-up.
+
+11. **Every retro confirms the spec delta.** Per ADR 020, the `## Spec
+    delta - landed?` paragraph is mandatory. It is measured against the
+    session prompt's `## Spec delta` section. A retro that omits this
+    paragraph - or that confirms a delta without a matching Document
+    History row in the named spec - is incomplete and blocks PR merge.
 
 ## What a retro is not
 
