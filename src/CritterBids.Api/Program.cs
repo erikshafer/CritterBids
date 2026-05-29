@@ -184,6 +184,20 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.ObligationFulfilled>()
             .ToRabbitQueue("relay-obligations-events");
+
+        // M6-S4: Obligations → Relay publish routes for the failure-path integration events.
+        // DeadlineEscalated is the fifth Obligations contract (ADR 005 additive); DisputeOpened /
+        // DisputeResolved were frozen at M6-S1. All three are append+emit on the post-sale saga and
+        // are wired publish-only — the Relay (M6-S5–S7) and Operations (M7) consumers ship later.
+        // Publish-only so the saga's OutgoingMessages-emitted events have a route (and
+        // Wolverine.Tracking's tracked.Sent assertions resolve once a consumer listens); without it
+        // they would land in tracked.NoRoutes.
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DeadlineEscalated>()
+            .ToRabbitQueue("relay-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeOpened>()
+            .ToRabbitQueue("relay-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
+            .ToRabbitQueue("relay-obligations-events");
     }
 
     opts.Policies.AutoApplyTransactions();

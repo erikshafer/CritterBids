@@ -39,20 +39,39 @@ public static class ObligationsModule
                 .DatabaseSchemaName("obligations")
                 .Identity(x => x.Id);
 
+            // ObligationsAwaitingDelivery — the M6-S4 awaiting-delivery todo-list read model
+            // (opsx 8.2). Same schema, keyed on the ObligationId; rows exist only between tracking
+            // and delivery confirmation.
+            opts.Schema.For<ObligationsAwaitingDelivery>()
+                .DatabaseSchemaName("obligations")
+                .Identity(x => x.Id);
+
             // Obligation event types — registered at first use per the M2 silent-
             // AggregateStreamAsync<T>-null lesson. PostSaleCoordinationStarted is appended at
             // saga start (M6-S2); the M6-S3 reminder/tracking/fulfillment events join here.
             // TrackingInfoProvided is a Contracts integration event that is also appended to the
             // obligation stream (it drives the projection); ObligationFulfilled is emitted on the
-            // bus only and is not registered as a stream event type.
+            // bus only and is not registered as a stream event type. The M6-S4 escalation/dispute
+            // events (DeadlineEscalated, DisputeOpened, DisputeResolved) are likewise append+emit
+            // and registered here; ShipByDeadlineExtended is BC-internal (drives the view's
+            // post-extension deadline) and appended only.
             opts.Events.AddEventType<PostSaleCoordinationStarted>();
             opts.Events.AddEventType<ShippingReminderSent>();
             opts.Events.AddEventType<CritterBids.Contracts.Obligations.TrackingInfoProvided>();
             opts.Events.AddEventType<DeliveryConfirmed>();
+            opts.Events.AddEventType<CritterBids.Contracts.Obligations.DeadlineEscalated>();
+            opts.Events.AddEventType<CritterBids.Contracts.Obligations.DisputeOpened>();
+            opts.Events.AddEventType<CritterBids.Contracts.Obligations.DisputeResolved>();
+            opts.Events.AddEventType<ShipByDeadlineExtended>();
 
             // ObligationStatusView Inline projection (opsx 8.1) — strongly consistent so the view
             // is queryable immediately after the appending transaction commits.
             opts.Projections.Add<ObligationStatusViewProjection>(
+                JasperFx.Events.Projections.ProjectionLifecycle.Inline);
+
+            // ObligationsAwaitingDelivery Inline projection (opsx 8.2) — strongly consistent
+            // todo-list view; rows appear on tracking and self-remove on delivery confirmation.
+            opts.Projections.Add<ObligationsAwaitingDeliveryProjection>(
                 JasperFx.Events.Projections.ProjectionLifecycle.Inline);
         });
 

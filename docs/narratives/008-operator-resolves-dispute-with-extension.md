@@ -1,6 +1,6 @@
 ---
 slug: 008-operator-resolves-dispute-with-extension
-status: draft
+status: accepted
 journey: operator
 perspective: single-operator
 scope: dispute-extension
@@ -148,4 +148,5 @@ W005 Decision 5 (three dispute resolutions, `Extension` non-terminal) is the spi
 
 ## Document History
 
+- **v1.0** (2026-05-29): Promoted `draft` → `accepted` at M6-S4 session close. The dispute sub-workflow (slices 5.7, 5.8) and the one non-terminal `Extension` resolution this narrative dramatises shipped and are green under `ObligationsFailurePathsTests` (Refund/Closed terminate, Extension reschedules and continues). `OperationsObligationsView` remains M7 Operations-BC work as recorded; M6-S4 publishes the `DisputeOpened` / `DisputeResolved` / `DeadlineEscalated` integration events that will feed it. Narrative is now jointly authoritative with W005 for the dispute journey.
 - **v0.1** (2026-05-29): Authored as M6-S4 design preparation, alongside narrative 007 and the M6-S4 implementation prompt. Covers the dispute sub-workflow (slices 5.7, 5.8) narrative 006 deferred as `separate-narrative`, following the `Extension` non-terminal resolution to fulfilment. First operator-perspective narrative (deviation documented). Records the `OperationsObligationsView`-is-M7 and `DeadlineEscalated`-as-integration-event decisions as surfaced-not-resolved architectural notes. Status `draft` pending M6-S4 prompt review.
