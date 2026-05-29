@@ -2,8 +2,8 @@
 
 Cross-workshop tracker for questions raised during Event Modeling sessions. Open questions at the top; resolved questions below with the resolving workshop noted.
 
-**Last updated:** 2026-05-27
-**Workshops covered:** W001 (Flash Session Demo-Day Journey), W002 (Auctions BC), W003 (Settlement BC), W004 (Selling BC)
+**Last updated:** 2026-05-28
+**Workshops covered:** W001 (Flash Session Demo-Day Journey), W002 (Auctions BC), W003 (Settlement BC), W004 (Selling BC), W005 (Obligations BC)
 
 IDs are stable: `W00X-N` where N is the question number within the workshop where it was originally raised.
 
@@ -13,7 +13,6 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 
 | ID | Question | Source | Target | Notes |
 |---|---|---|---|---|
-| W001-6 | Demo-mode timeout config for Obligations sagas? | W001 Ph2 | Obligations BC | PO decision captured: sagas need demo-mode timeout config with a cap. Implementation deferred. |
 | W001-7 | UI state between timer-zero and outcome event? | W001 Ph2 | Frontend | Duplicated/refined as W001-12. |
 | W001-9 | Where does `ParticipantBidHistoryView` live? | W001 Ph3 | Listings or Auctions BC | Tentatively Listings. Confirm during Listings BC workshop. |
 | W001-10 | Ops screens: separate routes or tabbed dashboard? | W001 Ph3 | Frontend | Frontend workshop. |
@@ -33,8 +32,12 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W004-P2-7 | Seller UX for finding relisted versions? | W004 Ph2 | Listings/Frontend | Frontend workshop. |
 | W004-P2-8 | Publish notification via Relay or HTTP 200 sufficient? | W004 Ph2 | Relay BC | Relay workshop. |
 | W004-P2-9 | Is `RegisteredSellers` the only Selling projection? | W004 Ph2 | Selling BC | Likely yes; confirm during M2 coding. |
+| W005-1 | Real carrier-tracking webhook receiver (replacing the stubbed in-process `ProvideTracking` seam)? | W005 Ph3 | Obligations BC | Post-MVP. MVP uses an in-process command seam. |
+| W005-2 | Buyer-initiated delivery confirmation (`ConfirmDelivery` as a winner command, not only auto)? | W005 Ph1 | Obligations BC | Post-MVP. MVP auto-confirms `N` days after tracking. |
+| W005-3 | Seller-opened disputes / multi-round negotiation? | W005 Ph4 | Obligations BC | Post-MVP. MVP: winner opens (NonDelivery/ItemCondition) + ops-from-escalation (MissedDeadline); no appeals. |
+| W005-4 | `N`-days auto-confirm window — platform default, per-category, or configurable? | W005 Ph2 | Obligations BC / config | MVP: single `ObligationsOptions` value. Per-category windows are a post-MVP policy concern. |
 
-**Open count: 20** — 6 frontend, 3 implementation-detail, 4 Settlement/Ops post-MVP, 3 infrastructure/config, 2 Relay, 2 milestone/test-time.
+**Open count: 23** — 6 frontend, 4 Obligations post-MVP/config, 4 Settlement/Ops post-MVP, 3 infrastructure/config, 2 implementation-detail, 2 Relay, 2 milestone/test-time.
 
 ---
 
@@ -70,8 +73,9 @@ IDs are stable: `W00X-N` where N is the question number within the workshop wher
 | W004-P1-2 | Seller registration race condition | W004 Ph1 | W004 Ph2 | `RegisteredSellers` projection with Wolverine retry. Defense in depth: projection check, integration test, and API gateway pre-check. |
 | W004-P1-5 | Relist fee — carry over or fresh? | W004 Ph1 | W004 Ph2 | Fresh config. New agreement at current rates. |
 | W004-P1-6 | Mid-session listing revision | W004 Ph1 | W004 Ph2 | Selling accepts. Listings BC catalog projection filters during active sessions. |
+| W001-6 | Demo-mode timeout config for Obligations sagas? | W001 Ph2 | W005 (Decision 4) | `ObligationsOptions` config section carrying real + demo durations (reminder, escalation, auto-confirm window). Demo timings selected by config, not `#if DEBUG`. |
 
-**Resolved count: 28**
+**Resolved count: 29**
 
 ---
 

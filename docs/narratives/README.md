@@ -211,6 +211,7 @@ The Document History rows are the narrative's version trail. The frontmatter doe
 | [003](./003-bidder-starts-anonymous-session.md) | accepted | bidder | happy-path | 0.2 |
 | [004](./004-seller-publishes-and-withdraws-listing.md) | accepted | seller | happy-path | 0.3, 1.1, 1.2 |
 | [005](./005-seller-watches-flash-auction-close.md) | accepted | seller | happy-path | 2.3, 3.1, 3.3, 5.1, 5.2 |
+| [006](./006-seller-fulfills-post-sale-obligation.md) | accepted | seller | happy-path | W005: 5.1, 5.2, 5.3, 5.4 |
 
 ## Document history
 

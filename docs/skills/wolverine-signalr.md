@@ -351,9 +351,22 @@ public static class BidPlacedHandler
 }
 ```
 
-### Client-Driven Group Changes
+### Obligations Event → Hub Group Mapping (M6)
 
-`OnConnectedAsync` handles one-shot enrollment on connect. For groups a client joins or leaves **during** its session — switching from one listing's live feed to another, opening a side-panel that subscribes to a specific bidder's activity — return `AddConnectionToGroup` or `RemoveConnectionToGroup` as a handler side-effect. Wolverine applies the membership change against the calling connection automatically.
+The Obligations BC publishes four integration events on `relay-obligations-events`
+(`TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved`). Relay's
+M6-S6 handlers route them to the existing group keys — no new group-key conventions are
+introduced; the M6-S1 decision is which existing group each event targets:
+
+| Event | Hub | Group key | Rationale |
+|---|---|---|---|
+| `TrackingInfoProvided` | BiddingHub | `bidder:{WinnerId}` | Tracking-confirmation alert to the winner. `WinnerId` is not on the payload (the seller is the actor) — Relay reads it from envelope correlation or an additive payload change is flagged at M6-S6 per ADR 005. |
+| `ObligationFulfilled` | BiddingHub | `bidder:{WinnerId}` and `bidder:{SellerId}` | Completion notice to both parties; both ids are carried on the payload. |
+| `DisputeOpened` | OperationsHub | `ops:staff` | Dispute lands in the staff work queue. Broadcast to all staff, not a per-participant group. |
+| `DisputeResolved` | BiddingHub + OperationsHub | `bidder:{...}` + `ops:staff` | Notifies the affected participant(s) and updates the staff dispute board. |
+
+Relay never publishes integration events (pure consumer, per M6 milestone doc §6) — these
+handlers return only SignalR notification messages. No `OutgoingMessages`, no `IMessageBus`. For groups a client joins or leaves **during** its session — switching from one listing's live feed to another, opening a side-panel that subscribes to a specific bidder's activity — return `AddConnectionToGroup` or `RemoveConnectionToGroup` as a handler side-effect. Wolverine applies the membership change against the calling connection automatically.
 
 ```csharp
 public sealed record JoinListingFeed(Guid ListingId);
