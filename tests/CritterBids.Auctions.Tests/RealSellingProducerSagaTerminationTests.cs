@@ -183,6 +183,9 @@ internal sealed class ListingsAndSettlementExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Settlement BC inactive — AddSettlementModule not called in M4-S2 integration fixture",
                 t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+            x.Excludes.WithCondition(
+                "Obligations BC inactive — AddObligationsModule not called in M4-S2 integration fixture",
+                t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
         });
     }
 }

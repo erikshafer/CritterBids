@@ -70,6 +70,12 @@ public class ListingsTestFixture : IAsyncLifetime
                 // schema isn't configured; allowing the handler to be discovered would either
                 // crash on session.Store or land messages in the wrong tracked-bucket.
                 services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
+
+                // Exclude Obligations BC handlers — SettlementCompletedHandler (M6-S2) is globally
+                // discovered via Program.cs assembly inclusion. AddObligationsModule() is not called
+                // here, so the obligations saga + event-stream schema is absent. Keeps the Listings
+                // fixture's foreign-BC exclusion posture consistent.
+                services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
             });
         });
     }
@@ -219,6 +225,25 @@ internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Settlement BC inactive — AddSettlementModule not called in Listings fixture; PendingSettlementHandler would interfere with handler routing under MultipleHandlerBehavior.Separated",
                 t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Obligations BC handlers from Wolverine's handler discovery in the Listings test fixture.
+/// SettlementCompletedHandler (M6-S2) is globally discovered via Program.cs assembly inclusion;
+/// AddObligationsModule() is not called here, so the obligations saga + event-stream schema is
+/// absent. Keeps the Listings fixture's foreign-BC exclusion posture consistent.
+/// </summary>
+internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Obligations BC inactive — AddObligationsModule not called in Listings fixture; PostSaleCoordinationSaga schema absent",
+                t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
         });
     }
 }
