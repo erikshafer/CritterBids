@@ -117,11 +117,15 @@ public class SettlementCompletedHandlerTests : IAsyncLifetime
         // precedent: Wolverine's saga-start wrapper inserts whatever saga the handler returns, so a
         // bus re-dispatch of a start message against a still-live saga is not the framework's
         // supported path. The handler's existence-check is the correctness guarantee and is what
-        // this test exercises.
+        // this test exercises. IMessageBus is required by the M6-S3 timer-scheduling signature but
+        // is never touched on the no-op path (the guard returns before scheduling).
+        await using var scope = _fixture.Host.Services.CreateAsyncScope();
+        var bus = scope.ServiceProvider.GetRequiredService<IMessageBus>();
+
         await using (var session = _fixture.GetDocumentSession())
         {
             var (saga, messages) = await SettlementCompletedHandler.Handle(
-                NewSettlementCompleted(listingId, winnerId, sellerId), session, options, default);
+                NewSettlementCompleted(listingId, winnerId, sellerId), session, bus, options, default);
 
             saga.ShouldBeNull();
             messages.ShouldBeEmpty();

@@ -33,10 +33,27 @@ public static class ObligationsModule
             // session.Events.StartStream<ObligationEventStream>(obligationId, ...).
             opts.Schema.For<ObligationEventStream>().DatabaseSchemaName("obligations");
 
+            // ObligationStatusView — the M6-S3 single-stream read model. Lives in the obligations
+            // schema alongside the saga; keyed on the ObligationId.
+            opts.Schema.For<ObligationStatusView>()
+                .DatabaseSchemaName("obligations")
+                .Identity(x => x.Id);
+
             // Obligation event types — registered at first use per the M2 silent-
             // AggregateStreamAsync<T>-null lesson. PostSaleCoordinationStarted is appended at
-            // saga start (M6-S2); the M6-S3/S4 events join this list as those slices land.
+            // saga start (M6-S2); the M6-S3 reminder/tracking/fulfillment events join here.
+            // TrackingInfoProvided is a Contracts integration event that is also appended to the
+            // obligation stream (it drives the projection); ObligationFulfilled is emitted on the
+            // bus only and is not registered as a stream event type.
             opts.Events.AddEventType<PostSaleCoordinationStarted>();
+            opts.Events.AddEventType<ShippingReminderSent>();
+            opts.Events.AddEventType<CritterBids.Contracts.Obligations.TrackingInfoProvided>();
+            opts.Events.AddEventType<DeliveryConfirmed>();
+
+            // ObligationStatusView Inline projection (opsx 8.1) — strongly consistent so the view
+            // is queryable immediately after the appending transaction commits.
+            opts.Projections.Add<ObligationStatusViewProjection>(
+                JasperFx.Events.Projections.ProjectionLifecycle.Inline);
         });
 
         return services;
