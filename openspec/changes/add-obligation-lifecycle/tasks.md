@@ -1,22 +1,22 @@
 ## 1. BC scaffold and registration
 
-- [ ] 1.1 Create `src/CritterBids.Obligations` class library and add it to the solution
-- [ ] 1.2 Add `AddObligationsModule()` extension with `services.ConfigureMarten()` contributing the saga state document and projections (no `AddMarten()` call — the host owns the single one)
-- [ ] 1.3 Register `AddObligationsModule()` in `src/CritterBids.Api/Program.cs`
-- [ ] 1.4 Add `ObligationsOptions` config section (production + demo durations, `DemoMode` flag) bound from configuration
-- [ ] 1.5 Add `ObligationsIdentityNamespaces.PostSaleCoordination` namespace constant and the deterministic `ObligationId` helper (UUID v5 from `ListingId`)
+- [x] 1.1 Create `src/CritterBids.Obligations` class library and add it to the solution
+- [x] 1.2 Add `AddObligationsModule()` extension with `services.ConfigureMarten()` contributing the saga state document and projections (no `AddMarten()` call — the host owns the single one)
+- [x] 1.3 Register `AddObligationsModule()` in `src/CritterBids.Api/Program.cs`
+- [x] 1.4 Add `ObligationsOptions` config section (production + demo durations, `DemoMode` flag) bound from configuration
+- [x] 1.5 Add `ObligationsIdentityNamespaces.PostSaleCoordination` namespace constant and the deterministic `ObligationId` helper (UUID v5 from `ListingId`)
 - [x] 1.6 Author ADR-022 (Obligations saga hosting = Wolverine Saga, citing ADR-019)
 
 ## 2. Contracts
 
-- [ ] 2.1 Add integration events `TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved` to `CritterBids.Contracts` (sealed records, no "Event" suffix)
-- [ ] 2.2 Confirm `SettlementCompleted` shape carries `ListingId`, `WinnerId`, `SellerId`, `HammerPrice`, `FeeAmount`, `SellerPayout`
+- [x] 2.1 Add integration events `TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved` to `CritterBids.Contracts` (sealed records, no "Event" suffix)
+- [x] 2.2 Confirm `SettlementCompleted` shape carries `ListingId`, `WinnerId`, `SellerId`, `HammerPrice`, `FeeAmount`, `SellerPayout`
 
 ## 3. Saga start and identity (spec: start, deterministic identity)
 
-- [ ] 3.1 Implement the `SettlementCompleted` handler that starts the saga and emits `PostSaleCoordinationStarted` with computed `ShipByDeadline`
+- [x] 3.1 Implement the `SettlementCompleted` handler that starts the saga and emits `PostSaleCoordinationStarted` with computed `ShipByDeadline`
 - [ ] 3.2 Schedule `SendShippingReminder` and `SendDeadlineEscalation` via `bus.ScheduleAsync()` at saga start
-- [ ] 3.3 Implement idempotent start: a duplicate `SettlementCompleted` for an existing `ObligationId` is a no-op
+- [x] 3.3 Implement idempotent start: a duplicate `SettlementCompleted` for an existing `ObligationId` is a no-op
 
 ## 4. Reminder and tracking (spec: reminder, tracking)
 
@@ -50,7 +50,7 @@
 ## 9. Tests (spec scenarios as test cases)
 
 - [ ] 9.1 Integration tests covering the happy path (start → reminder → tracking → auto-confirm → fulfilled) with demo durations injected via `ObligationsOptions`
-- [ ] 9.2 Idempotent-start test (duplicate `SettlementCompleted`)
+- [x] 9.2 Idempotent-start test (duplicate `SettlementCompleted`)
 - [ ] 9.3 Stale-reminder-after-tracking no-op test
 - [ ] 9.4 Escalation + late-tracking recovery test
 - [ ] 9.5 Dispute resolution tests: `Refund` terminates, `Extension` reschedules and continues

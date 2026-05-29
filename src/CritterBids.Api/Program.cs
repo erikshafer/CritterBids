@@ -1,6 +1,7 @@
 using CritterBids.Auctions;
 using CritterBids.Contracts;
 using CritterBids.Listings;
+using CritterBids.Obligations;
 using CritterBids.Participants;
 using CritterBids.Selling;
 using CritterBids.Settlement;
@@ -29,6 +30,7 @@ builder.UseWolverine(opts =>
     opts.Discovery.IncludeAssembly(typeof(CatalogListingView).Assembly);
     opts.Discovery.IncludeAssembly(typeof(Listing).Assembly);
     opts.Discovery.IncludeAssembly(typeof(SettlementSaga).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(PostSaleCoordinationSaga).Assembly);
 
     // RabbitMQ transport — guarded so fixtures using DisableAllExternalWolverineTransports() are unaffected
     var rabbitMqUri = builder.Configuration.GetConnectionString("rabbitmq");
@@ -161,6 +163,16 @@ builder.UseWolverine(opts =>
         // ListenToRabbitQueue — the Operations consumer ships post-M5.
         opts.PublishMessage<CritterBids.Contracts.Settlement.PaymentFailed>()
             .ToRabbitQueue("operations-settlement-events");
+
+        // M6-S2: Settlement → Obligations publish route for SettlementCompleted. This is the
+        // third publish route for SettlementCompleted, alongside listings-settlement-events
+        // (M5-S6) and the financial event stream. The Obligations BC's SettlementCompletedHandler
+        // starts the PostSaleCoordination saga on consumption. Obligations listens on its own
+        // queue per the modular-monolith consumer-isolation discipline. AutoProvision() declares
+        // the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("obligations-settlement-events");
+        opts.ListenToRabbitQueue("obligations-settlement-events");
     }
 
     opts.Policies.AutoApplyTransactions();
@@ -200,6 +212,7 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     builder.Services.AddListingsModule();
     builder.Services.AddAuctionsModule();
     builder.Services.AddSettlementModule();
+    builder.Services.AddObligationsModule();
 }
 
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────

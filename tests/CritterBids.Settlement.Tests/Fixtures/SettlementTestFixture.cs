@@ -84,6 +84,13 @@ public class SettlementTestFixture : IAsyncLifetime
                 // AddListingsModule(). The Settlement fixture does not register that module,
                 // so the projection handlers have nowhere useful to run.
                 services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
+
+                // Exclude Obligations BC handlers — SettlementCompletedHandler (M6-S2) starts the
+                // PostSaleCoordinationSaga on the SettlementCompleted this fixture's saga emits.
+                // AddObligationsModule() is not called here, so the obligations schema (saga doc +
+                // event stream) is absent; without exclusion the co-consumer would fail on its
+                // StartStream and fault the SettlementSaga happy-path test's tracked session.
+                services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
             });
         });
     }
@@ -167,6 +174,26 @@ internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Listings BC inactive — CatalogListingView schema not registered (no AddListingsModule in Settlement fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Obligations BC handlers from Wolverine's handler discovery in the Settlement test
+/// fixture. SettlementCompletedHandler (M6-S2) starts the PostSaleCoordinationSaga on the
+/// SettlementCompleted this fixture's SettlementSaga emits; AddObligationsModule() is not called
+/// here, so the obligations saga + event-stream schema is absent. Without exclusion the co-consumer
+/// would fault on StartStream and break the saga happy-path test's tracked session.
+/// </summary>
+internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Obligations BC inactive — PostSaleCoordinationSaga schema not registered (no AddObligationsModule in Settlement fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
         });
     }
 }

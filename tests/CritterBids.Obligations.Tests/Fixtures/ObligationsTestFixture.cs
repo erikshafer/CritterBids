@@ -1,0 +1,181 @@
+using Alba;
+using CritterBids.Obligations;
+using JasperFx.CommandLine;
+using JasperFx.Events;
+using Marten;
+using Microsoft.Extensions.DependencyInjection;
+using Testcontainers.PostgreSql;
+using Wolverine;
+using Wolverine.Marten;
+
+namespace CritterBids.Obligations.Tests.Fixtures;
+
+public class ObligationsTestFixture : IAsyncLifetime
+{
+    // Only PostgreSQL is needed for the Obligations BC — Marten is the only store registered
+    // per ADR 011 (All-Marten Pivot). The PostSaleCoordinationSaga document and the obligation
+    // event stream live in the shared primary store under the "obligations" schema.
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .WithName($"obligations-postgres-test-{Guid.NewGuid():N}")
+        .WithCleanUp(true)
+        .Build();
+
+    public IAlbaHost Host { get; private set; } = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+        var postgresConnectionString = _postgres.GetConnectionString();
+
+        JasperFxEnvironment.AutoStartHost = true;
+
+        Host = await AlbaHost.For<Program>(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                // Register the primary Marten store with the Testcontainers connection string.
+                // Program.cs's AddMarten() is null-guarded on the Aspire postgres connection
+                // string, which is absent in tests. ConfigureServices runs after Program.cs, so
+                // this registration is always present and wins for IDocumentStore resolution.
+                services.AddMarten(opts =>
+                {
+                    opts.Connection(postgresConnectionString);
+                    opts.DatabaseSchemaName = "public";
+                    opts.Events.AppendMode = EventAppendMode.Quick;
+                    opts.Events.UseMandatoryStreamTypeDeclaration = true;
+                    opts.DisableNpgsqlLogging = true;
+                })
+                .UseLightweightSessions()
+                .ApplyAllDatabaseChangesOnStartup()
+                .IntegrateWithWolverine(configure: integration => integration.UseFastEventForwarding = true);
+
+                // Register the Obligations BC module so its ConfigureMarten contributions
+                // (obligations schema for PostSaleCoordinationSaga + ObligationEventStream, the
+                // PostSaleCoordinationStarted event type) and ObligationsOptions binding are
+                // present. Program.cs guards its AddObligationsModule() call inside the postgres
+                // null check, which the ConfigureServices path bypasses.
+                services.AddObligationsModule();
+
+                services.RunWolverineInSoloMode();
+                services.DisableAllExternalWolverineTransports();
+
+                // ─── Cross-BC handler isolation (per project_cross_bc_handler_isolation.md) ──
+                //
+                // The Obligations fixture only registers AddObligationsModule(). Wolverine still
+                // discovers handlers from every assembly listed in Program.cs's IncludeAssembly
+                // calls. Foreign-BC handlers whose modules aren't registered here will fail either
+                // DI validation (Selling: ISellerRegistrationService) or Marten code-gen (Auctions
+                // / Listings / Settlement operate on aggregates and saga documents whose schema
+                // mappings aren't configured). Excluding them from handler discovery is the
+                // canonical fix.
+                services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
+                services.AddSingleton<IWolverineExtension>(new AuctionsBcDiscoveryExclusion());
+                services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
+                services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
+            });
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        if (Host != null)
+        {
+            try
+            {
+                await Host.StopAsync();
+                await Host.DisposeAsync();
+            }
+            catch (ObjectDisposedException) { }
+            catch (TaskCanceledException) { }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(e =>
+                e is OperationCanceledException or ObjectDisposedException)) { }
+        }
+
+        await _postgres.DisposeAsync();
+    }
+
+    // ─── Cleanup helpers ──────────────────────────────────────────────────────
+
+    public Task CleanAllMartenDataAsync() => Host.CleanAllMartenDataAsync();
+    public Task ResetAllMartenDataAsync() => Host.ResetAllMartenDataAsync();
+
+    // ─── Query helpers ────────────────────────────────────────────────────────
+
+    public Marten.IDocumentSession GetDocumentSession() =>
+        Host.DocumentStore().LightweightSession();
+}
+
+/// <summary>
+/// Excludes Selling BC handlers from Wolverine's handler discovery in the Obligations test
+/// fixture. The Selling BC module is not registered here (no ISellerRegistrationService), so
+/// handlers like CreateDraftListingHandler that depend on it cannot be code-generated.
+/// </summary>
+internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Selling BC inactive — ISellerRegistrationService not registered (no AddSellingModule in Obligations fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Auctions BC handlers from Wolverine's handler discovery in the Obligations test
+/// fixture. Auctions handlers operate on the Listing aggregate and the AuctionClosingSaga
+/// document; their schema mappings come from AddAuctionsModule(), which this fixture does not call.
+/// </summary>
+internal sealed class AuctionsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Auctions BC inactive — Listing / AuctionClosingSaga schema not registered (no AddAuctionsModule in Obligations fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Auctions") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Listings BC handlers from Wolverine's handler discovery in the Obligations test
+/// fixture. AuctionStatusHandler / ListingSnapshotHandler operate on CatalogListingView, whose
+/// schema mapping comes from AddListingsModule(); this fixture does not register that module.
+/// </summary>
+internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Listings BC inactive — CatalogListingView schema not registered (no AddListingsModule in Obligations fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Obligations test
+/// fixture. The Settlement saga + projection handlers operate on the SettlementSaga and
+/// PendingSettlement documents, whose schema mappings come from AddSettlementModule(); this
+/// fixture does not register that module. Excluding them also prevents Settlement's
+/// PendingSettlementHandler from co-consuming the SettlementCompleted message the Obligations
+/// saga-start tests dispatch directly.
+/// </summary>
+internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Settlement BC inactive — SettlementSaga / PendingSettlement schema not registered (no AddSettlementModule in Obligations fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+        });
+    }
+}
