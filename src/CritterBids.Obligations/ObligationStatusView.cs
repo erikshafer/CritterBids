@@ -16,6 +16,11 @@ namespace CritterBids.Obligations;
 /// - <c>TrackingNumber</c> — the carrier tracking string once provided; null before.
 /// - <c>ReminderSentAt</c>, <c>TrackingProvidedAt</c>, <c>FulfilledAt</c> — lifecycle timestamps;
 ///   null until the corresponding transition occurs.
+/// - <c>EscalatedAt</c> — when the ship-by deadline lapsed and escalation fired; null otherwise.
+/// - <c>DisputeId</c>, <c>DisputeReason</c>, <c>DisputeOpenedAt</c> — the open (or last) dispute's
+///   identity, string reason, and open time; null until a dispute is raised.
+/// - <c>DisputeResolution</c>, <c>DisputeResolvedAt</c> — the resolution string
+///   (<c>Refund</c> / <c>Extension</c> / <c>Closed</c>) and resolve time; null until resolved.
 /// </summary>
 public sealed record ObligationStatusView
 {
@@ -30,4 +35,10 @@ public sealed record ObligationStatusView
     public DateTimeOffset? ReminderSentAt { get; init; }
     public DateTimeOffset? TrackingProvidedAt { get; init; }
     public DateTimeOffset? FulfilledAt { get; init; }
+    public DateTimeOffset? EscalatedAt { get; init; }
+    public Guid? DisputeId { get; init; }
+    public string? DisputeReason { get; init; }
+    public DateTimeOffset? DisputeOpenedAt { get; init; }
+    public string? DisputeResolution { get; init; }
+    public DateTimeOffset? DisputeResolvedAt { get; init; }
 }

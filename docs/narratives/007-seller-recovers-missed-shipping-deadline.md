@@ -1,6 +1,6 @@
 ---
 slug: 007-seller-recovers-missed-shipping-deadline
-status: draft
+status: accepted
 journey: seller
 perspective: single-seller
 scope: missed-deadline-recovery
@@ -146,4 +146,5 @@ W005 Decision 2 (one reminder, then non-terminal escalation) is the spine of the
 
 ## Document History
 
+- **v1.0** (2026-05-29): Promoted `draft` → `accepted` at M6-S4 session close. The escalation (slice 5.5) and late-tracking recovery (slice 5.6) transitions this narrative dramatises shipped and are green under `ObligationsFailurePathsTests`; the `DeadlineEscalated`-as-integration-event decision landed as a fifth Obligations contract (ADR 005 additive). Narrative is now jointly authoritative with W005 for the escalation/recovery journey.
 - **v0.1** (2026-05-29): Authored as M6-S4 design preparation, alongside narrative 008 and the M6-S4 implementation prompt. Covers the escalation (slice 5.5) and late-tracking recovery (slice 5.6) journeys narrative 006 deferred as `alternate-path-failure`. Records the `DeadlineEscalated`-as-integration-event decision (ADR 005 additive) as a surfaced-not-resolved architectural note. Status `draft` pending M6-S4 prompt review.

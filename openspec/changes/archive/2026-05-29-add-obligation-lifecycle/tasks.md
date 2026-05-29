@@ -31,27 +31,27 @@
 
 ## 6. Escalation and recovery (spec: missed deadline, late tracking)
 
-- [ ] 6.1 Implement `SendDeadlineEscalation` handler emitting `DeadlineEscalated` (non-terminal; saga stays alive)
-- [ ] 6.2 Make `ProvideTracking` state-tolerant so it recovers from the escalated state
+- [x] 6.1 Implement `SendDeadlineEscalation` handler emitting `DeadlineEscalated` (non-terminal; saga stays alive)
+- [x] 6.2 Make `ProvideTracking` state-tolerant so it recovers from the escalated state
 
 ## 7. Dispute sub-workflow (spec: open dispute, resolve dispute)
 
-- [ ] 7.1 Implement `OpenDispute` command + endpoint emitting `DisputeOpened` (reasons: `NonDelivery`, `ItemCondition`, `MissedDeadline`)
-- [ ] 7.2 Implement `ResolveDispute` command + endpoint emitting `DisputeResolved` (`Refund`, `Extension`, `Closed`)
-- [ ] 7.3 Terminate the saga (`MarkCompleted()`) on `Refund` and `Closed`
-- [ ] 7.4 On `Extension`, reschedule a fresh `ShipByDeadline` and return to awaiting-tracking without terminating
+- [x] 7.1 Implement `OpenDispute` command + endpoint emitting `DisputeOpened` (reasons: `NonDelivery`, `ItemCondition`, `MissedDeadline`)
+- [x] 7.2 Implement `ResolveDispute` command + endpoint emitting `DisputeResolved` (`Refund`, `Extension`, `Closed`)
+- [x] 7.3 Terminate the saga (`MarkCompleted()`) on `Refund` and `Closed`
+- [x] 7.4 On `Extension`, reschedule a fresh `ShipByDeadline` and return to awaiting-tracking without terminating
 
 ## 8. Read models
 
 - [x] 8.1 `ObligationStatusView` single-stream projection (status, `ShipByDeadline`, tracking, dispute state)
-- [ ] 8.2 `ObligationsAwaitingDelivery*` todo-list projection (rows on `TrackingInfoProvided`, self-remove on `DeliveryConfirmed`)
-- [ ] 8.3 `OperationsObligationsView` projection (escalation queue + open-dispute queue)
+- [x] 8.2 `ObligationsAwaitingDelivery*` todo-list projection (rows on `TrackingInfoProvided`, self-remove on `DeliveryConfirmed`)
+- [ ] 8.3 `OperationsObligationsView` projection (escalation queue + open-dispute queue) — **DEFERRED to M7.** This is a cross-BC operator read model whose queries belong to the consuming Operations BC, not Obligations. S4 publishes the `DeadlineEscalated` / `DisputeOpened` / `DisputeResolved` integration events that will feed it; the projection itself is built when Operations adopts those streams in M7.
 
 ## 9. Tests (spec scenarios as test cases)
 
 - [x] 9.1 Integration tests covering the happy path (start → reminder → tracking → auto-confirm → fulfilled) with demo durations injected via `ObligationsOptions`
 - [x] 9.2 Idempotent-start test (duplicate `SettlementCompleted`)
 - [x] 9.3 Stale-reminder-after-tracking no-op test
-- [ ] 9.4 Escalation + late-tracking recovery test
-- [ ] 9.5 Dispute resolution tests: `Refund` terminates, `Extension` reschedules and continues
-- [ ] 9.6 `dotnet build` and `dotnet test` pass; `openspec validate add-obligation-lifecycle --strict` passes
+- [x] 9.4 Escalation + late-tracking recovery test
+- [x] 9.5 Dispute resolution tests: `Refund` terminates, `Extension` reschedules and continues
+- [x] 9.6 `dotnet build` and `dotnet test` pass; `openspec validate add-obligation-lifecycle --strict` passes

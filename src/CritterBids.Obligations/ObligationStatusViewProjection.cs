@@ -45,4 +45,40 @@ public sealed class ObligationStatusViewProjection : SingleStreamProjection<Obli
             Status = ObligationStatus.Fulfilled,
             FulfilledAt = confirmed.ConfirmedAt,
         };
+
+    public static ObligationStatusView Apply(DeadlineEscalated escalated, ObligationStatusView view) =>
+        view with
+        {
+            Status = ObligationStatus.Escalated,
+            EscalatedAt = escalated.EscalatedAt,
+        };
+
+    public static ObligationStatusView Apply(DisputeOpened opened, ObligationStatusView view) =>
+        view with
+        {
+            Status = ObligationStatus.Disputed,
+            DisputeId = opened.DisputeId,
+            DisputeReason = opened.Reason,
+            DisputeOpenedAt = opened.OpenedAt,
+        };
+
+    // Extension recovery returns the obligation to awaiting-shipment; Refund/Closed leave it in the
+    // terminal Disputed state with the resolution recorded. The ShipByDeadline for an Extension is
+    // replayed from the internal ShipByDeadlineExtended event (the frozen contract cannot carry it).
+    public static ObligationStatusView Apply(DisputeResolved resolved, ObligationStatusView view) =>
+        view with
+        {
+            DisputeResolution = resolved.ResolutionType,
+            DisputeResolvedAt = resolved.ResolvedAt,
+            Status = resolved.ResolutionType == DisputeResolutions.Extension
+                ? ObligationStatus.AwaitingShipment
+                : view.Status,
+        };
+
+    public static ObligationStatusView Apply(ShipByDeadlineExtended extended, ObligationStatusView view) =>
+        view with
+        {
+            Status = ObligationStatus.AwaitingShipment,
+            ShipByDeadline = extended.NewShipByDeadline,
+        };
 }
