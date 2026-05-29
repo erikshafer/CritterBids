@@ -5,7 +5,7 @@
 - [ ] 1.3 Register `AddObligationsModule()` in `src/CritterBids.Api/Program.cs`
 - [ ] 1.4 Add `ObligationsOptions` config section (production + demo durations, `DemoMode` flag) bound from configuration
 - [ ] 1.5 Add `ObligationsIdentityNamespaces.PostSaleCoordination` namespace constant and the deterministic `ObligationId` helper (UUID v5 from `ListingId`)
-- [ ] 1.6 Author ADR-022 (Obligations saga hosting = Wolverine Saga, citing ADR-019)
+- [x] 1.6 Author ADR-022 (Obligations saga hosting = Wolverine Saga, citing ADR-019)
 
 ## 2. Contracts
 
