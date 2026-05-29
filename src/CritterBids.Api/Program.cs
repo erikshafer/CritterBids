@@ -173,6 +173,17 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
             .ToRabbitQueue("obligations-settlement-events");
         opts.ListenToRabbitQueue("obligations-settlement-events");
+
+        // M6-S3: Obligations → Relay publish routes for the post-sale coordination integration
+        // events. The Relay BC has not shipped at M6-S3; these routes are wired publish-only with
+        // no ListenTo — the Relay consumer lands in M6-S5–S7. Publish-only so the post-sale saga's
+        // OutgoingMessages-emitted TrackingInfoProvided / ObligationFulfilled have a route (and so
+        // Wolverine.Tracking's tracked.Sent assertions resolve once Relay listens). The frozen
+        // contracts' docstrings name this route as wired in M6-S3.
+        opts.PublishMessage<CritterBids.Contracts.Obligations.TrackingInfoProvided>()
+            .ToRabbitQueue("relay-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.ObligationFulfilled>()
+            .ToRabbitQueue("relay-obligations-events");
     }
 
     opts.Policies.AutoApplyTransactions();

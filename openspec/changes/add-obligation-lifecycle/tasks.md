@@ -15,19 +15,19 @@
 ## 3. Saga start and identity (spec: start, deterministic identity)
 
 - [x] 3.1 Implement the `SettlementCompleted` handler that starts the saga and emits `PostSaleCoordinationStarted` with computed `ShipByDeadline`
-- [ ] 3.2 Schedule `SendShippingReminder` and `SendDeadlineEscalation` via `bus.ScheduleAsync()` at saga start
+- [x] 3.2 Schedule `SendShippingReminder` and `SendDeadlineEscalation` via `bus.ScheduleAsync()` at saga start
 - [x] 3.3 Implement idempotent start: a duplicate `SettlementCompleted` for an existing `ObligationId` is a no-op
 
 ## 4. Reminder and tracking (spec: reminder, tracking)
 
-- [ ] 4.1 Implement `SendShippingReminder` handler emitting `ShippingReminderSent`, with a no-op guard when state has advanced past awaiting-shipment
-- [ ] 4.2 Implement the `ProvideTracking` command + in-process HTTP endpoint emitting `TrackingInfoProvided`
-- [ ] 4.3 Cancel the pending reminder and escalation on tracking; schedule `ConfirmDelivery` at the auto-confirm offset
+- [x] 4.1 Implement `SendShippingReminder` handler emitting `ShippingReminderSent`, with a no-op guard when state has advanced past awaiting-shipment
+- [x] 4.2 Implement the `ProvideTracking` command + in-process HTTP endpoint emitting `TrackingInfoProvided`
+- [x] 4.3 Cancel the pending reminder and escalation on tracking; schedule `ConfirmDelivery` at the auto-confirm offset
 
 ## 5. Auto-confirm and fulfillment (spec: delivery auto-confirms)
 
-- [ ] 5.1 Implement `ConfirmDelivery` handler emitting `DeliveryConfirmed` then `ObligationFulfilled`
-- [ ] 5.2 Call `MarkCompleted()` on fulfillment
+- [x] 5.1 Implement `ConfirmDelivery` handler emitting `DeliveryConfirmed` then `ObligationFulfilled`
+- [x] 5.2 Call `MarkCompleted()` on fulfillment
 
 ## 6. Escalation and recovery (spec: missed deadline, late tracking)
 
@@ -43,15 +43,15 @@
 
 ## 8. Read models
 
-- [ ] 8.1 `ObligationStatusView` single-stream projection (status, `ShipByDeadline`, tracking, dispute state)
+- [x] 8.1 `ObligationStatusView` single-stream projection (status, `ShipByDeadline`, tracking, dispute state)
 - [ ] 8.2 `ObligationsAwaitingDelivery*` todo-list projection (rows on `TrackingInfoProvided`, self-remove on `DeliveryConfirmed`)
 - [ ] 8.3 `OperationsObligationsView` projection (escalation queue + open-dispute queue)
 
 ## 9. Tests (spec scenarios as test cases)
 
-- [ ] 9.1 Integration tests covering the happy path (start → reminder → tracking → auto-confirm → fulfilled) with demo durations injected via `ObligationsOptions`
+- [x] 9.1 Integration tests covering the happy path (start → reminder → tracking → auto-confirm → fulfilled) with demo durations injected via `ObligationsOptions`
 - [x] 9.2 Idempotent-start test (duplicate `SettlementCompleted`)
-- [ ] 9.3 Stale-reminder-after-tracking no-op test
+- [x] 9.3 Stale-reminder-after-tracking no-op test
 - [ ] 9.4 Escalation + late-tracking recovery test
 - [ ] 9.5 Dispute resolution tests: `Refund` terminates, `Extension` reschedules and continues
 - [ ] 9.6 `dotnet build` and `dotnet test` pass; `openspec validate add-obligation-lifecycle --strict` passes

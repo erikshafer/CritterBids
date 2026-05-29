@@ -25,16 +25,20 @@ namespace CritterBids.Obligations;
 /// or demo durations). The deadline is carried on saga state and on
 /// <see cref="PostSaleCoordinationStarted"/> rather than in a separate event (design.md).</para>
 ///
-/// <para><b>Scope (M6-S2).</b> This slice creates the saga and opens its event stream. The
-/// cancellable <c>SendShippingReminder</c> / <c>SendDeadlineEscalation</c> timers scheduled via
-/// <c>bus.ScheduleAsync()</c> land in M6-S3 (spec tasks 3.2 / 4 / 6); they are deliberately not
-/// scheduled here so the slice boundary stays at "scaffold + saga start".</para>
+/// <para><b>Timer chain (M6-S3).</b> After opening the stream, the handler schedules — via
+/// <c>bus.ScheduleAsync()</c> — a <c>SendShippingReminder</c> at the reminder offset and a
+/// <c>SendDeadlineEscalation</c> at the ship-by deadline. Both scheduled instants are persisted on
+/// saga state so the saga can cancel them when tracking is provided (Wolverine 5.x cancellation is
+/// keyed on the scheduled instant — see <see cref="PostSaleCoordinationSaga.CancelScheduledAsync"/>).
+/// <c>bus.ScheduleAsync()</c> is the only justified <c>IMessageBus</c> use in a handler per the
+/// project conventions.</para>
 /// </summary>
 public static class SettlementCompletedHandler
 {
     public static async Task<(PostSaleCoordinationSaga?, OutgoingMessages)> Handle(
         SettlementCompleted message,
         IDocumentSession session,
+        IMessageBus bus,
         IOptions<ObligationsOptions> options,
         CancellationToken cancellationToken)
     {
@@ -51,7 +55,9 @@ public static class SettlementCompletedHandler
         }
 
         var startedAt = DateTimeOffset.UtcNow;
-        var shipByDeadline = startedAt + options.Value.Active.ShipByDeadline;
+        var durations = options.Value.Active;
+        var shipByDeadline = startedAt + durations.ShipByDeadline;
+        var reminderAt = startedAt + durations.ReminderOffset;
 
         var saga = new PostSaleCoordinationSaga
         {
@@ -62,6 +68,8 @@ public static class SettlementCompletedHandler
             HammerPrice = message.HammerPrice,
             ShipByDeadline = shipByDeadline,
             Status = ObligationStatus.AwaitingShipment,
+            ReminderScheduledAt = reminderAt,
+            EscalationScheduledAt = shipByDeadline,
         };
 
         // Open the obligation's event stream at the deterministic ObligationId. StartStream<T>
@@ -77,6 +85,12 @@ public static class SettlementCompletedHandler
                 message.HammerPrice,
                 shipByDeadline,
                 startedAt));
+
+        // Schedule the cancellable reminder + escalation timers. The instants are persisted on saga
+        // state above so the ProvideTracking handler can cancel them. bus.ScheduleAsync is the only
+        // justified IMessageBus use in a handler (CLAUDE.md); cancellation is via IMessageStore.
+        await bus.ScheduleAsync(new SendShippingReminder(obligationId), reminderAt);
+        await bus.ScheduleAsync(new SendDeadlineEscalation(obligationId), shipByDeadline);
 
         return (saga, new OutgoingMessages());
     }
