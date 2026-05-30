@@ -72,6 +72,12 @@ public class ObligationsTestFixture : IAsyncLifetime
                 services.AddSingleton<IWolverineExtension>(new AuctionsBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
+
+                // Exclude Relay BC handlers — SettlementCompleted consumer is globally discovered
+                // (Program.cs IncludeAssembly + unconditional AddRelayModule). This fixture's
+                // saga-start tests dispatch SettlementCompleted directly; excluding Relay keeps its
+                // push handler from co-consuming it.
+                services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
             });
         });
     }
@@ -176,6 +182,26 @@ internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Settlement BC inactive — SettlementSaga / PendingSettlement schema not registered (no AddSettlementModule in Obligations fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Obligations test fixtures
+/// (shared by ObligationsTestFixture and ObligationsLifecycleTestFixture). Relay's
+/// SettlementCompleted notification handler is globally discovered via Program.cs IncludeAssembly
+/// and the unconditional AddRelayModule(). The Obligations saga-start tests dispatch
+/// SettlementCompleted directly; excluding Relay keeps its push handler from co-consuming it.
+/// </summary>
+internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Relay BC inactive — push-only consumer excluded from Obligations fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
         });
     }
 }

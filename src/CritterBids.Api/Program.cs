@@ -3,6 +3,8 @@ using CritterBids.Contracts;
 using CritterBids.Listings;
 using CritterBids.Obligations;
 using CritterBids.Participants;
+using CritterBids.Relay;
+using CritterBids.Relay.Hubs;
 using CritterBids.Selling;
 using CritterBids.Settlement;
 using JasperFx;
@@ -31,6 +33,7 @@ builder.UseWolverine(opts =>
     opts.Discovery.IncludeAssembly(typeof(Listing).Assembly);
     opts.Discovery.IncludeAssembly(typeof(SettlementSaga).Assembly);
     opts.Discovery.IncludeAssembly(typeof(PostSaleCoordinationSaga).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(BiddingHub).Assembly);
 
     // RabbitMQ transport — guarded so fixtures using DisableAllExternalWolverineTransports() are unaffected
     var rabbitMqUri = builder.Configuration.GetConnectionString("rabbitmq");
@@ -198,6 +201,29 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
             .ToRabbitQueue("relay-obligations-events");
+
+        // M6-S5: Relay BC's first reactive surface. Relay consumes three already-published events
+        // and pushes them to BiddingHub participant groups. These are publish-route additions to
+        // existing message types (no Auctions or Settlement BC code changes) plus the inbound
+        // ListenTo calls.
+        //
+        // relay-auctions-events carries the Auctions-source participant feed. BidPlaced / ListingSold
+        // already publish to listings-auctions-events (Listings consumer); this adds the Relay route.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BidPlaced>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.ListenToRabbitQueue("relay-auctions-events");
+
+        // relay-settlement-events is a shared Settlement → Relay queue. It was pre-wired publish-only
+        // for SellerPayoutIssued at M5-S6; M6-S5 adds the SettlementCompleted publish route (resolving
+        // the milestone §2-vs-S5-row routing ambiguity in favour of the S5 row + exit criteria) and
+        // the ListenTo. Relay handles SettlementCompleted this slice; the SellerPayoutIssued push
+        // handler lands in M6-S6 — until then SellerPayoutIssued arrives on this queue with no Relay
+        // handler (a known, accepted deferral; harmless in the test suite, which disables transports).
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("relay-settlement-events");
+        opts.ListenToRabbitQueue("relay-settlement-events");
     }
 
     opts.Policies.AutoApplyTransactions();
@@ -240,6 +266,13 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     builder.Services.AddObligationsModule();
 }
 
+// ── Relay BC (pure-consumer reactive module) ─────────────────────────────────
+// Registered UNCONDITIONALLY, outside the PostgreSQL guard above: Relay owns no Marten document,
+// and its AddSignalR() services must be present for the unconditional app.MapHub<...>() calls below
+// to resolve — including in test hosts that skip the PostgreSQL-guarded module block. See
+// RelayModule.AddRelayModule() and ADR 023.
+builder.Services.AddRelayModule();
+
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────
 builder.Services.AddWolverineHttp();
 builder.Services.AddAuthentication();
@@ -251,6 +284,14 @@ var app = builder.Build();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapWolverineEndpoints();
+
+// ── Relay SignalR hubs ───────────────────────────────────────────────────────
+// Mapped unconditionally (AddRelayModule registers AddSignalR unconditionally above).
+// .DisableAntiforgery() is required on hub routes in ASP.NET Core 10+, or the WebSocket
+// negotiation POST fails 400/403. OperationsHub is mapped now (host wiring done once) but its
+// push handlers land in M6-S6.
+app.MapHub<BiddingHub>("/hub/bidding").DisableAntiforgery();
+app.MapHub<OperationsHub>("/hub/operations").DisableAntiforgery();
 
 if (app.Environment.IsDevelopment())
 {

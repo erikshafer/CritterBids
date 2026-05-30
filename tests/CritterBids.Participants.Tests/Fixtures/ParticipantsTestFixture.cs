@@ -59,6 +59,11 @@ public class ParticipantsTestFixture : IAsyncLifetime
                 // The stub routing rule ensures tracked.Sent captures SellerRegistrationCompleted.
                 services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
 
+                // Exclude Relay BC handlers — globally discovered via Program.cs IncludeAssembly +
+                // the unconditional AddRelayModule(). Participants never produces the Relay-consumed
+                // events in-process, but excluding keeps this fixture's foreign-BC posture consistent.
+                services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
+
                 services.RunWolverineInSoloMode();
                 services.DisableAllExternalWolverineTransports();
             });
@@ -137,5 +142,24 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
 
         options.PublishMessage<SellerRegistrationCompleted>()
             .ToLocalQueue("selling-participants-stub");
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Participants test fixture.
+/// Relay's notification handlers are globally discovered via Program.cs IncludeAssembly and the
+/// unconditional AddRelayModule(). Participants never produces the Relay-consumed events in-process,
+/// but excluding keeps this fixture's foreign-BC posture consistent.
+/// </summary>
+internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Relay BC inactive — push-only consumer excluded from Participants fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
+        });
     }
 }
