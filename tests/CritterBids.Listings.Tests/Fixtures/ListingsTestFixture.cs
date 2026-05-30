@@ -76,6 +76,12 @@ public class ListingsTestFixture : IAsyncLifetime
                 // here, so the obligations saga + event-stream schema is absent. Keeps the Listings
                 // fixture's foreign-BC exclusion posture consistent.
                 services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
+
+                // Exclude Relay BC handlers — BidPlaced / ListingSold / SettlementCompleted
+                // consumers are globally discovered (Program.cs IncludeAssembly + unconditional
+                // AddRelayModule). Keeps the Listings fixture's foreign-BC posture consistent and
+                // prevents Relay's push handler co-consuming events this fixture tracks.
+                services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
             });
         });
     }
@@ -244,6 +250,25 @@ internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Obligations BC inactive — AddObligationsModule not called in Listings fixture; PostSaleCoordinationSaga schema absent",
                 t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Listings test fixture.
+/// Relay's notification handlers are globally discovered via Program.cs IncludeAssembly and the
+/// unconditional AddRelayModule(). Keeps the Listings fixture's foreign-BC exclusion posture
+/// consistent and prevents Relay's push handler from co-consuming events this fixture tracks.
+/// </summary>
+internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Relay BC inactive — push-only consumer excluded from Listings fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
         });
     }
 }

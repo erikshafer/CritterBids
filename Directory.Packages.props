@@ -17,6 +17,11 @@
     <PackageVersion Include="WolverineFx.Marten" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.Polecat" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.39.3" />
+    <PackageVersion Include="WolverineFx.SignalR" Version="5.39.3" />
+  </ItemGroup>
+  <!-- SignalR client (integration-test transport for Relay BC push assertions) -->
+  <ItemGroup>
+    <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.8" />
   </ItemGroup>
   <!-- Polecat -->
   <ItemGroup>

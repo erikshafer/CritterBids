@@ -91,6 +91,12 @@ public class SettlementTestFixture : IAsyncLifetime
                 // event stream) is absent; without exclusion the co-consumer would fail on its
                 // StartStream and fault the SettlementSaga happy-path test's tracked session.
                 services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
+
+                // Exclude Relay BC handlers — SettlementCompleted consumer is globally discovered
+                // (Program.cs IncludeAssembly + unconditional AddRelayModule). This fixture's
+                // SettlementSaga emits SettlementCompleted; excluding Relay keeps its push handler
+                // from co-consuming it and faulting the saga happy-path test's tracked session.
+                services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
             });
         });
     }
@@ -194,6 +200,26 @@ internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Obligations BC inactive — PostSaleCoordinationSaga schema not registered (no AddObligationsModule in Settlement fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Settlement test fixture.
+/// Relay's SettlementCompleted notification handler is globally discovered via Program.cs
+/// IncludeAssembly and the unconditional AddRelayModule(). This fixture's SettlementSaga emits
+/// SettlementCompleted; without exclusion Relay's push handler would co-consume it and add noise to
+/// the saga happy-path test's tracked session.
+/// </summary>
+internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Relay BC inactive — push-only consumer excluded from Settlement fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
         });
     }
 }

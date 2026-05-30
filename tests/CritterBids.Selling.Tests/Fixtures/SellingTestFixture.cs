@@ -87,6 +87,12 @@ public class SellingTestFixture : IAsyncLifetime
                 // produces SettlementCompleted in-process, but excluding keeps this fixture's
                 // foreign-BC posture consistent and pre-empts any saga-handler code-gen surprise.
                 services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
+
+                // Exclude Relay BC handlers — globally discovered via Program.cs IncludeAssembly +
+                // the unconditional AddRelayModule(). Selling never produces the Relay-consumed
+                // events in-process, but excluding keeps this fixture's foreign-BC posture consistent
+                // and pre-empts any handler code-gen surprise.
+                services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
             });
         });
     }
@@ -216,6 +222,25 @@ internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Obligations BC inactive — AddObligationsModule not called in Selling fixture; PostSaleCoordinationSaga schema absent",
                 t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Selling test fixture.
+/// Relay's notification handlers are globally discovered via Program.cs IncludeAssembly and the
+/// unconditional AddRelayModule(). Selling never produces the Relay-consumed events in-process, but
+/// excluding keeps this fixture's foreign-BC posture consistent.
+/// </summary>
+internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Relay BC inactive — push-only consumer excluded from Selling fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
         });
     }
 }

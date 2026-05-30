@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- WolverineFx.SignalR is the canonical Relay transport package (acceptance criterion +
+         keeps the documented path-(a) WolverineHub door open). M6-S5 drives the hubs via
+         direct IHubContext push (ADR 023 path (b)), so AddSignalR() + IHubContext are used
+         rather than opts.UseSignalR(); the package reference is retained for the future
+         WolverineHub migration. The FrameworkReference exposes ASP.NET Core SignalR server
+         types (Hub, IHubContext, AddSignalR) to this non-Web SDK project. -->
+    <PackageReference Include="WolverineFx.SignalR" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Relay is a pure consumer of integration events authored in Contracts: BidPlaced /
+         ListingSold (Auctions) and SettlementCompleted (Settlement). No BC-to-BC references. -->
+    <ProjectReference Include="..\CritterBids.Contracts\CritterBids.Contracts.csproj" />
+  </ItemGroup>
+
+</Project>

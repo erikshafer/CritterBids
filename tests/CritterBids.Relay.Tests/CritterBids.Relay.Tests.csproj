@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <!-- The hub-push integration fixture spins up a real Kestrel host and connects a real SignalR
+       client, so the test project needs the ASP.NET Core shared framework (WebApplication, MapHub)
+       and the SignalR client. WebApplicationFactory cannot host SignalR (see wolverine-signalr.md §9). -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Alba" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="Shouldly" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- AlbaHost.For<Program> requires access to the API entry point. -->
+    <ProjectReference Include="..\..\src\CritterBids.Api\CritterBids.Api.csproj" />
+    <ProjectReference Include="..\..\src\CritterBids.Relay\CritterBids.Relay.csproj" />
+  </ItemGroup>
+
+</Project>
