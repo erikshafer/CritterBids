@@ -6,7 +6,7 @@ compatibility: Requires the .NET 10 SDK (dotnet build).
 metadata:
   author: CritterBids
   version: "0.1"
-  status: draft-pending-review
+  status: draft-pending-accepted
   source: "Adapted from the /build-fix command in codewithmukesh/dotnet-claude-kit (MIT)"
 ---
 
@@ -45,7 +45,7 @@ These produce errors that *look* like code you broke but are actually stale or g
 ## Hard rules
 
 - **Never** make the build pass by deleting or commenting out tests, suppressing diagnostics wholesale (`#pragma warning disable` over a file, `<NoWarn>` blanket), or weakening a contract just to satisfy the compiler. A green build that hid the real error is worse than a red one.
-- Keep fixes inside the bounded contexts they belong to (Participants, Auctions, Listings, Selling, Settlement, Obligations, Relay, Operations). A build error is not license to reach across BC boundaries.
+- Keep fixes inside the bounded contexts they belong to (Participants, Selling, Listings, Auctions, Settlement, Obligations, Relay, Contracts, Api). A build error is not license to reach across BC boundaries.
 - Match existing conventions — primary constructors, records, `required`, the Decider aggregate shape — rather than introducing a new style mid-fix.
 
 ## On green

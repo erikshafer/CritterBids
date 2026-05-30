@@ -5,8 +5,6 @@
     <PackageReference Include="WolverineFx.Http" />
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="WolverineFx.RabbitMQ" />
-    <PackageReference Include="WolverineFx.Polecat" />
-    <PackageReference Include="Polecat" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Swashbuckle.AspNetCore.SwaggerUI" />
   </ItemGroup>
