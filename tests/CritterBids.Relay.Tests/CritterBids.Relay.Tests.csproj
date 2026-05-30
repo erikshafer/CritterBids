@@ -26,6 +26,10 @@
     <!-- AlbaHost.For<Program> requires access to the API entry point. -->
     <ProjectReference Include="..\..\src\CritterBids.Api\CritterBids.Api.csproj" />
     <ProjectReference Include="..\..\src\CritterBids.Relay\CritterBids.Relay.csproj" />
+    <!-- M6-S7: the composed fan-out fixture activates the Obligations BC alongside Relay in one
+         host, so it needs AddObligationsModule() + the public ObligationStatusView / ObligationStatus
+         types. The other BCs reach this project transitively through CritterBids.Api already. -->
+    <ProjectReference Include="..\..\src\CritterBids.Obligations\CritterBids.Obligations.csproj" />
   </ItemGroup>
 
 </Project>
