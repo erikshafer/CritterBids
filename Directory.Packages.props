@@ -10,12 +10,13 @@
   </ItemGroup>
   <!-- Wolverine -->
   <ItemGroup>
-    <PackageVersion Include="WolverineFx" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.Http" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.Http.Marten" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.Marten" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.SignalR" Version="5.39.3" />
+    <PackageVersion Include="WolverineFx" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.Http" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.Http.Marten" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.SignalR" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.2.2" />
   </ItemGroup>
   <!-- SignalR client (integration-test transport for Relay BC push assertions) -->
   <ItemGroup>

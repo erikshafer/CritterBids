@@ -3,7 +3,7 @@ using CritterBids.Contracts.Selling;
 using JasperFx;
 using JasperFx.Core;
 using Marten;
-using Marten.Events.Dcb;
+using JasperFx.Events;
 using Microsoft.Extensions.DependencyInjection;
 using Wolverine;
 using Wolverine.ErrorHandling;
@@ -125,7 +125,7 @@ public static class AuctionsModule
             opts.Projections.LiveStreamAggregation<Session>();
         });
 
-        // DCB concurrency retry policies. DcbConcurrencyException (Marten.Events.Dcb,
+        // DCB concurrency retry policies. DcbConcurrencyException (JasperFx.Events,
         // subclass of MartenException) and ConcurrencyException (JasperFx) are siblings,
         // not parent/child — each needs its own OnException entry.
         services.AddSingleton<IWolverineExtension, AuctionsConcurrencyRetryPolicies>();

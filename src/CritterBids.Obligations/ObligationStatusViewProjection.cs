@@ -14,7 +14,7 @@ namespace CritterBids.Obligations;
 /// Tracking is driven by <see cref="TrackingInfoProvided"/>, which is both appended to the stream
 /// and emitted. The escalation/dispute transitions land in M6-S4.</para>
 /// </summary>
-public sealed class ObligationStatusViewProjection : SingleStreamProjection<ObligationStatusView, Guid>
+public sealed partial class ObligationStatusViewProjection : SingleStreamProjection<ObligationStatusView, Guid>
 {
     public static ObligationStatusView Create(PostSaleCoordinationStarted started) =>
         new()
