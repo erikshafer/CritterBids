@@ -81,21 +81,16 @@ public class PlaceBidDispatchTests : IAsyncLifetime
         session.Events.StartStream<Listing>(listingId, opened);
         session.PendingChanges.Streams().Single().Events.Single().AddTag(new ListingStreamId(listingId));
 
-        // Direct-seed the Auction Closing saga to honor the runtime invariant that every open
-        // listing has a live saga. Production establishes this invariant through the bus — the
-        // BiddingOpened forwarded from ListingPublishedHandler triggers StartAuctionClosingSagaHandler.
-        // This test bypasses the bus for seeding (by appending BiddingOpened directly), so BidPlaced
-        // forwarded from PlaceBidHandler would otherwise hit an absent saga and throw UnknownSagaException.
-        session.Store(new AuctionClosingSaga
-        {
-            Id = listingId,
-            ListingId = listingId,
-            ScheduledCloseAt = close,
-            OriginalCloseAt = close,
-            ExtendedBiddingEnabled = false,
-            Status = AuctionClosingStatus.AwaitingBids,
-        });
-
         await session.SaveChangesAsync();
+
+        // Establish the Auction Closing saga the same way production does — through the bus.
+        // BiddingOpened is forwarded from ListingPublishedHandler and handled by
+        // StartAuctionClosingSagaHandler, which creates and persists the saga via Wolverine's
+        // saga storage. Seeding the saga with a raw session.Store() instead leaves its numeric
+        // revision (Wolverine.Saga.Version) inconsistent with what Marten 9's UseNumericRevisions
+        // optimistic-concurrency check expects on the first saga update, so the BidPlaced forwarded
+        // from PlaceBidHandler would throw a ConcurrencyException. Starting the saga through the bus
+        // honors the "every open listing has a live saga" invariant without that mismatch.
+        await _fixture.Host.InvokeMessageAndWaitAsync(opened);
     }
 }
