@@ -1,8 +1,8 @@
 # M6 — Obligations BC + Relay BC
 
-**Status:** Planning
+**Status:** Closeout (pending milestone retrospective)
 **Scope:** Obligations BC (post-sale coordination saga with cancellable scheduled messages) and Relay BC (SignalR-based real-time push and notification routing for participant and staff UIs). Combined milestone because Relay's first real integration is the Obligations-produced events, and the two BCs are both small enough to ship together without scope risk.
-**Companion docs:** [`../workshops/PARKED-QUESTIONS.md`](../workshops/PARKED-QUESTIONS.md) · [`../vision/bounded-contexts.md`](../vision/bounded-contexts.md) · [`../vision/domain-events.md`](../vision/domain-events.md) · [`../skills/wolverine-sagas.md`](../skills/wolverine-sagas.md) · [`../skills/wolverine-signalr.md`](../skills/wolverine-signalr.md) · [`../skills/marten-projections.md`](../skills/marten-projections.md) · [`../skills/critter-stack-testing-patterns.md`](../skills/critter-stack-testing-patterns.md) · [`../decisions/README.md`](../decisions/README.md)
+**Companion docs:** [`../workshops/PARKED-QUESTIONS.md`](../workshops/PARKED-QUESTIONS.md) · [`../vision/bounded-contexts.md`](../vision/bounded-contexts.md) · [`../vision/domain-events.md`](../vision/domain-events.md) · [`../skills/wolverine-sagas/SKILL.md`](../skills/wolverine-sagas/SKILL.md) · [`../skills/wolverine-signalr/SKILL.md`](../skills/wolverine-signalr/SKILL.md) · [`../skills/marten-projections/SKILL.md`](../skills/marten-projections/SKILL.md) · [`../skills/critter-stack-testing-patterns/SKILL.md`](../skills/critter-stack-testing-patterns/SKILL.md) · [`../decisions/README.md`](../decisions/README.md)
 
 ---
 
@@ -20,22 +20,22 @@ At M6 close, the Flash auction demo journey runs end-to-end from QR-scan through
 
 ### Exit criteria
 
-- [ ] Solution builds clean with `dotnet build` — 0 errors, 0 warnings
-- [ ] Obligations BC implemented: `CritterBids.Obligations` and `CritterBids.Obligations.Tests` projects, `AddObligationsModule()`, Marten config per BC-module conventions and ADR 011
-- [ ] Relay BC implemented: `CritterBids.Relay` and `CritterBids.Relay.Tests` projects, `AddRelayModule()`, Marten config per BC-module conventions and ADR 011
-- [ ] Obligations saga hosting decision made in M6-S1, recorded as an ADR (next unreserved: `020-<slug>.md`)
-- [ ] Demo-mode timeout config for Obligations saga decided in M6-S1 (W001-6 closed: PO decision on whether to use a configurable cap, a separate `DemoMode` appsettings flag, or hardcoded short durations); decision recorded inline in the M6-S1 retrospective if not ADR-worthy
-- [ ] Obligations saga happy path green: `PostSaleCoordinationStarted` → shipping-reminder chain → `ObligationFulfilled`; all cancellation paths (tracking provided cancels reminders) green
-- [ ] Obligations saga escalation path green: missed deadline → `DeadlineEscalated`; dispute sub-workflow (`DisputeOpened` → `DisputeResolved`) green
-- [ ] `CritterBids.Contracts.Obligations.*` integration events authored: `TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved`
-- [ ] At least one dispatch test per Obligations command exercising the Wolverine routing path
-- [ ] Relay BC `BiddingHub` wired: real-time push for `BidPlaced`, `BiddingOpened`, `ListingSold`, `ListingPassed`, `ReserveMet`, `ExtendedBiddingTriggered`, `ProxyBidExhausted`, `SettlementCompleted`
-- [ ] Relay BC `OperationsHub` wired: real-time push for `SessionCreated`, `SessionStarted`, `BidPlaced`, `ListingSold`, `ListingPassed`, `DisputeOpened`, `DisputeResolved`, `DeadlineEscalated`
-- [ ] Relay notification history projection implemented: Marten document projection of delivered notifications; queryable by participant ID
-- [ ] All new RabbitMQ routes wired in `Program.cs`; `relay-settlement-events` gains its `ListenToRabbitQueue()` call (pre-wired publish-only since M5-S6)
-- [ ] Relay and Obligations BC discovery added to `Program.cs`'s `opts.Discovery.IncludeAssembly(...)` calls
-- [ ] `AddObligationsModule()` and `AddRelayModule()` called in `Program.cs`
-- [ ] M6-S1 through final-session retrospective docs written
+- [x] Solution builds clean with `dotnet build` — 0 errors, 0 warnings
+- [x] Obligations BC implemented: `CritterBids.Obligations` and `CritterBids.Obligations.Tests` projects, `AddObligationsModule()`, Marten config per BC-module conventions and ADR 011
+- [x] Relay BC implemented: `CritterBids.Relay` and `CritterBids.Relay.Tests` projects, `AddRelayModule()`, Marten config per BC-module conventions and ADR 011
+- [x] Obligations saga hosting decision made in M6-S1, recorded as an ADR (next unreserved: `020-<slug>.md`)
+- [x] Demo-mode timeout config for Obligations saga decided in M6-S1 (W001-6 closed: PO decision on whether to use a configurable cap, a separate `DemoMode` appsettings flag, or hardcoded short durations); decision recorded inline in the M6-S1 retrospective if not ADR-worthy
+- [x] Obligations saga happy path green: `PostSaleCoordinationStarted` → shipping-reminder chain → `ObligationFulfilled`; all cancellation paths (tracking provided cancels reminders) green
+- [x] Obligations saga escalation path green: missed deadline → `DeadlineEscalated`; dispute sub-workflow (`DisputeOpened` → `DisputeResolved`) green
+- [x] `CritterBids.Contracts.Obligations.*` integration events authored: `TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved`
+- [x] At least one dispatch test per Obligations command exercising the Wolverine routing path
+- [x] Relay BC `BiddingHub` wired: real-time push for `BidPlaced`, `BiddingOpened`, `ListingSold`, `ListingPassed`, `ReserveMet`, `ExtendedBiddingTriggered`, `ProxyBidExhausted`, `SettlementCompleted`
+- [x] Relay BC `OperationsHub` wired: real-time push for `SessionCreated`, `SessionStarted`, `BidPlaced`, `ListingSold`, `ListingPassed`, `DisputeOpened`, `DisputeResolved`, `DeadlineEscalated`
+- [x] Relay notification history projection implemented: Marten document projection of delivered notifications; queryable by participant ID
+- [x] All new RabbitMQ routes wired in `Program.cs`; `relay-settlement-events` gains its `ListenToRabbitQueue()` call (pre-wired publish-only since M5-S6)
+- [x] Relay and Obligations BC discovery added to `Program.cs`'s `opts.Discovery.IncludeAssembly(...)` calls
+- [x] `AddObligationsModule()` and `AddRelayModule()` called in `Program.cs`
+- [x] M6-S1 through final-session retrospective docs written
 - [ ] M6 retrospective doc written
 
 ---
@@ -91,7 +91,7 @@ Relay is a pure consumer; all routes below are **inbound-only** for Relay.
 | `relay-obligations-events` | `TrackingInfoProvided`, `ObligationFulfilled`, `DisputeOpened`, `DisputeResolved` | `BiddingHub` (participant alert); `OperationsHub` (dispute / escalation alerts) |
 | `relay-listings-events` | `LotWatchAdded`, `LotWatchRemoved` | `OperationsHub` (watch count) |
 
-`relay-settlement-events` is **already pre-wired** with a `PublishMessage<SellerPayoutIssued>()` route from M5-S6. M6 adds the missing `ListenToRabbitQueue("relay-settlement-events")` call and (if needed) the `PaymentFailed` publish route.
+`relay-settlement-events` is pre-wired with `PublishMessage<SellerPayoutIssued>()` from M5-S6. M6 adds `ListenToRabbitQueue("relay-settlement-events")` and the accepted additional `SettlementCompleted` publish route used by Relay winner notifications.
 
 New Rabbit routes added by M6 for Relay: `relay-participants-events`, `relay-selling-events`, `relay-auctions-events`, `relay-obligations-events`, `relay-listings-events` (plus the `ListenTo` for the pre-existing `relay-settlement-events`).
 
@@ -232,7 +232,7 @@ New routes added in M6 (`Program.cs` additions):
 | `relay-participants-events` | In (Relay listens) | `ParticipantSessionStarted`, `SellerRegistrationCompleted` | Participants gains new publish routes |
 | `relay-selling-events` | In (Relay listens) | `ListingPublished`, `ListingRevised`, `ListingEndedEarly` | Selling gains new publish routes |
 | `relay-auctions-events` | In (Relay listens) | All significant Auctions events | Auctions gains new publish routes (no Auctions BC code changes — only `Program.cs` routing) |
-| `relay-settlement-events` | In (Relay listens) | `SellerPayoutIssued` | **Already pre-wired** publish-side from M5-S6; M6 adds the missing `ListenToRabbitQueue()` call |
+| `relay-settlement-events` | In (Relay listens) | `SellerPayoutIssued`, `SettlementCompleted` | Publish-side pre-wired for `SellerPayoutIssued` from M5-S6; M6 adds `ListenToRabbitQueue()` and explicit `SettlementCompleted` publish route |
 | `relay-listings-events` | In (Relay listens) | `LotWatchAdded`, `LotWatchRemoved` | Listings gains new publish routes |
 
 Existing queues (`listings-settlement-events`, `settlement-auctions-events`, `settlement-selling-events`, `listings-auctions-events`, etc.) stay unchanged.
