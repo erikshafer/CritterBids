@@ -164,15 +164,15 @@ Load the relevant skill before implementing. Skills encode hard-won patterns.
 
 | Task | Skill to load |
 |---|---|
-| Adding a Wolverine handler | `docs/skills/wolverine-message-handlers.md` |
-| Creating a saga | `docs/skills/wolverine-sagas.md` |
-| Event-sourced aggregate (Marten) | `docs/skills/marten-event-sourcing.md` |
-| Marten projection | `docs/skills/marten-projections.md` |
-| DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary.md` |
-| Integration messaging | `docs/skills/integration-messaging.md` |
-| SignalR real-time | `docs/skills/wolverine-signalr.md` |
-| Writing tests | `docs/skills/critter-stack-testing-patterns.md` |
-| Cross-BC handler isolation in test fixtures | `docs/skills/critter-stack-testing-patterns.md` |
+| Adding a Wolverine handler | `docs/skills/wolverine-message-handlers/SKILL.md` |
+| Creating a saga | `docs/skills/wolverine-sagas/SKILL.md` |
+| Event-sourced aggregate (Marten) | `docs/skills/marten-event-sourcing/SKILL.md` |
+| Marten projection | `docs/skills/marten-projections/SKILL.md` |
+| DCB / Dynamic Consistency Boundary | `docs/skills/dynamic-consistency-boundary/SKILL.md` |
+| Integration messaging | `docs/skills/integration-messaging/SKILL.md` |
+| SignalR real-time | `docs/skills/wolverine-signalr/SKILL.md` |
+| Writing tests | `docs/skills/critter-stack-testing-patterns/SKILL.md` |
+| Cross-BC handler isolation in test fixtures | `docs/skills/critter-stack-testing-patterns/SKILL.md` |
 | Running an Event Modeling workshop | `docs/skills/event-modeling/SKILL.md` |
 
 > **Full skill status ledger:** `docs/skills/README.md`

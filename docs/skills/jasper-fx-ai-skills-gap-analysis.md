@@ -4,6 +4,13 @@
 **Source:** `C:\Code\JasperFx\ai-skills` (public at the time; per Erik, going paid-only)
 **Scope:** Cross-reference of JasperFx ai-skills patterns against CritterBids' skill library after the M2.5/M3 preparation, ADR 011 (all-Marten pivot), and Waves 1–5 of the multi-wave skill refresh.
 
+> **2026 lean pass (post-Wave 6):** all 18 skills were migrated from flat `<name>.md` to directory-format
+> `<name>/SKILL.md` and **leaned** — generic mechanics were trimmed and replaced with up-references to
+> ai-skills, keeping only the CritterBids-specific divergences this document's Section 2 enumerates. Any
+> bare `<name>.md` reference below now resolves to `docs/skills/<name>/SKILL.md`. The keepers map (Sections 1
+> and 2) remains the authority for what each leaned skill must preserve. Upstream-contribution candidates
+> surfaced by the pass are tracked in [`upstream-contribution-candidates.md`](./upstream-contribution-candidates.md).
+
 ---
 
 ## Purpose
