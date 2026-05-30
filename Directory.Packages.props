@@ -12,20 +12,14 @@
   <ItemGroup>
     <PackageVersion Include="WolverineFx" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.Http" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.Http.Polecat" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.Http.Marten" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.Marten" Version="5.39.3" />
-    <PackageVersion Include="WolverineFx.Polecat" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.RabbitMQ" Version="5.39.3" />
     <PackageVersion Include="WolverineFx.SignalR" Version="5.39.3" />
   </ItemGroup>
   <!-- SignalR client (integration-test transport for Relay BC push assertions) -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.8" />
-  </ItemGroup>
-  <!-- Polecat -->
-  <ItemGroup>
-    <PackageVersion Include="Polecat" Version="3.2.1" />
   </ItemGroup>
   <!-- OpenAPI / SwaggerUI -->
   <ItemGroup>
@@ -36,7 +30,6 @@
   <ItemGroup>
     <PackageVersion Include="Alba" Version="8.5.2" />
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
-    <PackageVersion Include="Testcontainers.MsSql" Version="4.12.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />

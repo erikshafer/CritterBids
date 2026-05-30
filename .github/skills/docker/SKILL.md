@@ -6,17 +6,23 @@ compatibility: Requires Docker and the .NET 10 SDK.
 metadata:
   author: CritterBids
   version: "0.1"
-  status: draft-pending-review
+  status: draft-pending-accepted
   source: "Adapted from the docker skill in codewithmukesh/dotnet-claude-kit (MIT)"
 ---
 
 # Docker — CritterBids
 
-> Adapted from the MIT-licensed `docker` skill in codewithmukesh/dotnet-claude-kit, retargeted from EF Core / Aspire to CritterBids' all-Marten + Wolverine stack and Hetzner Compose deployment. Note: CritterMart uses .NET Aspire for orchestration; CritterBids does not — it deploys as Compose on a VPS, so this skill stays Compose-first.
+> Adapted from the MIT-licensed `docker` skill in codewithmukesh/dotnet-claude-kit, retargeted from EF Core to CritterBids' all-Marten + Wolverine modular monolith. CritterBids uses .NET Aspire (AppHost) for local orchestration and RabbitMQ for inter-BC messaging; this skill covers the Hetzner Compose deployment artifact and the rebuild/restart/reload decision loop for development.
 
-## Decision: rebuild, restart, or reload?
+## Local development: AppHost first, Compose for reference
 
-Most local-loop friction comes from rebuilding when you didn't need to, or *not* rebuilding when you did. Use this:
+For **local development**, use `dotnet run --project src/CritterBids.AppHost --launch-profile http`. The AppHost orchestrates PostgreSQL, RabbitMQ, and the API host, wiring them with health gates and providing a live dashboard at `http://localhost:15237`. This is the single local orchestration path.
+
+The Compose examples below are for **reference and Hetzner VPS deployment**, not everyday development.
+
+## Decision: rebuild, restart, or reload? (Compose ref only)
+
+When you are running Compose locally or need to reason about image layering, use this:
 
 | Change | Action |
 |---|---|
@@ -39,7 +45,7 @@ Switching branches/features changes registrations, schema, and sometimes the Com
 
 ## Dockerfile — the canonical shape
 
-Multi-stage, always. Build in the SDK image, run in the slim ASP.NET runtime image, run as non-root.
+CritterBids deploys as a modular monolith: **`CritterBids.Api`** is the single deployable host that wires all eight BC modules. The Dockerfile is multi-stage: build in the SDK image, run in the slim ASP.NET runtime, run as non-root.
 
 ```dockerfile
 # ---- build ----
@@ -48,12 +54,19 @@ WORKDIR /src
 
 # Restore first for layer caching — copy only project files
 COPY ["Directory.Build.props", "Directory.Packages.props", "./"]
+COPY ["src/CritterBids.Api/CritterBids.Api.csproj", "src/CritterBids.Api/"]
+COPY ["src/CritterBids.Contracts/CritterBids.Contracts.csproj", "src/CritterBids.Contracts/"]
+COPY ["src/CritterBids.Participants/CritterBids.Participants.csproj", "src/CritterBids.Participants/"]
+COPY ["src/CritterBids.Selling/CritterBids.Selling.csproj", "src/CritterBids.Selling/"]
+COPY ["src/CritterBids.Listings/CritterBids.Listings.csproj", "src/CritterBids.Listings/"]
 COPY ["src/CritterBids.Auctions/CritterBids.Auctions.csproj", "src/CritterBids.Auctions/"]
-# (repeat COPY for the other BC projects this service references)
-RUN dotnet restore "src/CritterBids.Auctions/CritterBids.Auctions.csproj"
+COPY ["src/CritterBids.Settlement/CritterBids.Settlement.csproj", "src/CritterBids.Settlement/"]
+COPY ["src/CritterBids.Obligations/CritterBids.Obligations.csproj", "src/CritterBids.Obligations/"]
+COPY ["src/CritterBids.Relay/CritterBids.Relay.csproj", "src/CritterBids.Relay/"]
+RUN dotnet restore "src/CritterBids.Api/CritterBids.Api.csproj"
 
 COPY . .
-RUN dotnet publish "src/CritterBids.Auctions/CritterBids.Auctions.csproj" \
+RUN dotnet publish "src/CritterBids.Api/CritterBids.Api.csproj" \
     -c Release -o /app/publish /p:UseAppHost=false
 
 # ---- runtime ----
@@ -68,51 +81,85 @@ USER appuser
 ENV ASPNETCORE_HTTP_PORTS=8080
 EXPOSE 8080
 
-# Health check hits an endpoint that verifies the Marten store is reachable
+# Health check hits an endpoint that verifies Postgres and RabbitMQ are reachable
 HEALTHCHECK --interval=10s --timeout=3s --start-period=20s --retries=5 \
-    CMD ["dotnet", "CritterBids.Auctions.dll", "--healthcheck"] || exit 1
+    CMD ["curl", "-f", "http://localhost:8080/health"] || exit 1
 
-ENTRYPOINT ["dotnet", "CritterBids.Auctions.dll"]
+ENTRYPOINT ["dotnet", "CritterBids.Api.dll"]
 ```
 
 Notes specific to this stack:
-- **Health must gate on Postgres, not just the process.** Wolverine and Marten both need the store reachable before the service is "ready." Wire an ASP.NET health check that opens a Marten session (or pings Postgres) and expose it at `/health`; prefer that HTTP probe over the CLI form above if the service is a web host.
+- **Health must gate on Postgres and RabbitMQ, not just the process.** All eight BC modules depend on Marten (PostgreSQL) and Wolverine messaging (RabbitMQ). Wire an ASP.NET health check endpoint (`/health`) that verifies both stores are reachable; the health check above uses `curl` to invoke it.
 - **Wolverine codegen**: if you pre-generate Wolverine handler code (`WolverineOptions.CodeGeneration.TypeLoadMode`), generate during build so the runtime image doesn't JIT-compile handlers on first request. Otherwise the default dynamic mode is fine for a single-VPS deploy.
+- **All eight BCs are present.** The monolith approach means each BC contributes its handlers, projections, and integrations via `AddXyzModule()` calls in `CritterBids.Api/Program.cs`. The Dockerfile copies all BC `.csproj` files and the restore step resolves all transitive dependencies.
 
-## docker-compose — local dev
+## docker-compose — Hetzner VPS reference
+
+Use this as a reference for on-VPS deployment. **Do not use this for local development — use AppHost instead.**
 
 ```yaml
+version: '3.9'
+
 services:
   postgres:
-    image: postgres:17
+    image: postgres:17-alpine
     environment:
       POSTGRES_USER: critterbids
-      POSTGRES_PASSWORD: critterbids
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: critterbids
-    ports: ["5432:5432"]
-    volumes: ["pgdata:/var/lib/postgresql/data"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U critterbids"]
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
-  auctions:
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: critterbids
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    ports:
+      - "15672:15672"  # management UI
+    volumes:
+      - rmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  api:
     build:
       context: .
-      dockerfile: src/CritterBids.Auctions/Dockerfile
+      dockerfile: Dockerfile
     depends_on:
       postgres:
-        condition: service_healthy   # don't start the app until PG is ready
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
     environment:
-      ConnectionStrings__Marten: "Host=postgres;Database=critterbids;Username=critterbids;Password=critterbids"
-    ports: ["8080:8080"]
+      ConnectionStrings__Marten: "Host=postgres;Database=critterbids;Username=critterbids;Password=${POSTGRES_PASSWORD}"
+      ConnectionStrings__RabbitMQ: "amqp://critterbids:${RABBITMQ_PASSWORD}@rabbitmq:5672/"
+      ASPNETCORE_HTTP_PORTS: "8080"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
 
 volumes:
   pgdata:
+  rmqdata:
 ```
 
-`depends_on: condition: service_healthy` is the bit people skip — without it the app races Postgres and crashes on first boot.
+**Key points for VPS:**
+- `depends_on: condition: service_healthy` ensures Postgres and RabbitMQ are ready before the API starts.
+- Passwords are passed via env vars (loaded from a `.env` file on the VPS, never committed).
+- Health checks gate service startup order.
+- `restart: unless-stopped` ensures services auto-recover after a crash or reboot.
+- Pin `postgres:17-alpine` and `rabbitmq:3.13-management-alpine` to match your local versions.
 
 ## .dockerignore
 

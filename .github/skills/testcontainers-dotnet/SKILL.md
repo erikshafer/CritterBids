@@ -6,7 +6,7 @@ compatibility: Requires Docker and a .NET test runner (xUnit).
 metadata:
   author: CritterBids
   version: "0.1"
-  status: draft-pending-review
+  status: draft-pending-accepted
   source: "Adapted from the testcontainers-dotnet skill in testcontainers/claude-skills (MIT)"
 ---
 
@@ -22,68 +22,138 @@ CritterBids is event-sourced on Marten. In-memory fakes hide exactly the things 
 
 Always attach an explicit wait strategy so the container is ready before tests run. **Never** `Thread.Sleep`/`Task.Delay` as a substitute — it's the #1 source of flaky CI. The `PostgreSqlBuilder` ships a sensible default readiness probe; rely on it.
 
-## Shared container via a collection fixture
+## Shared container via Alba + xUnit collection fixture
 
-Spin up **one** Postgres container per test collection and reuse it — starting a container per test is slow and unnecessary. Use `IAsyncLifetime` for setup/teardown.
+CritterBids uses **Alba** as the HTTP integration harness. The pattern is a shared `IAlbaHost` managed by a collection fixture — one Testcontainers PostgreSQL per test collection, all tests in the collection execute sequentially against it.
 
 ```csharp
+using Alba;
 using Testcontainers.PostgreSql;
 using Xunit;
+using Marten;
 
-public sealed class PostgresFixture : IAsyncLifetime
+public class AuctionsTestFixture : IAsyncLifetime
 {
-    public PostgreSqlContainer Container { get; } =
-        new PostgreSqlBuilder()
-            .WithImage("postgres:17")          // pin to match prod
-            .WithDatabase("critterbids_test")
-            .Build();
+    private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
+        .WithDatabase("critterbids_test")
+        .Build();
 
-    public string ConnectionString => Container.GetConnectionString();
+    public IAlbaHost Host { get; private set; } = null!;
 
-    public Task InitializeAsync() => Container.StartAsync();   // waits for readiness
-    public Task DisposeAsync() => Container.DisposeAsync().AsTask();
+    public async Task InitializeAsync()
+    {
+        await _postgres.StartAsync();
+        var connectionString = _postgres.GetConnectionString();
+
+        Host = await AlbaHost.For<Program>(builder =>
+        {
+            builder.ConfigureServices(services =>
+            {
+                // Override the Aspire-guarded Marten registration with Testcontainers
+                services.AddMarten(opts =>
+                {
+                    opts.Connection(connectionString);
+                    opts.DatabaseSchemaName = "public";
+                    opts.Events.AppendMode = EventAppendMode.Quick;
+                    opts.Events.UseMandatoryStreamTypeDeclaration = true;
+                    opts.DisableNpgsqlLogging = true;
+                })
+                .UseLightweightSessions()
+                .ApplyAllDatabaseChangesOnStartup()
+                .IntegrateWithWolverine(configure: integration => integration.UseFastEventForwarding = true);
+
+                // Register the BC module so its ConfigureMarten() contributions (schema, projections) are present
+                services.AddAuctionsModule();
+
+                services.RunWolverineInSoloMode();
+                services.DisableAllExternalWolverineTransports();
+            });
+        });
+    }
+
+    public async Task DisposeAsync()
+    {
+        await Host.DisposeAsync();
+        await _postgres.StopAsync();
+    }
 }
 
-[CollectionDefinition(nameof(PostgresCollection))]
-public sealed class PostgresCollection : ICollectionFixture<PostgresFixture>;
-```
-
-## Wiring the container into Marten
-
-Build a store against the container's connection string. Configure it the way the app does (same `ConfigureMarten` registrations per BC) so the test exercises the real schema.
-
-```csharp
-[Collection(nameof(PostgresCollection))]
-public class AuctionClosingTests(PostgresFixture pg)
+[CollectionDefinition(Name, DisableParallelization = true)]
+public class AuctionsTestCollection : ICollectionFixture<AuctionsTestFixture>
 {
-    private DocumentStore NewStore() =>
-        DocumentStore.For(opts =>
-        {
-            opts.Connection(pg.ConnectionString);
-            // mirror the BC's real registration: events, projections, etc.
-            opts.Projections.Add<AuctionStatusProjection>(ProjectionLifecycle.Inline);
-        });
+    public const string Name = "Auctions Integration Tests";
+}
 
+[Collection(AuctionsTestCollection.Name)]
+public class AuctionClosingTests(AuctionsTestFixture fixture)
+{
     [Fact]
     public async Task closing_a_timed_auction_emits_listing_sold()
     {
-        await using var store = NewStore();
-        await using var session = store.LightweightSession();
+        // Use fixture.Host to invoke handlers and assert side effects
+        var result = await fixture.Host.Scenario(s =>
+        {
+            s.Post.Json(new CloseAuction(/* ... */)).ToUrl("/auctions/close");
+        });
 
-        // Arrange — append the events that set up the scenario
-        var auctionId = /* isolated id, see below */;
-        session.Events.StartStream<Auction>(auctionId, new AuctionStarted(...), new BidPlaced(...));
-        await session.SaveChangesAsync();
-
-        // Act — run the decider / handler under test
-        // ...
-
-        // Assert — rebuild the aggregate or read the projection
-        var auction = await session.Events.AggregateStreamAsync<Auction>(auctionId);
-        Assert.Equal(AuctionStatus.Sold, auction!.Status);
+        result.StatusCode.ShouldBe(System.Net.HttpStatusCode.OK);
     }
 }
 ```
+
+**Key points:**
+- `[CollectionDefinition(..., DisableParallelization = true)]` ensures sequential execution so deterministic stream IDs don't collide mid-test.
+- `opts.DatabaseSchemaName = "public"` keeps all tests in the same schema (the isolation comes from sequential execution, not per-test databases).
+- `services.AddAuctionsModule()` wires the real BC registrations (same as production `Program.cs`).
+- `DisableAllExternalWolverineTransports()` and `RunWolverineInSoloMode()` prevent the app from trying to connect to RabbitMQ or external brokers in tests.
+- Use `fixture.Host.Scenario()` to invoke HTTP endpoints and assert responses.
+
+## Wiring the container into Alba
+
+Use the fixture's connection string to override Marten in `ConfigureServices`, then register the BC module so its real document types and projections are present:
+
+```csharp
+// In InitializeAsync() of your fixture:
+Host = await AlbaHost.For<Program>(builder =>
+{
+    builder.ConfigureServices(services =>
+    {
+        services.AddMarten(opts =>
+        {
+            opts.Connection(connectionString);
+            opts.DatabaseSchemaName = "public";
+            opts.Events.AppendMode = EventAppendMode.Quick;
+            opts.Events.UseMandatoryStreamTypeDeclaration = true;
+        })
+        .UseLightweightSessions()
+        .ApplyAllDatabaseChangesOnStartup()
+        .IntegrateWithWolverine();
+
+        // Mirror the BC's real registration
+        services.AddAuctionsModule();
+
+        services.RunWolverineInSoloMode();
+        services.DisableAllExternalWolverineTransports();
+    });
+});
+
+// In test methods:
+[Fact]
+public async Task starting_an_auction_opens_bidding()
+{
+    var result = await fixture.Host.Scenario(s =>
+    {
+        s.Post.Json(new StartAuction(listingId: /* ... */))
+            .ToUrl("/auctions/start");
+    });
+
+    result.StatusCode.ShouldBe(System.Net.HttpStatusCode.OK);
+    var projection = await fixture.Host.GetAsJson<LiveAuction>($"/auctions/{listingId}");
+    projection.Status.ShouldBe(AuctionStatus.Open);
+}
+```
+
+Use **Shouldly** for assertions (`.ShouldBe()`, `.ShouldContain()`, etc.) to match the CritterBids test stack.
 
 ## The isolation trap: deterministic stream IDs
 
