@@ -46,6 +46,11 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("selling-participants-events");
         opts.ListenToRabbitQueue("selling-participants-events")
             .ProcessInline();
+        opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
+            .ToRabbitQueue("relay-participants-events");
+        opts.PublishMessage<SellerRegistrationCompleted>()
+            .ToRabbitQueue("relay-participants-events");
+        opts.ListenToRabbitQueue("relay-participants-events");
 
         opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
             .ToRabbitQueue("listings-selling-events");
@@ -54,6 +59,13 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
             .ToRabbitQueue("auctions-selling-events");
         opts.ListenToRabbitQueue("auctions-selling-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
+            .ToRabbitQueue("relay-selling-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingRevised>()
+            .ToRabbitQueue("relay-selling-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingEndedEarly>()
+            .ToRabbitQueue("relay-selling-events");
+        opts.ListenToRabbitQueue("relay-selling-events");
 
         // M4-S2: Selling-side WithdrawListing producer landed; route the contract
         // event to the two consuming queues that previously received only the
@@ -201,6 +213,7 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
             .ToRabbitQueue("relay-obligations-events");
+        opts.ListenToRabbitQueue("relay-obligations-events");
 
         // M6-S5: Relay BC's first reactive surface. Relay consumes three already-published events
         // and pushes them to BiddingHub participant groups. These are publish-route additions to
@@ -211,7 +224,31 @@ builder.UseWolverine(opts =>
         // already publish to listings-auctions-events (Listings consumer); this adds the Relay route.
         opts.PublishMessage<CritterBids.Contracts.Auctions.BidPlaced>()
             .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BiddingOpened>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BidRejected>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ReserveMet>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ExtendedBiddingTriggered>()
+            .ToRabbitQueue("relay-auctions-events");
         opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ProxyBidExhausted>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowOptionRemoved>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionCreated>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionStarted>()
+            .ToRabbitQueue("relay-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingAttachedToSession>()
             .ToRabbitQueue("relay-auctions-events");
         opts.ListenToRabbitQueue("relay-auctions-events");
 
@@ -224,6 +261,12 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
             .ToRabbitQueue("relay-settlement-events");
         opts.ListenToRabbitQueue("relay-settlement-events");
+
+        opts.PublishMessage<CritterBids.Contracts.Listings.LotWatchAdded>()
+            .ToRabbitQueue("relay-listings-events");
+        opts.PublishMessage<CritterBids.Contracts.Listings.LotWatchRemoved>()
+            .ToRabbitQueue("relay-listings-events");
+        opts.ListenToRabbitQueue("relay-listings-events");
     }
 
     opts.Policies.AutoApplyTransactions();

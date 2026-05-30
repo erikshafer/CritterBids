@@ -88,7 +88,7 @@ public static class AuctionsModule
             // ListingPassed) intentionally NOT registered here — they are bus-only via
             // OutgoingMessages cascading from the saga (M3-S5b OQ5 Path ◦), not appended to
             // any Marten stream.
-            opts.Events.AddEventType<ListingWithdrawn>();
+            opts.Events.AddEventType<CritterBids.Contracts.Selling.ListingWithdrawn>();
 
             // M4-S5: Session aggregate event types. All three are appended to the Session
             // stream (SessionCreated via StartStream<Session>; ListingAttachedToSession and

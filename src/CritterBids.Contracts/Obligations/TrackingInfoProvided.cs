@@ -35,4 +35,5 @@ public sealed record TrackingInfoProvided(
     Guid ListingId,
     Guid SellerId,
     string TrackingNumber,
-    DateTimeOffset ProvidedAt);
+    DateTimeOffset ProvidedAt,
+    Guid? WinnerId = null);

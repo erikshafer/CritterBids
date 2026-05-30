@@ -34,4 +34,5 @@ public sealed record DisputeResolved(
     Guid ListingId,
     Guid DisputeId,
     string ResolutionType,
-    DateTimeOffset ResolvedAt);
+    DateTimeOffset ResolvedAt,
+    Guid? ParticipantId = null);

@@ -2,6 +2,7 @@ using CritterBids.Contracts.Auctions;
 using CritterBids.Contracts.Selling;
 using CritterBids.Contracts.Settlement;
 using Marten;
+using SellingListingWithdrawn = CritterBids.Contracts.Selling.ListingWithdrawn;
 
 namespace CritterBids.Settlement;
 
@@ -76,7 +77,7 @@ public static class PendingSettlementHandler
     }
 
     public static async Task Handle(
-        ListingWithdrawn message,
+        SellingListingWithdrawn message,
         IDocumentSession session,
         CancellationToken cancellationToken)
     {

@@ -1,5 +1,4 @@
 using CritterBids.Contracts.Auctions;
-using CritterBids.Contracts.Selling;
 using Marten;
 using Wolverine;
 
@@ -106,7 +105,7 @@ public static class ProxyBidDispatchHandler
     }
 
     public static async Task<OutgoingMessages> Handle(
-        ListingWithdrawn message,
+        CritterBids.Contracts.Selling.ListingWithdrawn message,
         IDocumentSession session,
         CancellationToken cancellationToken)
     {

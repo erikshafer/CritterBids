@@ -8,6 +8,7 @@
          WolverineHub migration. The FrameworkReference exposes ASP.NET Core SignalR server
          types (Hub, IHubContext, AddSignalR) to this non-Web SDK project. -->
     <PackageReference Include="WolverineFx.SignalR" />
+    <PackageReference Include="WolverineFx.Marten" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
   </ItemGroup>
 

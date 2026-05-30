@@ -1,5 +1,4 @@
 using CritterBids.Contracts.Auctions;
-using CritterBids.Contracts.Selling;
 using Marten;
 using Wolverine;
 using Wolverine.Persistence.Durability;
@@ -169,7 +168,7 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
     }
 
     public async Task Handle(
-        [SagaIdentityFrom(nameof(ListingWithdrawn.ListingId))] ListingWithdrawn message,
+        [SagaIdentityFrom(nameof(CritterBids.Contracts.Selling.ListingWithdrawn.ListingId))] CritterBids.Contracts.Selling.ListingWithdrawn message,
         IMessageStore messageStore,
         CancellationToken cancellationToken)
     {
