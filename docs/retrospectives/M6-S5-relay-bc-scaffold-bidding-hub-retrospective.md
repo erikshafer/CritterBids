@@ -163,6 +163,7 @@ S5 is anchored to narrative 001 (Moments 5–6, `BiddingHub` pushes). No drift s
 
 **In scope for M6, deferred to S7:**
 - End-to-end journey test (`SettlementCompleted` → Obligations start → Relay push) and the full `Program.cs` route-topology audit + test-count baseline update.
+- **CI matrix gap (housekeeping candidate).** `.github/workflows/ci.yml`'s `integration-tests` matrix runs only Api / Participants / Selling / Auctions / Listings — **neither Obligations nor Relay integration tests run in CI** (pre-existing gap from the M6-S2 Obligations scaffold; not introduced by S5). Relay's 6 tests pass locally but are not gated by CI. Add `Obligations` and `Relay` matrix entries when the S7 route-topology audit touches CI. Note: `CritterBids.Relay.Tests` needs Docker/Testcontainers PostgreSQL for its Alba boots-clean fixture (the hub-push tests use real Kestrel, no DB), so the matrix entry mirrors the sibling integration jobs. Also note the workflow triggers only on `pull_request` `opened/synchronize/reopened` — a base-branch retarget does not fire CI (relevant when a stacked prompt PR merges and auto-retargets the implementation PR).
 
 **Out of scope, tracked elsewhere:**
 - React SPA / `@microsoft/signalr` client, Relay HTTP endpoints, email/SMS/push delivery seams — post-S5 / M8 per milestone non-goals.
