@@ -107,7 +107,31 @@ public sealed record LiveBidActivityUpdate(
     DateTimeOffset OccurredAt) : IOperationsHubMessage;
 ```
 
-Relay handlers return typed messages and let Wolverine route them to SignalR. Do not hand-roll `IHubContext<T>.SendAsync` broadcasters unless a feature needs a SignalR capability Wolverine cannot express.
+In CritterBids Relay, handlers inject `IHubContext<THub>` and call `SendAsync(...)` directly. This is intentional and aligns with ADR 023.
+
+## Lived Relay update (M6)
+
+The first lived CritterBids Relay implementation (M6-S5/S6) validated that the Wolverine SignalR transport path is not the right fit for Relay's mapped plain hubs. Relay uses plain `Hub` endpoints (`/hub/bidding`, `/hub/operations`) and direct `IHubContext<THub>` pushes from handlers.
+
+Use this pattern for Relay handlers:
+
+```csharp
+public static Task Handle(SomeIntegrationEvent message, IHubContext<BiddingHub> hub, CancellationToken cancellationToken)
+{
+    var notification = new SomeNotification(...);
+
+    return hub.Clients
+        .Group($"listing:{message.ListingId}")
+        .SendAsync(RelayHubMethods.ReceiveMessage, notification, cancellationToken);
+}
+```
+
+Guidance:
+
+- Keep handlers as pure consumers (`Task`/`void` return only).
+- Keep group targeting explicit in each handler.
+- Keep payload records strongly typed; no anonymous objects.
+- Use `RelayHubMethods.ReceiveMessage` as the hub method name.
 
 ## Group keys
 

@@ -72,7 +72,7 @@ Per ADR 021, capability names are kebab-case and one-per-BC. Names are proposed 
 | BC | Capability name | Status | Confirmed at |
 |---|---|---|---|
 | Obligations | `obligation-lifecycle` | confirmed | M6 Obligations opening (2026-05-28) |
-| Relay | `bid-relay` | proposed (working) | M6 Relay opening (TBD) |
+| Relay | `bid-relay` | confirmed (not adopted in M6) | M6 closeout sync (2026-05-30) |
 | Operations | `operator-dashboards` | proposed (working) | M6 Operations opening (TBD) |
 
 Update this table when each BC's opening session lands.
@@ -82,7 +82,7 @@ Update this table when each BC's opening session lands.
 | BC | Adoption decision | Decided at |
 |---|---|---|
 | Obligations | ✅ adopt (per ADR 021) | M6 design-opening (2026-05-28) |
-| Relay | ⏸ evaluate at opening | — |
+| Relay | ❌ decline (proceed under ADR 020 only) | M6 closeout sync (2026-05-30) |
 | Operations | ⏸ evaluate at opening | — |
 
 Three outcomes are valid per ADR 021 §3: **adopt** (Obligations path), **decline** (CritterCab path; proceed under ADR 020 alone), **defer** (proceed under ADR 020; revisit at the BC's first complex change). Record the decision in the BC's opening prompt and update this table.
