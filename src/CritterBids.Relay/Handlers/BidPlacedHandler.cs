@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using CritterBids.Relay.History;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
@@ -17,9 +18,10 @@ namespace CritterBids.Relay.Handlers;
 /// </summary>
 public static class BidPlacedHandler
 {
-    public static Task Handle(
+    public static async Task Handle(
         BidPlaced message,
         IHubContext<BiddingHub> hub,
+        INotificationHistoryWriter history,
         CancellationToken cancellationToken)
     {
         var notification = new BidPlacedNotification(
@@ -30,8 +32,15 @@ public static class BidPlacedHandler
             message.BidCount,
             message.PlacedAt);
 
-        return hub.Clients
+        await hub.Clients
             .Group($"listing:{message.ListingId}")
             .SendAsync(RelayHubMethods.ReceiveMessage, notification, cancellationToken);
+
+        await history.AppendAsync(
+            message.BidderId,
+            nameof(BidPlaced),
+            $"Bid {message.BidId} accepted at {message.Amount}.",
+            message.PlacedAt,
+            cancellationToken);
     }
 }

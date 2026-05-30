@@ -34,6 +34,8 @@ public class RelayHubTestFixture : IAsyncLifetime
 
     public string BiddingHubUrl => $"{BaseUrl}/hub/bidding";
 
+    public string OperationsHubUrl => $"{BaseUrl}/hub/operations";
+
     public async Task InitializeAsync()
     {
         var builder = WebApplication.CreateBuilder();

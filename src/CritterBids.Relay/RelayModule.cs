@@ -1,3 +1,5 @@
+using CritterBids.Relay.History;
+using Marten;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace CritterBids.Relay;
@@ -19,12 +21,20 @@ public static class RelayModule
     /// present for the unconditional <c>app.MapHub&lt;...&gt;()</c> calls to resolve their services
     /// — including in test hosts that skip the PostgreSQL-guarded module block.
     ///
-    /// No <c>AddMarten()</c> / <c>ConfigureMarten()</c> call: Relay registers no document in M6-S5.
-    /// The <c>NotificationHistoryView</c> Marten projection is deferred to M6-S6 — intentionally NOT
-    /// stubbed here.
+    /// M6-S6 adds Relay's first Marten contribution: <see cref="NotificationHistoryView"/> in the
+    /// <c>relay</c> schema. This is maintained by Relay handlers (cross-BC integration contracts do
+    /// not flow through Relay-owned Marten event streams), so the projection shape is a
+    /// handler-driven tolerant upsert read model keyed by <c>BidderId</c>.
     /// </summary>
     public static IServiceCollection AddRelayModule(this IServiceCollection services)
     {
+        services.ConfigureMarten(opts =>
+        {
+            opts.Schema.For<NotificationHistoryView>().DatabaseSchemaName("relay");
+        });
+
+        services.AddScoped<INotificationHistoryWriter, MartenNotificationHistoryWriter>();
+
         services.AddSignalR();
         return services;
     }
