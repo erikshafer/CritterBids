@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="WolverineFx" />
+    <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="WolverineFx.Http" />
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="WolverineFx.RabbitMQ" />

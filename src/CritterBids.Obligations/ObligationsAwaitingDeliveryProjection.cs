@@ -15,7 +15,7 @@ namespace CritterBids.Obligations;
 /// earlier <c>PostSaleCoordinationStarted</c> / <c>ShippingReminderSent</c> events have no
 /// Create/Apply here and are skipped — the row only exists for the awaiting-delivery window.</para>
 /// </summary>
-public sealed class ObligationsAwaitingDeliveryProjection
+public sealed partial class ObligationsAwaitingDeliveryProjection
     : SingleStreamProjection<ObligationsAwaitingDelivery, Guid>
 {
     public static ObligationsAwaitingDelivery Create(TrackingInfoProvided tracking) =>
