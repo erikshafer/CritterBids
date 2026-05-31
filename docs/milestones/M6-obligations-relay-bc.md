@@ -1,6 +1,6 @@
 # M6 — Obligations BC + Relay BC
 
-**Status:** Closeout (pending milestone retrospective)
+**Status:** Shipped (M6-S7 closed 2026-05-30; milestone retrospective at [`../retrospectives/M6-retrospective.md`](../retrospectives/M6-retrospective.md))
 **Scope:** Obligations BC (post-sale coordination saga with cancellable scheduled messages) and Relay BC (SignalR-based real-time push and notification routing for participant and staff UIs). Combined milestone because Relay's first real integration is the Obligations-produced events, and the two BCs are both small enough to ship together without scope risk.
 **Companion docs:** [`../workshops/PARKED-QUESTIONS.md`](../workshops/PARKED-QUESTIONS.md) · [`../vision/bounded-contexts.md`](../vision/bounded-contexts.md) · [`../vision/domain-events.md`](../vision/domain-events.md) · [`../skills/wolverine-sagas/SKILL.md`](../skills/wolverine-sagas/SKILL.md) · [`../skills/wolverine-signalr/SKILL.md`](../skills/wolverine-signalr/SKILL.md) · [`../skills/marten-projections/SKILL.md`](../skills/marten-projections/SKILL.md) · [`../skills/critter-stack-testing-patterns/SKILL.md`](../skills/critter-stack-testing-patterns/SKILL.md) · [`../decisions/README.md`](../decisions/README.md)
 
@@ -36,7 +36,7 @@ At M6 close, the Flash auction demo journey runs end-to-end from QR-scan through
 - [x] Relay and Obligations BC discovery added to `Program.cs`'s `opts.Discovery.IncludeAssembly(...)` calls
 - [x] `AddObligationsModule()` and `AddRelayModule()` called in `Program.cs`
 - [x] M6-S1 through final-session retrospective docs written
-- [ ] M6 retrospective doc written
+- [x] M6 retrospective doc written
 
 ---
 
