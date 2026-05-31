@@ -2,6 +2,7 @@ using CritterBids.Auctions;
 using CritterBids.Contracts;
 using CritterBids.Listings;
 using CritterBids.Obligations;
+using CritterBids.Operations;
 using CritterBids.Participants;
 using CritterBids.Relay;
 using CritterBids.Relay.Hubs;
@@ -33,6 +34,7 @@ builder.UseWolverine(opts =>
     opts.Discovery.IncludeAssembly(typeof(Listing).Assembly);
     opts.Discovery.IncludeAssembly(typeof(SettlementSaga).Assembly);
     opts.Discovery.IncludeAssembly(typeof(PostSaleCoordinationSaga).Assembly);
+    opts.Discovery.IncludeAssembly(typeof(SettlementQueueView).Assembly);
     opts.Discovery.IncludeAssembly(typeof(BiddingHub).Assembly);
 
     // RabbitMQ transport — guarded so fixtures using DisableAllExternalWolverineTransports() are unaffected
@@ -172,12 +174,20 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Settlement.SellerPayoutIssued>()
             .ToRabbitQueue("relay-settlement-events");
 
-        // M5-S6: Settlement → Operations publish route for PaymentFailed. Operations BC
-        // has not shipped at M5 close; the route is wired structurally for queue-topology
-        // completeness per the M5-S5 retro §"What M5-S6 should know" item #1. No
-        // ListenToRabbitQueue — the Operations consumer ships post-M5.
+        // M5-S6: Settlement → Operations publish route for PaymentFailed. M7-S2 lands the
+        // Operations consumer: the PaymentFailed publish route (wired at M5-S6 for queue-topology
+        // completeness) is now joined by the SettlementCompleted / SellerPayoutIssued publish
+        // routes and the ListenToRabbitQueue that activates the SettlementQueueHandler. All three
+        // Settlement-family events land on the single operations-settlement-events queue, which
+        // the Operations BC owns per the modular-monolith consumer-isolation discipline.
+        // AutoProvision() declares the queue at startup.
         opts.PublishMessage<CritterBids.Contracts.Settlement.PaymentFailed>()
             .ToRabbitQueue("operations-settlement-events");
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("operations-settlement-events");
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SellerPayoutIssued>()
+            .ToRabbitQueue("operations-settlement-events");
+        opts.ListenToRabbitQueue("operations-settlement-events");
 
         // M6-S2: Settlement → Obligations publish route for SettlementCompleted. This is the
         // third publish route for SettlementCompleted, alongside listings-settlement-events
@@ -307,6 +317,7 @@ if (!string.IsNullOrEmpty(postgresConnectionString))
     builder.Services.AddAuctionsModule();
     builder.Services.AddSettlementModule();
     builder.Services.AddObligationsModule();
+    builder.Services.AddOperationsModule();
 }
 
 // ── Relay BC (pure-consumer reactive module) ─────────────────────────────────

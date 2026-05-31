@@ -77,6 +77,11 @@ public class ObligationsLifecycleTestFixture : IAsyncLifetime
                 // ObligationsTestFixture.cs). Keeps Relay's push handler from co-consuming the
                 // SettlementCompleted this lifecycle fixture drives.
                 services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
+
+                // Exclude Operations BC handlers — see OperationsBcDiscoveryExclusion (defined in
+                // ObligationsTestFixture.cs). Keeps Operations' settlement-queue consumer from
+                // co-consuming the SettlementCompleted this lifecycle fixture drives.
+                services.AddSingleton<IWolverineExtension>(new OperationsBcDiscoveryExclusion());
             });
         });
     }
