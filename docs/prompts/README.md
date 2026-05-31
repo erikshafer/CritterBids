@@ -21,7 +21,7 @@ Prompts are organized by the **kind of artifact** they trigger, mirroring the st
 | [`implementations/`](./implementations/) | A code-implementation session targeting one or more slices from a workshop or narrative pair. |
 | [`foundation/`](./foundation/) | A multi-phase orchestration prompt that governs a program of work spanning multiple sessions. |
 
-Subdirectories appear as their first prompt lands; an empty subdirectory is not pre-created. As of this README's authoring, `implementations/` and `foundation/` are populated; the others land as their first prompt is authored.
+Subdirectories appear as their first prompt lands; an empty subdirectory is not pre-created.
 
 ---
 
@@ -38,7 +38,7 @@ Per-subdirectory variants reflect the artifact each subdirectory produces:
 | `skills/` | `{slug}.md` (mirrors the skill file being authored) | `dynamic-consistency-boundary.md` |
 | `foundation/` | descriptive slug | `foundation-refresh-handoff.md` |
 
-Counters are per-subdirectory (each subdirectory has its own `001-...`, `002-...` series for narratives/decisions/workshops). Implementation prompts use the pre-existing `M{milestone}-S{slice}` convention from M1 to M4 (preserved by the foundation refresh; not renumbered).
+Counters are per-subdirectory (each subdirectory has its own `001-...`, `002-...` series for narratives/decisions/workshops). Implementation prompts use the pre-existing `M{milestone}-S{slice}` convention (preserved by the foundation refresh; not renumbered).
 
 ---
 
@@ -78,17 +78,19 @@ Subsequent sections are prompt-specific. The full prompt template skeleton with 
 
 ## Current contents
 
+This directory now includes historical and active prompts across multiple milestones. Treat per-file metadata as the source of truth for an individual session's status and intent-at-the-time.
+
 ### Implementations (`implementations/`)
 
-27 prompts spanning M1 through M4-S2. Sessions ran in order from `M1-S1-solution-baseline.md` through `M4-S2-selling-withdraw-listing.md`. M3-S6 onward shipped between the foundation-refresh hand-off prompt's authoring and its execution. See per-prompt files for status; their corresponding retrospectives in `docs/retrospectives/` confirm completion.
+Implementation prompts span early skeleton sessions through current milestone work. See per-prompt metadata for status and `docs/retrospectives/` for execution outcomes.
 
 ### Foundation (`foundation/`)
 
-- [`foundation-refresh-handoff.md`](./foundation/foundation-refresh-handoff.md): the multi-phase methodology refresh prompt that governs ADR 016, ADR 017, the narratives directory, the rules directory, this subdivision, the methodology log, and downstream Phase 2 to 4 work. Currently in execution; Phase 1 is in progress as of this README's authoring.
+- [`foundation-refresh-handoff.md`](./foundation/foundation-refresh-handoff.md): multi-phase methodology refresh orchestration prompt.
 
 ### Narratives, Decisions, Workshops, Skills
 
-Empty as of this README's authoring. The first narrative prompt lands in foundation-refresh Phase 2 (planned slug: `narratives/001-bidder-wins-flash-auction.md`).
+These subdirectories may contain prompts as they land. Do not rely on this index for emptiness checks; check the folder directly.
 
 ---
 

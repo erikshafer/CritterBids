@@ -18,7 +18,7 @@ Code is the source of truth once it exists. Vision documents describe intent; wh
 | File | Purpose | When to read |
 |---|---|---|
 | [`overview.md`](overview.md) | Project vision, the auction-domain rationale, the eBay model, demo-first philosophy | First contact with the project; grounding before any architectural discussion |
-| [`bounded-contexts.md`](bounded-contexts.md) | Each of the eight BCs — purpose, ownership, storage, integration points; the BC map and integration topology | Before adding a feature, a BC, or a cross-BC integration event; any time a BC boundary is in question |
+| [`bounded-contexts.md`](bounded-contexts.md) | BC map (7 implemented + Operations planned) — purpose, ownership, storage, integration points, and target topology | Before adding a feature, a BC, or a cross-BC integration event; any time a BC boundary is in question |
 | [`domain-events.md`](domain-events.md) | Canonical event vocabulary across all BCs — internal vs integration, meaning, and the naming conventions that govern every event type | Before authoring a new domain event, during Event Modeling workshops (Phase 1 vocabulary check), and when reviewing a PR that introduces events |
 | [`live-queries-and-streaming.md`](live-queries-and-streaming.md) | Forward-looking architectural framing for reactive data delivery — projection side effects (available today) vs Wolverine `StreamAsync` + Marten 9 live queries (future) | Before wiring any real-time or live-view surface; informs future ADRs once upstream APIs stabilize |
 

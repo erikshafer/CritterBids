@@ -59,9 +59,9 @@ This gives the boundary enforcement of microservices without the distributed sys
 | **Relay** | PostgreSQL / Marten | Wolverine handlers, SignalR push to participants |
 | **Participants** | PostgreSQL / Marten | Event-sourced aggregate, anonymous session management |
 | **Settlement** | PostgreSQL / Marten | Saga, financial event stream, reserve evaluation |
-| **Operations** | PostgreSQL / Marten | Cross-BC projections, SignalR ops dashboard |
+| **Operations (planned)** | PostgreSQL / Marten (target) | Cross-BC projections, SignalR ops dashboard |
 
-Current code in this branch includes the Auctions, Selling, Listings, Participants, and Settlement BC modules. All MVP-target BCs run on PostgreSQL via Marten (ADR 011 — All-Marten Pivot), and the Polecat rationale is preserved as a post-MVP stretch goal where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
+Current code in this branch includes seven BC modules: Auctions, Selling, Listings, Participants, Settlement, Obligations, and Relay. Operations remains a planned BC (targeting M7+), with current operations-facing real-time surfaces hosted via Relay's `OperationsHub` and pre-wired integration routes. All implemented BC modules run on PostgreSQL via Marten (ADR 011 — All-Marten Pivot), and the Polecat rationale is preserved as a post-MVP stretch goal where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
 
 ---
 
@@ -162,7 +162,9 @@ CritterBids/
 │   ├── CritterBids.Listings/     # Listings BC
 │   ├── CritterBids.Participants/ # Participants BC
 │   ├── CritterBids.Settlement/   # Settlement BC
-│   └── [additional BC modules and frontends added by milestone]
+│   ├── CritterBids.Obligations/  # Obligations BC
+│   ├── CritterBids.Relay/        # Relay BC (SignalR push + reactive consumers)
+│   └── [planned modules/frontends added by milestone, e.g. Operations BC]
 ├── tests/
 │   └── [BC integration and unit test projects]
 └── docs/
@@ -200,6 +202,16 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 - Real payment processor integration (same saga shape, real Stripe wiring)
 - Demo reset command cascade
 - Feedback and reputation system
+
+---
+
+## CI Pipeline (Current)
+
+GitHub Actions CI lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml) and runs on pushes/PRs targeting `main`.
+
+- A `changes` job (via `dorny/paths-filter`) skips build/test execution for doc-only changes.
+- The branch-protection-friendly required check is the final `CI` aggregator job.
+- Code-path changes run restore/build, publish the API artifact, targeted unit tests (Contracts + selected Selling/Participants suites), and an integration matrix (Api, Participants, Selling, Auctions, Listings).
 
 ---
 

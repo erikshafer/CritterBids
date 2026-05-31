@@ -5,11 +5,8 @@ CritterBids implementation session - one retro per session prompt under
 `docs/prompts/`. The retro is the durable record of what happened when that
 prompt ran, what was learned, and what the next session needs to know.
 
-Retros are living documents. **The template and the rules below evolve
-through M1 retrospectives** - after each M1 session lands, revisit this file
-and fold in whatever the retro itself surfaced about the format. M1 is where
-the shape of a "good CritterBids retrospective" gets discovered; don't treat
-anything here as frozen until M1 is closed out.
+Retros are living documents. The template and rules below are the current
+baseline; update them when session learnings show a concrete gap.
 
 ## Naming convention
 

@@ -9,10 +9,10 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
 ## Quick Start (First 5 Minutes)
 
 1. **Understand what you're looking at:**
-   - Single deployable API host (`src/CritterBids.Api`) wiring 8 BC modules together
+   - Single deployable API host (`src/CritterBids.Api`) currently wiring 7 BC modules together (Operations BC is planned for a later milestone)
    - Each BC is a separate .NET class library — no BC references another BC's internals
    - BCs communicate exclusively through types in `src/CritterBids.Contracts`
-   - All eight BCs use PostgreSQL via Marten (ADR 011 — All-Marten Pivot)
+   - All currently implemented BC modules use PostgreSQL via Marten (ADR 011 — All-Marten Pivot)
 
 2. **Run the system locally:**
    ```bash
@@ -81,6 +81,16 @@ CritterBids implementation work runs through a **prompt → execute → retro** 
 - **[docs/retrospectives/README.md](./docs/retrospectives/README.md)** — Retrospective template, section order, and the ten rules every session retro obeys. Read before writing a retro at session close.
 
 A session prompt and its retro share a slug (e.g. `M1-S2-participants-bc-scaffold.md` ↔ `M1-S2-participants-bc-scaffold-retrospective.md`) so they sort together. The retro is part of the session's deliverable PR — not a follow-up.
+
+---
+
+## CI Pipeline Reality (Current)
+
+- Workflow file: `.github/workflows/ci.yml`
+- Trigger: `push`/`pull_request` on `main` (+ manual dispatch)
+- Path-filter gate: doc-only changes skip build/test jobs
+- Required branch-protection check: final `CI` aggregator job
+- Current integration matrix coverage: Api, Participants, Selling, Auctions, Listings
 
 ---
 
@@ -154,7 +164,7 @@ exactly one `AddMarten()` call.
 | Settlement | `CritterBids.Settlement` | PostgreSQL / Marten | Saga, financial event stream |
 | Obligations | `CritterBids.Obligations` | PostgreSQL / Marten | Saga, cancellable scheduled messages |
 | Relay | `CritterBids.Relay` | PostgreSQL / Marten | Wolverine handlers, SignalR hub |
-| Operations | `CritterBids.Operations` | PostgreSQL / Marten | Cross-BC projections, SignalR hub |
+| Operations (planned) | _(not yet present in `src/`)_ | PostgreSQL / Marten (target) | Cross-BC projections, SignalR hub |
 
 ---
 
