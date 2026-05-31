@@ -189,6 +189,39 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("operations-settlement-events");
         opts.ListenToRabbitQueue("operations-settlement-events");
 
+        // M7-S3: Operations BC's lot board + bid-activity feed subscribe to the Auctions and
+        // Selling integration-event families (W006 §2/§3). Two new dedicated Operations consumer
+        // queues keep the modular-monolith consumer-isolation discipline intact (Operations reads
+        // its own queues, not the listings-/settlement-* queues other BCs own).
+        //
+        // operations-auctions-events — the Auctions-source events the lot board (BiddingOpened /
+        // BidPlaced / ListingSold / ListingPassed) and the bid-activity feed (BidPlaced) consume.
+        // ListingWithdrawn is a Selling-published contract but rides THIS queue per the milestone
+        // §2 queue table (the milestone is authoritative for scope); the handler grouping is still
+        // by source BC (LotBoardSellingHandler owns ListingWithdrawn) — queue is transport only.
+        // The session events (SessionCreated / SessionStarted / ListingAttachedToSession) that also
+        // ride this queue per the milestone are S5 scope — no publish route or handler is added for
+        // them here. AutoProvision() declares the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BiddingOpened>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BidPlaced>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.ListenToRabbitQueue("operations-auctions-events");
+
+        // operations-selling-events — the Selling-source event the lot board consumes to seed each
+        // listing row in Draft (ListingPublished). ListingWithdrawn routes to the auctions queue
+        // above per the milestone §2 literal, so this queue carries only ListingPublished.
+        // AutoProvision() declares the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingPublished>()
+            .ToRabbitQueue("operations-selling-events");
+        opts.ListenToRabbitQueue("operations-selling-events");
+
         // M6-S2: Settlement → Obligations publish route for SettlementCompleted. This is the
         // third publish route for SettlementCompleted, alongside listings-settlement-events
         // (M5-S6) and the financial event stream. The Obligations BC's SettlementCompletedHandler

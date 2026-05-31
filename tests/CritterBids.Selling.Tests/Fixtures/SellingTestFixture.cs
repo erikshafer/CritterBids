@@ -93,6 +93,14 @@ public class SellingTestFixture : IAsyncLifetime
                 // events in-process, but excluding keeps this fixture's foreign-BC posture consistent
                 // and pre-empts any handler code-gen surprise.
                 services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
+
+                // Exclude Operations BC handlers — the M7-S3 LotBoardSellingHandler is globally
+                // discovered (Program.cs IncludeAssembly + the unconditional AddOperationsModule) and
+                // co-consumes ListingPublished / ListingWithdrawn, which this fixture's dispatch tests
+                // emit. A local Operations consumer for ListingWithdrawn changes how the published
+                // contract event is classified in the tracked session (routed/Executed locally rather
+                // than appearing in Sent), breaking the WithdrawListing dispatch test's assertion.
+                services.AddSingleton<IWolverineExtension>(new OperationsBcDiscoveryExclusion());
             });
         });
     }
@@ -241,6 +249,28 @@ internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Relay BC inactive — push-only consumer excluded from Selling fixture to avoid co-consuming shared events",
                 t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Operations BC handlers from Wolverine's handler discovery in the Selling test fixture.
+/// The M7-S3 LotBoardSellingHandler is globally discovered via Program.cs IncludeAssembly and the
+/// unconditional AddOperationsModule(). It co-consumes ListingPublished / ListingWithdrawn — events
+/// this fixture's dispatch tests emit. A local Operations consumer changes how the published contract
+/// event is tracked (routed/Executed locally rather than surfacing in Sent), so the WithdrawListing
+/// dispatch test's outgoing-event assertion fails. Excluding the Operations namespace restores the
+/// fixture's foreign-BC-free posture.
+/// </summary>
+internal sealed class OperationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Operations BC inactive — lot-board consumer excluded from Selling fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Operations") == true);
         });
     }
 }

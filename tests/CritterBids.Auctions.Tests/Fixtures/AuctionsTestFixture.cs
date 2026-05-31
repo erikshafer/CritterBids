@@ -96,6 +96,14 @@ public class AuctionsTestFixture : IAsyncLifetime
                 // Auctions fixture publishes those events; without exclusion Relay's push handler
                 // would co-consume them and add noise to the tracked session.
                 services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
+
+                // Exclude Operations BC handlers — the M7-S3 LotBoardAuctionsHandler and
+                // BidActivityHandler are globally discovered (Program.cs IncludeAssembly + the
+                // unconditional AddOperationsModule) and co-consume BiddingOpened / BidPlaced /
+                // ListingSold / ListingPassed, which this fixture's saga and dispatch tests emit.
+                // Their second handler on those types flips Wolverine to sticky (Separated) routing,
+                // breaking the fixture's InvokeMessageAndWaitAsync calls with NoHandlerForEndpoint.
+                services.AddSingleton<IWolverineExtension>(new OperationsBcDiscoveryExclusion());
             });
         });
     }
@@ -452,6 +460,28 @@ internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Relay BC inactive — push-only consumer excluded from Auctions fixture to avoid co-consuming shared events",
                 t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Operations BC handlers from Wolverine's handler discovery in the Auctions test fixture.
+/// The M7-S3 lot-board (LotBoardAuctionsHandler) and bid-activity (BidActivityHandler) consumers are
+/// globally discovered via Program.cs IncludeAssembly and the unconditional AddOperationsModule().
+/// They co-consume BiddingOpened / BidPlaced / ListingSold / ListingPassed — the same events this
+/// fixture's saga and dispatch tests emit and invoke. A second handler on those types flips Wolverine
+/// to sticky (Separated) endpoint routing, so the fixture's InvokeMessageAndWaitAsync calls fault with
+/// NoHandlerForEndpointException. Excluding the Operations namespace restores single-handler routing.
+/// </summary>
+internal sealed class OperationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Operations BC inactive — lot-board / bid-activity consumers excluded from Auctions fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Operations") == true);
         });
     }
 }
