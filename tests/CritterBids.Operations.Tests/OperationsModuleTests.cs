@@ -73,4 +73,23 @@ public class OperationsModuleTests
             "mt_doc_bidactivityentry");
         bidActivitySchema.ShouldContain("operations");
     }
+
+    [Fact]
+    public async Task OperationsObligationsView_IsMappedTo_OperationsSchema()
+    {
+        // The M7-S4 addition wires OperationsObligationsView into the operations schema via
+        // opts.Schema.For<…>().DatabaseSchemaName("operations"). A silent regression to the default
+        // "public" schema would still pass the behavior tests, so assert the physical table
+        // location directly against information_schema (the S2 learning that behaviour tests are
+        // schema-blind).
+        var store = _fixture.Host.Services.GetRequiredService<IDocumentStore>();
+        await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+        await using var session = _fixture.GetDocumentSession();
+        var schema = await session.QueryAsync<string>(
+            "select table_schema from information_schema.tables where table_name = ?",
+            "mt_doc_operationsobligationsview");
+
+        schema.ShouldContain("operations");
+    }
 }

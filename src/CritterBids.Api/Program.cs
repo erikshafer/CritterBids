@@ -258,6 +258,24 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("relay-obligations-events");
         opts.ListenToRabbitQueue("relay-obligations-events");
 
+        // M7-S4: Operations BC's obligations view subscribes to the four Obligations integration
+        // events (W006 §4) on its own dedicated consumer queue, keeping the modular-monolith
+        // consumer-isolation discipline intact (Operations reads its own queue, not the
+        // relay-obligations-events queue Relay owns). All four events are Obligations-published on
+        // the same source family — there is no cross-queue asymmetry like S3's ListingWithdrawn, so
+        // these are straight parallel publish routes alongside the relay-obligations-events routes
+        // above (no upstream Obligations BC code change). AutoProvision() declares the queue at
+        // startup.
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DeadlineEscalated>()
+            .ToRabbitQueue("operations-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeOpened>()
+            .ToRabbitQueue("operations-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
+            .ToRabbitQueue("operations-obligations-events");
+        opts.PublishMessage<CritterBids.Contracts.Obligations.ObligationFulfilled>()
+            .ToRabbitQueue("operations-obligations-events");
+        opts.ListenToRabbitQueue("operations-obligations-events");
+
         // M6-S5: Relay BC's first reactive surface. Relay consumes three already-published events
         // and pushes them to BiddingHub participant groups. These are publish-route additions to
         // existing message types (no Auctions or Settlement BC code changes) plus the inbound
