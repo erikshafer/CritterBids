@@ -4,6 +4,8 @@ Skills are implementation pattern documents. Load the relevant skill **before** 
 implementation task. They encode hard-won, CritterBids-specific patterns and prevent rediscovering
 known solutions.
 
+Some skills are active implementation guides, while others are explicitly reference-only for planned or currently unused capabilities. Treat each skill's `status` field and the table below as authoritative.
+
 ## How to use skills
 
 1. Identify your task from the tables below.

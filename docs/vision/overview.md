@@ -22,7 +22,7 @@ More specifically, CritterBids was chosen because it creates meaningful opportun
 - **Sagas and process managers** — the auction closing saga, the proxy bid manager, the post-sale obligations chain, and the extended bidding anti-snipe mechanic are all distinct saga shapes with different lifecycles.
 - **Projections by audience** — a seller, a bidder, an ops staff member, and a finance team all need radically different views of the same underlying event streams.
 - **Real-time transport** — SignalR is load-bearing in CritterBids, not a demo flourish. The live bid feed is the participant experience.
-- **Storage agnosticism** — CritterBids runs all eight BCs on PostgreSQL via Marten for a uniform bootstrap across the solution. The Critter Stack's programming model is storage-agnostic by design — the same patterns work against Marten on PostgreSQL or Polecat on SQL Server — preserved as a future demo opportunity.
+- **Storage agnosticism** — CritterBids currently runs all implemented BCs on PostgreSQL via Marten for a uniform bootstrap across the solution. The Critter Stack's programming model is storage-agnostic by design — the same patterns work against Marten on PostgreSQL or Polecat on SQL Server — preserved as a future demo opportunity.
 - **Transport agnosticism** — CritterBids starts with RabbitMQ and is designed to swap to Azure Service Bus as a milestone demonstration of Wolverine's transport-agnostic design.
 
 ---
@@ -89,9 +89,9 @@ Each bounded context is a separate .NET class library project. Modules communica
 
 This structure provides the boundary enforcement benefits of microservices without the distributed systems operational overhead. It also makes the transport-swap story legible — RabbitMQ is configured in one place in `Program.cs`, and swapping to Azure Service Bus is a configuration change, not a BC-level refactor.
 
-**Storage:**
-- PostgreSQL via Marten — Auctions, Listings, Selling, Obligations, Relay BCs
-- SQL Server via Polecat — Operations, Settlement, Participants BCs
+**Storage (current implementation):**
+- PostgreSQL via Marten — Auctions, Listings, Selling, Participants, Settlement, Obligations, Relay BCs
+- Operations BC remains planned (M7+) and is not yet present as a standalone module in `src/`
 
 **Messaging:** RabbitMQ (MVP) → Azure Service Bus (milestone swap demonstration)
 
@@ -115,10 +115,10 @@ CritterBids and CritterSupply are sibling projects, not competing ones. They sha
 | DCB usage | Promotions BC | Auctions BC — core mechanic |
 | Identity | JWT, real users | Anonymous sessions, generated display names |
 | Real-time | Minimal | SignalR load-bearing |
-| Database | PostgreSQL only | PostgreSQL + SQL Server |
+| Database | PostgreSQL only | PostgreSQL (current), Polecat/SQL Server as a planned demo path |
 | Demo format | Browse and buy | Live audience participation bidding |
 
-A developer who has worked through CritterSupply will find familiar patterns in CritterBids — the same Wolverine handler conventions, the same Marten projection patterns, the same BC boundary discipline. What they will also find are new patterns the e-commerce domain didn't surface: timer-driven saga initiation, proxy bid process managers, real-time contention at scale, and the Polecat SQL Server story.
+A developer who has worked through CritterSupply will find familiar patterns in CritterBids — the same Wolverine handler conventions, the same Marten projection patterns, the same BC boundary discipline. What they will also find are new patterns the e-commerce domain didn't surface: timer-driven saga initiation, proxy bid process managers, and real-time contention at scale.
 
 ---
 

@@ -6,7 +6,7 @@ No BC references another BC's internals directly. The only shared dependency is 
 
 ---
 
-## The Eight Bounded Contexts
+## Bounded Context Map (7 implemented + 1 planned)
 
 ### Participants
 
@@ -188,13 +188,15 @@ Draft → Submitted → Approved → Published
 
 ### Operations
 
+**Status:** Planned BC (target M7+). No `CritterBids.Operations` project exists yet in `src/`.
+
 **Purpose:** Internal staff view and the projector-facing dashboard for live demonstrations. Aggregates read models across all BCs. Provides real-time visibility into lot activity, saga states, settlement queue, obligation pipeline, and flagged sessions. Also owns staff-initiated commands and the demo reset capability.
 
 **What it owns:**
 
 - Cross-BC aggregate projections — live lot board, bid activity feed, settlement queue, obligation status, dispute queue, participant activity
 - Staff command handlers — force-close a listing, flag a participant session, resolve a dispute, start a Flash Session, reset demo state
-- Live ops feed — SignalR hub for real-time dashboard updates
+- Live ops feed — currently surfaced through Relay's `OperationsHub`; eventual Operations BC owns the full cross-BC projection model behind that surface
 - Staff authentication seam — config-driven passphrase in MVP, extensible to full staff identity
 
 **Key design decisions:**
@@ -203,7 +205,7 @@ Draft → Submitted → Approved → Published
 - The demo reset mechanism lives here. In MVP, resetting between conference sessions is handled by Docker volume removal. A more graceful `DemoResetInitiated` command that cascades through BCs is a post-MVP milestone.
 - The ops dashboard and participant-facing app are separate React SPAs pointing at the same API host. Two browser windows on the same projector tells the audience the story without narration.
 
-**Storage:** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for BI tooling and live reporting; migrated to Marten to unify the storage layer. The BI rationale is preserved as a stretch goal in ADR 003.
+**Storage (target):** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for BI tooling and live reporting; the BI rationale is preserved as a stretch goal in ADR 003.
 
 **Integration in:** Integration events from all BCs.
 
@@ -212,6 +214,8 @@ Draft → Submitted → Approved → Published
 ---
 
 ## Integration Topology
+
+> **Current-state note:** routes to **Operations** below represent target-state consumers. The standalone Operations BC is planned; some producer routes are pre-wired and currently have no Operations consumer yet.
 
 ```
 Participants ─── ParticipantSessionStarted ─────────────► Auctions
@@ -270,7 +274,7 @@ Listings ─── LotWatchAdded, LotWatchRemoved ──────────
 | Settlement | PostgreSQL | Marten | All-Marten pivot (ADR 011) — migrated from Polecat/SQL Server |
 | Obligations | PostgreSQL | Marten | Saga with cancellable scheduled messages |
 | Relay | PostgreSQL | Marten | Notification history projection |
-| Operations | PostgreSQL | Marten | All-Marten pivot (ADR 011) — migrated from Polecat/SQL Server |
+| Operations (planned) | PostgreSQL | Marten (target) | Planned BC; read model currently partially represented via Relay `OperationsHub` |
 
 ---
 

@@ -2,6 +2,8 @@
 
 Milestone documents define **what ships in each phase** — scope boundaries, definition-of-done criteria, and the demo scenarios each milestone unlocks.
 
+Older milestone documents are historical scope snapshots and may intentionally reference superseded implementation details (for example, pre-ADR 011 storage assumptions). For current runtime reality and contributor instructions, use root `README.md` and `CLAUDE.md`.
+
 They are distinct from their peer folders:
 
 - **`docs/milestones/`** (this folder) — *what and when* ships in each phase
