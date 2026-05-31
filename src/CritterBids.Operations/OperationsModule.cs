@@ -31,6 +31,25 @@ public static class OperationsModule
             // Marten event-graph registration (they arrive as Wolverine message envelopes, not via
             // Marten stream replay).
             opts.Schema.For<SettlementQueueView>().DatabaseSchemaName("operations");
+
+            // LotBoardView — Operations BC's lot-board read model per W006 §2 (M7-S3). An
+            // upsert document keyed on ListingId (via the Id => ListingId alias), maintained by
+            // two ADR-014 Sub-Option A sibling handlers (LotBoardSellingHandler /
+            // LotBoardAuctionsHandler) folding the Selling and Auctions integration-event families
+            // into one row per listing. Same tolerant-upsert shape as SettlementQueueView — no
+            // UseNumericRevisions; at-least-once redelivery is absorbed by the load-mutate-store
+            // discipline plus the monotone Status/LastUpdatedAt guards.
+            opts.Schema.For<LotBoardView>().DatabaseSchemaName("operations");
+
+            // BidActivityEntry — Operations BC's bid-activity feed per W006 §3 (M7-S3). An
+            // append/feed document keyed on BidId (via the Id => BidId alias): one immutable row
+            // per accepted bid, maintained by BidActivityHandler. Indexed on ListingId (feed
+            // filter/grouping) and PlacedAt (feed sort key) since queries scroll a listing's bids
+            // in time order; the key remains BidId so redelivery dedupes naturally.
+            opts.Schema.For<BidActivityEntry>()
+                .DatabaseSchemaName("operations")
+                .Index(x => x.ListingId)
+                .Index(x => x.PlacedAt);
         });
 
         return services;
