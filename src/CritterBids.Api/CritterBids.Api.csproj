@@ -14,6 +14,7 @@
     <ProjectReference Include="..\CritterBids.Auctions\CritterBids.Auctions.csproj" />
     <ProjectReference Include="..\CritterBids.Listings\CritterBids.Listings.csproj" />
     <ProjectReference Include="..\CritterBids.Obligations\CritterBids.Obligations.csproj" />
+    <ProjectReference Include="..\CritterBids.Operations\CritterBids.Operations.csproj" />
     <ProjectReference Include="..\CritterBids.Participants\CritterBids.Participants.csproj" />
     <ProjectReference Include="..\CritterBids.Relay\CritterBids.Relay.csproj" />
     <ProjectReference Include="..\CritterBids.Selling\CritterBids.Selling.csproj" />

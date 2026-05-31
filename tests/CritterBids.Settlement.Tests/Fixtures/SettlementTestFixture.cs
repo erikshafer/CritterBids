@@ -97,6 +97,13 @@ public class SettlementTestFixture : IAsyncLifetime
                 // SettlementSaga emits SettlementCompleted; excluding Relay keeps its push handler
                 // from co-consuming it and faulting the saga happy-path test's tracked session.
                 services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
+
+                // Exclude Operations BC handlers — SettlementQueueHandler (M7-S2) is globally
+                // discovered (Program.cs IncludeAssembly + unconditional AddOperationsModule) and
+                // co-consumes the SettlementCompleted / PaymentFailed / SellerPayoutIssued this
+                // fixture's SettlementSaga and publish-route tests emit. Without exclusion the
+                // co-consumer perturbs the outgoing-message tracking those publish-route tests assert.
+                services.AddSingleton<IWolverineExtension>(new OperationsBcDiscoveryExclusion());
             });
         });
     }
@@ -220,6 +227,27 @@ internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
             x.Excludes.WithCondition(
                 "Relay BC inactive — push-only consumer excluded from Settlement fixture to avoid co-consuming shared events",
                 t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Operations BC handlers from Wolverine's handler discovery in the Settlement test
+/// fixture. Operations' SettlementQueueHandler (M7-S2) is globally discovered via Program.cs
+/// IncludeAssembly and the unconditional AddOperationsModule(); it co-consumes the
+/// SettlementCompleted / PaymentFailed / SellerPayoutIssued this fixture's SettlementSaga and
+/// publish-route tests emit. Without exclusion the co-consumer perturbs the outgoing-message
+/// tracking those publish-route tests assert.
+/// </summary>
+internal sealed class OperationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Operations BC inactive — settlement-queue consumer excluded from Settlement fixture to avoid co-consuming shared events",
+                t => t.Namespace?.StartsWith("CritterBids.Operations") == true);
         });
     }
 }

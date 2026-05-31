@@ -1,5 +1,5 @@
 using Alba;
-using CritterBids.Obligations;
+using CritterBids.Operations;
 using JasperFx.CommandLine;
 using JasperFx.Events;
 using Marten;
@@ -8,15 +8,16 @@ using Testcontainers.PostgreSql;
 using Wolverine;
 using Wolverine.Marten;
 
-namespace CritterBids.Obligations.Tests.Fixtures;
+namespace CritterBids.Operations.Tests.Fixtures;
 
-public class ObligationsTestFixture : IAsyncLifetime
+public class OperationsTestFixture : IAsyncLifetime
 {
-    // Only PostgreSQL is needed for the Obligations BC — Marten is the only store registered
-    // per ADR 011 (All-Marten Pivot). The PostSaleCoordinationSaga document and the obligation
-    // event stream live in the shared primary store under the "obligations" schema.
+    // Only PostgreSQL is needed for the Operations BC — Marten is the only store registered per
+    // ADR 011 (All-Marten Pivot). Operations is documents-only (M7 §5): the SettlementQueueView
+    // read model lives in the shared primary store under the "operations" schema; there is no
+    // saga or event-sourced aggregate.
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:17-alpine")
-        .WithName($"obligations-postgres-test-{Guid.NewGuid():N}")
+        .WithName($"operations-postgres-test-{Guid.NewGuid():N}")
         .WithCleanUp(true)
         .Build();
 
@@ -49,43 +50,31 @@ public class ObligationsTestFixture : IAsyncLifetime
                 .ApplyAllDatabaseChangesOnStartup()
                 .IntegrateWithWolverine(configure: integration => integration.UseFastEventForwarding = true);
 
-                // Register the Obligations BC module so its ConfigureMarten contributions
-                // (obligations schema for PostSaleCoordinationSaga + ObligationEventStream, the
-                // PostSaleCoordinationStarted event type) and ObligationsOptions binding are
-                // present. Program.cs guards its AddObligationsModule() call inside the postgres
-                // null check, which the ConfigureServices path bypasses.
-                services.AddObligationsModule();
+                // Register the Operations BC module so its ConfigureMarten contribution (the
+                // operations schema for SettlementQueueView) is present. Program.cs guards its
+                // AddOperationsModule() call inside the postgres null check, which the
+                // ConfigureServices path bypasses.
+                services.AddOperationsModule();
 
                 services.RunWolverineInSoloMode();
                 services.DisableAllExternalWolverineTransports();
 
                 // ─── Cross-BC handler isolation (per project_cross_bc_handler_isolation.md) ──
                 //
-                // The Obligations fixture only registers AddObligationsModule(). Wolverine still
+                // The Operations fixture only registers AddOperationsModule(). Wolverine still
                 // discovers handlers from every assembly listed in Program.cs's IncludeAssembly
-                // calls. Foreign-BC handlers whose modules aren't registered here will fail either
-                // DI validation (Selling: ISellerRegistrationService) or Marten code-gen (Auctions
-                // / Listings / Settlement operate on aggregates and saga documents whose schema
-                // mappings aren't configured). Excluding them from handler discovery is the
-                // canonical fix.
+                // calls. Foreign-BC handlers whose modules aren't registered here would fail
+                // either DI validation (Selling: ISellerRegistrationService) or Marten code-gen
+                // (Auctions / Listings / Settlement / Obligations operate on aggregates and saga
+                // documents whose schema mappings aren't configured), and several co-consume the
+                // Settlement-family events this fixture dispatches directly. Excluding the six
+                // foreign BCs from handler discovery is the canonical fix.
                 services.AddSingleton<IWolverineExtension>(new SellingBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new AuctionsBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new ListingsBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new SettlementBcDiscoveryExclusion());
-
-                // Exclude Relay BC handlers — SettlementCompleted consumer is globally discovered
-                // (Program.cs IncludeAssembly + unconditional AddRelayModule). This fixture's
-                // saga-start tests dispatch SettlementCompleted directly; excluding Relay keeps its
-                // push handler from co-consuming it.
+                services.AddSingleton<IWolverineExtension>(new ObligationsBcDiscoveryExclusion());
                 services.AddSingleton<IWolverineExtension>(new RelayBcDiscoveryExclusion());
-
-                // Exclude Operations BC handlers — SettlementQueueHandler (M7-S2) is globally
-                // discovered (Program.cs IncludeAssembly + unconditional AddOperationsModule) and
-                // co-consumes SettlementCompleted/PaymentFailed/SellerPayoutIssued. This fixture's
-                // saga-start tests dispatch SettlementCompleted directly via InvokeMessageAndWaitAsync;
-                // the extra separated handler turns the invoke into a sticky-routing miss
-                // (NoHandlerForEndpointException). Excluding Operations restores the inline invoke.
-                services.AddSingleton<IWolverineExtension>(new OperationsBcDiscoveryExclusion());
             });
         });
     }
@@ -120,7 +109,7 @@ public class ObligationsTestFixture : IAsyncLifetime
 }
 
 /// <summary>
-/// Excludes Selling BC handlers from Wolverine's handler discovery in the Obligations test
+/// Excludes Selling BC handlers from Wolverine's handler discovery in the Operations test
 /// fixture. The Selling BC module is not registered here (no ISellerRegistrationService), so
 /// handlers like CreateDraftListingHandler that depend on it cannot be code-generated.
 /// </summary>
@@ -131,14 +120,14 @@ internal sealed class SellingBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Selling BC inactive — ISellerRegistrationService not registered (no AddSellingModule in Obligations fixture)",
+                "Selling BC inactive — ISellerRegistrationService not registered (no AddSellingModule in Operations fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Selling") == true);
         });
     }
 }
 
 /// <summary>
-/// Excludes Auctions BC handlers from Wolverine's handler discovery in the Obligations test
+/// Excludes Auctions BC handlers from Wolverine's handler discovery in the Operations test
 /// fixture. Auctions handlers operate on the Listing aggregate and the AuctionClosingSaga
 /// document; their schema mappings come from AddAuctionsModule(), which this fixture does not call.
 /// </summary>
@@ -149,15 +138,16 @@ internal sealed class AuctionsBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Auctions BC inactive — Listing / AuctionClosingSaga schema not registered (no AddAuctionsModule in Obligations fixture)",
+                "Auctions BC inactive — Listing / AuctionClosingSaga schema not registered (no AddAuctionsModule in Operations fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Auctions") == true);
         });
     }
 }
 
 /// <summary>
-/// Excludes Listings BC handlers from Wolverine's handler discovery in the Obligations test
-/// fixture. AuctionStatusHandler / ListingSnapshotHandler operate on CatalogListingView, whose
+/// Excludes Listings BC handlers from Wolverine's handler discovery in the Operations test
+/// fixture. Listings' SettlementStatusHandler co-consumes SettlementCompleted (which the
+/// settlement-queue projection test dispatches directly) and operates on CatalogListingView, whose
 /// schema mapping comes from AddListingsModule(); this fixture does not register that module.
 /// </summary>
 internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
@@ -167,19 +157,18 @@ internal sealed class ListingsBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Listings BC inactive — CatalogListingView schema not registered (no AddListingsModule in Obligations fixture)",
+                "Listings BC inactive — CatalogListingView schema not registered (no AddListingsModule in Operations fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Listings") == true);
         });
     }
 }
 
 /// <summary>
-/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Obligations test
+/// Excludes Settlement BC handlers from Wolverine's handler discovery in the Operations test
 /// fixture. The Settlement saga + projection handlers operate on the SettlementSaga and
 /// PendingSettlement documents, whose schema mappings come from AddSettlementModule(); this
-/// fixture does not register that module. Excluding them also prevents Settlement's
-/// PendingSettlementHandler from co-consuming the SettlementCompleted message the Obligations
-/// saga-start tests dispatch directly.
+/// fixture does not register that module. Excluding them also prevents Settlement handlers from
+/// co-consuming the Settlement-family events the settlement-queue projection test dispatches.
 /// </summary>
 internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
 {
@@ -188,18 +177,38 @@ internal sealed class SettlementBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Settlement BC inactive — SettlementSaga / PendingSettlement schema not registered (no AddSettlementModule in Obligations fixture)",
+                "Settlement BC inactive — SettlementSaga / PendingSettlement schema not registered (no AddSettlementModule in Operations fixture)",
                 t => t.Namespace?.StartsWith("CritterBids.Settlement") == true);
         });
     }
 }
 
 /// <summary>
-/// Excludes Relay BC handlers from Wolverine's handler discovery in the Obligations test fixtures
-/// (shared by ObligationsTestFixture and ObligationsLifecycleTestFixture). Relay's
-/// SettlementCompleted notification handler is globally discovered via Program.cs IncludeAssembly
-/// and the unconditional AddRelayModule(). The Obligations saga-start tests dispatch
-/// SettlementCompleted directly; excluding Relay keeps its push handler from co-consuming it.
+/// Excludes Obligations BC handlers from Wolverine's handler discovery in the Operations test
+/// fixture. Obligations' SettlementCompletedHandler starts the PostSaleCoordination saga on
+/// SettlementCompleted (co-consuming the event the projection test dispatches) and operates on the
+/// PostSaleCoordinationSaga document, whose schema mapping comes from AddObligationsModule(); this
+/// fixture does not register that module.
+/// </summary>
+internal sealed class ObligationsBcDiscoveryExclusion : IWolverineExtension
+{
+    public void Configure(WolverineOptions options)
+    {
+        options.Discovery.CustomizeHandlerDiscovery(x =>
+        {
+            x.Excludes.WithCondition(
+                "Obligations BC inactive — PostSaleCoordinationSaga schema not registered (no AddObligationsModule in Operations fixture)",
+                t => t.Namespace?.StartsWith("CritterBids.Obligations") == true);
+        });
+    }
+}
+
+/// <summary>
+/// Excludes Relay BC handlers from Wolverine's handler discovery in the Operations test fixture.
+/// Relay's SettlementCompleted notification handler is globally discovered via Program.cs
+/// IncludeAssembly and the unconditional AddRelayModule(). The settlement-queue projection test
+/// dispatches SettlementCompleted directly; excluding Relay keeps its push handler from
+/// co-consuming it.
 /// </summary>
 internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
 {
@@ -208,30 +217,8 @@ internal sealed class RelayBcDiscoveryExclusion : IWolverineExtension
         options.Discovery.CustomizeHandlerDiscovery(x =>
         {
             x.Excludes.WithCondition(
-                "Relay BC inactive — push-only consumer excluded from Obligations fixture to avoid co-consuming shared events",
+                "Relay BC inactive — push-only consumer excluded from Operations fixture to avoid co-consuming shared events",
                 t => t.Namespace?.StartsWith("CritterBids.Relay") == true);
-        });
-    }
-}
-
-/// <summary>
-/// Excludes Operations BC handlers from Wolverine's handler discovery in the Obligations test
-/// fixtures (shared by ObligationsTestFixture and ObligationsLifecycleTestFixture). Operations'
-/// SettlementQueueHandler (M7-S2) is globally discovered via Program.cs IncludeAssembly and the
-/// unconditional AddOperationsModule(); it co-consumes the SettlementCompleted these fixtures
-/// dispatch directly. With MultipleHandlerBehavior.Separated the extra handler turns the direct
-/// InvokeMessageAndWaitAsync into a sticky-routing miss (NoHandlerForEndpointException), so the
-/// Operations consumer must be excluded here.
-/// </summary>
-internal sealed class OperationsBcDiscoveryExclusion : IWolverineExtension
-{
-    public void Configure(WolverineOptions options)
-    {
-        options.Discovery.CustomizeHandlerDiscovery(x =>
-        {
-            x.Excludes.WithCondition(
-                "Operations BC inactive — settlement-queue consumer excluded from Obligations fixture to avoid co-consuming shared events",
-                t => t.Namespace?.StartsWith("CritterBids.Operations") == true);
         });
     }
 }
