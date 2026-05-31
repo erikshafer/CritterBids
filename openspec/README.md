@@ -10,7 +10,7 @@ OpenSpec is adopted **per-BC, opt-in, starting with M6 Obligations**. Per ADR 02
 
 - M1–M5 BCs (Participants, Selling, Auctions, Listings, Settlement) **do not** use OpenSpec. Their specs live in `docs/narratives/` and `docs/workshops/` under ADR 020's spec-delta closure loop.
 - M6 Obligations adopts OpenSpec at design-phase opening.
-- M6 Relay and M6 Operations evaluate independently at their own opening sessions.
+- M6 Relay and Operations evaluated independently and both **declined** (Relay at M6 closeout 2026-05-30; Operations at M7-S1 opening 2026-05-30) — both proceed under ADR 020 alone. See the ledgers below.
 - Future BCs (none planned beyond M6) evaluate at their own openings.
 
 If you are working a non-adopting BC, you can ignore this directory entirely.
@@ -73,7 +73,7 @@ Per ADR 021, capability names are kebab-case and one-per-BC. Names are proposed 
 |---|---|---|---|
 | Obligations | `obligation-lifecycle` | confirmed | M6 Obligations opening (2026-05-28) |
 | Relay | `bid-relay` | confirmed (not adopted in M6) | M6 closeout sync (2026-05-30) |
-| Operations | `operator-dashboards` | proposed (working) | M6 Operations opening (TBD) |
+| Operations | `operator-dashboards` | confirmed (not adopted) | M7-S1 Operations opening (2026-05-30) |
 
 Update this table when each BC's opening session lands.
 
@@ -83,7 +83,7 @@ Update this table when each BC's opening session lands.
 |---|---|---|
 | Obligations | ✅ adopt (per ADR 021) | M6 design-opening (2026-05-28) |
 | Relay | ❌ decline (proceed under ADR 020 only) | M6 closeout sync (2026-05-30) |
-| Operations | ⏸ evaluate at opening | — |
+| Operations | ❌ decline (proceed under ADR 020 only) | M7-S1 Operations opening (2026-05-30) |
 
 Three outcomes are valid per ADR 021 §3: **adopt** (Obligations path), **decline** (CritterCab path; proceed under ADR 020 alone), **defer** (proceed under ADR 020; revisit at the BC's first complex change). Record the decision in the BC's opening prompt and update this table.
 
