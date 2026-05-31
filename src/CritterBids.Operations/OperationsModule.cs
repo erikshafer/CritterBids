@@ -50,6 +50,21 @@ public static class OperationsModule
                 .DatabaseSchemaName("operations")
                 .Index(x => x.ListingId)
                 .Index(x => x.PlacedAt);
+
+            // OperationsObligationsView — Operations BC's obligations read model per W006 §4
+            // (M7-S4). An upsert document keyed on ObligationId (via the Id => ObligationId alias),
+            // maintained by the single ADR-014 Sub-Option A sibling handler
+            // (OperationsObligationsHandler) folding the four Obligations integration events into one
+            // row per obligation. Same tolerant-upsert shape as the other Operations views — no
+            // UseNumericRevisions; at-least-once redelivery and out-of-order arrival are absorbed by
+            // the handler's load-mutate-store discipline plus its terminal-absorbing + strictly-older
+            // ordering guard. Indexed on QueueState (the escalation/open-dispute queue filter axis)
+            // and ListingId (the cross-view join key to the lot board); the key stays ObligationId so
+            // redelivery dedupes naturally.
+            opts.Schema.For<OperationsObligationsView>()
+                .DatabaseSchemaName("operations")
+                .Index(x => x.QueueState)
+                .Index(x => x.ListingId);
         });
 
         return services;
