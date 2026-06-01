@@ -212,6 +212,17 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("operations-auctions-events");
         opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
             .ToRabbitQueue("operations-auctions-events");
+        // M7-S5: the three Auctions session events ride the existing operations-auctions-events
+        // queue per the milestone §2 queue table (S3 deliberately left them unrouted — see the
+        // S3 comment above). They feed the session activity board (SessionActivityHandler); the
+        // queue is transport only. No new auctions listener — the ListenToRabbitQueue below
+        // (S3's) already activates the Operations consumers on this queue.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionCreated>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionStarted>()
+            .ToRabbitQueue("operations-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingAttachedToSession>()
+            .ToRabbitQueue("operations-auctions-events");
         opts.ListenToRabbitQueue("operations-auctions-events");
 
         // operations-selling-events — the Selling-source event the lot board consumes to seed each
@@ -275,6 +286,17 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Obligations.ObligationFulfilled>()
             .ToRabbitQueue("operations-obligations-events");
         opts.ListenToRabbitQueue("operations-obligations-events");
+
+        // M7-S5: Operations BC's participant activity board subscribes to the single Participants
+        // integration event ParticipantSessionStarted (W006 §5b) on its own new dedicated consumer
+        // queue, keeping the modular-monolith consumer-isolation discipline intact (Operations reads
+        // its own queue, not the settlement-/auctions-participants-events queues other BCs own).
+        // ParticipantSessionStarted already has publish routes to those other queues; this is a
+        // parallel route addition with no upstream Participants BC code change. AutoProvision()
+        // declares the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Participants.ParticipantSessionStarted>()
+            .ToRabbitQueue("operations-participants-events");
+        opts.ListenToRabbitQueue("operations-participants-events");
 
         // M6-S5: Relay BC's first reactive surface. Relay consumes three already-published events
         // and pushes them to BiddingHub participant groups. These are publish-route additions to

@@ -65,6 +65,30 @@ public static class OperationsModule
                 .DatabaseSchemaName("operations")
                 .Index(x => x.QueueState)
                 .Index(x => x.ListingId);
+
+            // SessionActivityView — Operations BC's session activity board per W006 §5a (M7-S5). An
+            // upsert document keyed on SessionId (via the Id => SessionId alias), maintained by the
+            // single ADR-014 Sub-Option A sibling handler (SessionActivityHandler) folding the three
+            // Auctions session events (SessionCreated / SessionStarted / ListingAttachedToSession)
+            // into one row per session. Same tolerant-upsert shape as the other Operations views —
+            // no UseNumericRevisions; at-least-once redelivery and out-of-order arrival are absorbed
+            // by the handler's load-mutate-store discipline, the monotone Created → Started status
+            // guard, and the AttachedListingIds set-union+dedupe. Indexed on Status (the "live
+            // sessions" query axis S6 will surface); StartedAt is left un-indexed this slice (added
+            // in S6 if a "started since" query lands) to avoid speculative indexing.
+            opts.Schema.For<SessionActivityView>()
+                .DatabaseSchemaName("operations")
+                .Index(x => x.Status);
+
+            // ParticipantActivityView — Operations BC's participant activity board per W006 §5b
+            // (M7-S5). An upsert document keyed on ParticipantId (via the Id => ParticipantId alias),
+            // maintained by the single ADR-014 Sub-Option A sibling handler
+            // (ParticipantActivityHandler) folding the one Participants event
+            // (ParticipantSessionStarted) into one row per participant. Tolerant upsert; no status
+            // axis (single immutable-payload event). No index this slice — the BidderId query axis is
+            // deferred to S6's staff query endpoints rather than indexed speculatively now.
+            opts.Schema.For<ParticipantActivityView>()
+                .DatabaseSchemaName("operations");
         });
 
         return services;

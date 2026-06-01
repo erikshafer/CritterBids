@@ -92,4 +92,28 @@ public class OperationsModuleTests
 
         schema.ShouldContain("operations");
     }
+
+    [Fact]
+    public async Task SessionAndParticipantViews_AreMappedTo_OperationsSchema()
+    {
+        // The M7-S5 additions wire both new document types into the operations schema via
+        // opts.Schema.For<…>().DatabaseSchemaName("operations"). A silent regression to the default
+        // "public" schema would still pass the behavior tests, so assert the physical table
+        // locations directly against information_schema (the S2 learning that behaviour tests are
+        // schema-blind).
+        var store = _fixture.Host.Services.GetRequiredService<IDocumentStore>();
+        await store.Storage.ApplyAllConfiguredChangesToDatabaseAsync();
+
+        await using var session = _fixture.GetDocumentSession();
+
+        var sessionSchema = await session.QueryAsync<string>(
+            "select table_schema from information_schema.tables where table_name = ?",
+            "mt_doc_sessionactivityview");
+        sessionSchema.ShouldContain("operations");
+
+        var participantSchema = await session.QueryAsync<string>(
+            "select table_schema from information_schema.tables where table_name = ?",
+            "mt_doc_participantactivityview");
+        participantSchema.ShouldContain("operations");
+    }
 }
