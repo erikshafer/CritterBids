@@ -22,6 +22,7 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
 
 3. **Key files to orient yourself:**
    - **[CLAUDE.md](./CLAUDE.md)** — this file, AI development entry point
+   - **[docs/STATUS.md](./docs/STATUS.md)** — derived project-status snapshot (where we are, what's next, deferred items, risks); the newest retrospective remains canonical if they disagree
    - **[docs/vision/bounded-contexts.md](./docs/vision/bounded-contexts.md)** — BC map, ownership, integration topology
    - **[docs/vision/domain-events.md](./docs/vision/domain-events.md)** — canonical event vocabulary
    - **[docs/skills/README.md](./docs/skills/README.md)** — skill index, load before implementing
