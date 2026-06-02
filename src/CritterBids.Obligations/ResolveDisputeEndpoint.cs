@@ -11,14 +11,16 @@ namespace CritterBids.Obligations;
 /// <see cref="CritterBids.Contracts.Obligations.DisputeResolved"/>. <c>Refund</c> and <c>Closed</c>
 /// terminate the saga; <c>Extension</c> reschedules a fresh ship-by deadline and continues.
 ///
-/// <para><c>[AllowAnonymous]</c> holds through M6 — real authentication is deferred per the
-/// project stance. The endpoint returns 202 Accepted: the resolution is applied asynchronously by
-/// the saga, so there is no resource body to return synchronously.</para>
+/// <para>Dispute resolution is a staff action, so the endpoint is gated by the <c>StaffOnly</c>
+/// policy (M7-S6, ADR-024 — superseding the former <c>[AllowAnonymous]</c>-through-M6 stance). The
+/// literal policy string is used because the Obligations BC cannot reference the host where the
+/// policy-name constant lives. The endpoint returns 202 Accepted: the resolution is applied
+/// asynchronously by the saga, so there is no resource body to return synchronously.</para>
 /// </summary>
 public static class ResolveDisputeEndpoint
 {
     [WolverinePost("/api/obligations/disputes/resolve")]
-    [AllowAnonymous]
+    [Authorize(Policy = "StaffOnly")]
     public static (IResult, ResolveDispute) Post(ResolveDispute command)
         => (Results.Accepted($"/api/obligations/{command.ObligationId}"), command);
 }

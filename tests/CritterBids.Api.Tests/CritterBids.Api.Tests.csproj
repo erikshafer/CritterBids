@@ -5,8 +5,18 @@
     <IsTestProject>true</IsTestProject>
   </PropertyGroup>
 
+  <!-- M7-S6 (ADR-024): the staff-auth tests stand up a real Kestrel host with Testcontainers
+       PostgreSQL and connect a real SignalR client to prove the OperationsHub gate, so this project
+       needs the ASP.NET Core shared framework (WebApplication, MapHub) and the SignalR client.
+       Alba's in-memory TestServer is explicitly out of scope for these tests (ADR-024 item 8). -->
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="Testcontainers.PostgreSql" />
     <PackageReference Include="xunit" />
     <PackageReference Include="xunit.runner.visualstudio" />
     <PackageReference Include="Shouldly" />
