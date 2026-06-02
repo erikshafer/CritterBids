@@ -128,8 +128,12 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 - Handlers return events/messages — never call `session.Store()` directly
 - All saga terminal paths must call `MarkCompleted()`
 - `opts.Policies.AutoApplyTransactions()` in `UseWolverine()` in `Program.cs` — not inside BC `ConfigureMarten()` calls
-- `[AllowAnonymous]` on all endpoints through M6 — real authentication is deferred to M6; this is
-  the intentional project stance, not a temporary override. The `[Authorize]` convention resumes at M6.
+- Staff-facing endpoints and the `OperationsHub` are gated by the `StaffOnly` authorization policy
+  (M7-S6, ADR-024); the `StaffToken` scheme is the default authenticate + challenge scheme. Endpoints
+  that are intentionally public stay `[AllowAnonymous]` (e.g. the read catalog, the `BiddingHub`).
+  This supersedes the former "`[AllowAnonymous]` on all endpoints through M6" stance: real
+  authentication resumed at M7 as the single-shared-secret staff posture in ADR-024. Per-user / role
+  auth remains post-MVP.
 - Integration events published via `OutgoingMessages` — never `IMessageBus` directly
 - `bus.ScheduleAsync()` is the only justified use of `IMessageBus` in handlers
 - UUID v7 stream IDs (`Guid.CreateVersion7()`) for all Marten BCs — no natural business key exists

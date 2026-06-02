@@ -1,7 +1,9 @@
+using CritterBids.Api.Auth;
 using CritterBids.Relay;
 using CritterBids.Relay.Hubs;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Wolverine;
@@ -28,13 +30,24 @@ public class RelayHubTestFixture : IAsyncLifetime
 {
     private WebApplication _app = null!;
 
+    /// <summary>
+    /// The staff token this fixture configures and the <c>OperationsHub</c> connections present.
+    /// M7-S6 (ADR-024) gated <c>OperationsHub</c> with the <c>StaffOnly</c> policy, so the hub now
+    /// requires the <c>StaffToken</c> scheme; this fixture wires that exact production scheme and
+    /// supplies a known token so the existing push tests still connect.
+    /// </summary>
+    private const string StaffToken = "relay-hub-test-staff-token";
+
     public string BaseUrl { get; private set; } = null!;
 
     public IMessageBus Bus => _app.Services.GetRequiredService<IMessageBus>();
 
     public string BiddingHubUrl => $"{BaseUrl}/hub/bidding";
 
-    public string OperationsHubUrl => $"{BaseUrl}/hub/operations";
+    // The OperationsHub is StaffOnly-gated (M7-S6); SignalR transports cannot set a custom header, so
+    // the staff credential rides the access_token query string the StaffToken scheme reads for this
+    // hub path. Existing push tests connect through this property and so are authenticated unchanged.
+    public string OperationsHubUrl => $"{BaseUrl}/hub/operations?{StaffAuthConstants.AccessTokenQueryKey}={StaffToken}";
 
     public async Task InitializeAsync()
     {
@@ -43,7 +56,17 @@ public class RelayHubTestFixture : IAsyncLifetime
         // Ephemeral port on loopback — discovered from app.Urls after start.
         builder.WebHost.UseUrls("http://127.0.0.1:0");
 
+        // M7-S6 (ADR-024): configure the staff token and wire the exact production StaffToken scheme
+        // + StaffOnly policy so the now-gated OperationsHub authenticates rather than faulting on a
+        // missing authorization middleware.
+        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            [StaffAuthConstants.StaffTokenConfigKey] = StaffToken,
+        });
+
         builder.Services.AddRelayModule();
+        builder.Services.AddStaffTokenAuthentication();
+        builder.Services.AddStaffAuthorizationPolicy();
 
         builder.Host.UseWolverine(opts =>
         {
@@ -66,6 +89,11 @@ public class RelayHubTestFixture : IAsyncLifetime
         });
 
         _app = builder.Build();
+
+        // M7-S6 (ADR-024): the OperationsHub endpoint carries StaffOnly authorization metadata, so the
+        // pipeline must run authentication then authorization before the hub endpoints.
+        _app.UseAuthentication();
+        _app.UseAuthorization();
 
         _app.MapHub<BiddingHub>("/hub/bidding").DisableAntiforgery();
         _app.MapHub<OperationsHub>("/hub/operations").DisableAntiforgery();

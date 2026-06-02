@@ -1,3 +1,4 @@
+using CritterBids.Api.Auth;
 using CritterBids.Auctions;
 using CritterBids.Contracts;
 using CritterBids.Listings;
@@ -402,8 +403,18 @@ builder.Services.AddRelayModule();
 
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────
 builder.Services.AddWolverineHttp();
-builder.Services.AddAuthentication();
-builder.Services.AddAuthorization();
+
+// ── Staff authentication (ADR-024) ────────────────────────────────────────────
+// The StaffToken scheme is the DEFAULT authenticate + challenge scheme — the fix for the
+// no-DefaultChallengeScheme runtime trap (a guarded request would otherwise 500, not 401). The
+// StaffOnly policy is the single MVP authorization policy. Both replace the former bare
+// AddAuthentication()/AddAuthorization() calls; the UseAuthentication()/UseAuthorization() pipeline
+// order below is unchanged. The configured staff token is bound from configuration
+// (OperationsAuth:StaffToken) — never hard-coded — and validated at startup outside test/dev.
+builder.Services.AddStaffTokenAuthentication();
+builder.Services.AddStaffAuthorizationPolicy();
+StaffAuthenticationExtensions.EnsureStaffTokenConfigured(builder.Configuration, builder.Environment);
+
 builder.Services.AddOpenApi();
 
 var app = builder.Build();
@@ -418,6 +429,13 @@ app.MapWolverineEndpoints();
 // negotiation POST fails 400/403. OperationsHub is mapped now (host wiring done once) but its
 // push handlers land in M6-S6.
 app.MapHub<BiddingHub>("/hub/bidding").DisableAntiforgery();
+// OperationsHub is StaffOnly-gated (ADR-024). SignalR's JS/WebSocket clients cannot set the
+// X-Staff-Token header on the negotiate request, so the StaffToken handler reads the credential
+// from the access_token query string for this path only. Two hardening notes: (1) no HTTP request
+// logging middleware is registered in this pipeline, so the access_token is never written to logs;
+// the StaffTokenAuthenticationHandler likewise never logs the token value. (2) Production must
+// terminate TLS in front of this host (HTTPS-only) so the query-string credential is never sent in
+// cleartext — this is host/ingress configuration, not application code.
 app.MapHub<OperationsHub>("/hub/operations").DisableAntiforgery();
 
 if (app.Environment.IsDevelopment())
