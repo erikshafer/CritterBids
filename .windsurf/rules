@@ -1,0 +1,33 @@
+# CritterBids — Windsurf/Cascade Rules
+
+This project has comprehensive, tool-agnostic documentation. Do not duplicate it here.
+
+## Before Any Work
+
+Read these files in order:
+
+1. `CLAUDE.md` — entry point: conventions, modular monolith rules, skill routing, do-not list
+2. `docs/STATUS.md` — derived project-status snapshot (where we are, what's next, risks)
+3. The newest file in `docs/retrospectives/` — canonical session-close state; overrides STATUS.md if they disagree
+4. The relevant `docs/skills/*.md` file for whatever pattern you are implementing
+
+## Key References
+
+- **BC boundaries & integration topology:** `docs/vision/bounded-contexts.md`
+- **Domain event vocabulary:** `docs/vision/domain-events.md`
+- **ADR index:** `docs/decisions/README.md`
+- **Milestone scope:** `docs/milestones/` (active milestone noted in STATUS.md)
+- **Session workflow:** `docs/prompts/README.md` + `docs/retrospectives/README.md`
+
+## Critter Stack Documentation (Context7)
+
+For Wolverine/Marten capabilities beyond the skill files:
+
+- Wolverine: `/jasperfx/wolverine`
+- Marten: `/jasperfx/marten`
+
+## Notes
+
+- The prompt → execute → retro session loop documented in CLAUDE.md applies regardless of tool
+- Code is the source of truth once written; docs describe intent
+- This project is developed across multiple machines and AI tools (Claude Code, GitHub Copilot, Windsurf) — keep all canonical knowledge in `docs/`, not in tool-specific config
