@@ -36,7 +36,7 @@ CritterBids has two hubs, both owned by Relay BC:
 | Hub | Route | Audience | Current posture |
 |---|---|---|---|
 | `BiddingHub` | `/hub/bidding` | anonymous participants | outbound-only plain `Hub`; group enrollment by `BidderId` / `listingId` query string |
-| `OperationsHub` | `/hub/operations` | staff/operators | outbound-only plain `Hub`; MVP passphrase, production JWT claims |
+| `OperationsHub` | `/hub/operations` | staff/operators | outbound-only plain `Hub`; `[Authorize(Policy = "StaffOnly")]`-gated (ADR-024); group enrollment auto-enrolled to `ops:staff` on connect |
 
 Relay is a consumer-only BC for real-time surfaces. It consumes integration events and returns SignalR messages. It does not publish integration events and should not inject `IMessageBus` for fanout.
 
@@ -142,6 +142,21 @@ Guidance:
 | `ops:staff` | OperationsHub | all connected operators |
 
 Query-string group enrollment is acceptable for current anonymous participant sessions because listing/bid feed data is public demo data and `BidderId` is not a trust anchor. For staff or commercially sensitive group keys, derive identity from JWT claims only.
+
+## Hub authentication (ADR-024)
+
+OperationsHub is gated by `[Authorize(Policy = "StaffOnly")]` (ADR-024). The StaffToken authentication handler reads the credential from:
+
+1. `X-Staff-Token` header — for regular HTTP endpoints.
+2. `access_token` query string — for the OperationsHub WebSocket negotiate request only (SignalR clients cannot set custom headers on the negotiate POST).
+
+BiddingHub remains anonymous (`[AllowAnonymous]` is implicit — no attribute required since the default challenge scheme falls through for unauthenticated connections).
+
+Security notes:
+
+- The `access_token` query-string fallback is scoped to the `/hub/operations` path only in the StaffToken handler.
+- No HTTP request logging middleware is registered, so the access_token is never written to logs.
+- Production must terminate TLS in front of this host so the query-string credential is never sent in cleartext — this is host/ingress configuration, not application code.
 
 ## Obligations → hub routing posture
 
