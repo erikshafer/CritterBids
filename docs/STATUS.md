@@ -114,7 +114,7 @@ Key M8 concerns:
 
 | # | Risk | Severity | Notes / Mitigation |
 |---|---|---|---|
-| 1 | **CI does not run Settlement, Obligations, Relay, or Operations tests.** The integration matrix in `.github/workflows/ci.yml` covers only Api, Participants, Selling, Auctions, Listings — ~128 of 281 tests (~46%) run only on developer machines. | **High** | Extend the CI matrix — natural candidate for M8-S1 housekeeping or a standalone CI PR. Until then, full `dotnet test CritterBids.slnx` locally before every PR is the only full-suite gate. |
+| 1 | ~~**CI does not run Settlement, Obligations, Relay, or Operations tests.**~~ **RESOLVED** — the `.github/workflows/ci.yml` integration matrix now covers all 8 BCs + Api (Settlement, Obligations, Relay, Operations added alongside the original Api, Participants, Selling, Auctions, Listings). The full 281-test suite now runs on every code-path PR. | ~~High~~ Resolved | Closed by the CI matrix extension. No further action. |
 | 2 | **ADR 013 (frontend core stack) is still Proposed**, and M8 depends on it. Routing and auth-client patterns are explicitly deferred inside it. | Medium | Accept/revise ADR 013 at M8 opening (M8-S1 foundation decisions). |
 | 3 | **Eventual-consistency contract between Relay push and Operations read models** is documented but not yet exercised by any client. The M8 dashboard must treat pushes as "re-query" signals, not read-your-own-write. | Low-Medium | M7 milestone §5 documents the contract; M8-S1 must carry it into the frontend design. |
 | 4 | **Occasional Testcontainers flakes** in Auctions and Settlement test suites (timing-sensitive container startup). Both pass on rerun. | Low | Not caused by any code change; inherent to Testcontainers PostgreSQL startup variance. |
