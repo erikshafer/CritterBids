@@ -4,19 +4,19 @@
   </PropertyGroup>
   <!-- Aspire hosting packages -->
   <ItemGroup>
-    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.3.5" />
-    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.3.5" />
-    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.3.5" />
+    <PackageVersion Include="Aspire.Hosting.AppHost" Version="13.4.2" />
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.4.2" />
+    <PackageVersion Include="Aspire.Hosting.RabbitMQ" Version="13.4.2" />
   </ItemGroup>
   <!-- Wolverine -->
   <ItemGroup>
-    <PackageVersion Include="WolverineFx" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.Http" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.Http.Marten" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.Marten" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.SignalR" Version="6.2.2" />
-    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.2.2" />
+    <PackageVersion Include="WolverineFx" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.Http" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.Http.Marten" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.Marten" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.RabbitMQ" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.SignalR" Version="6.4.3" />
+    <PackageVersion Include="WolverineFx.RuntimeCompilation" Version="6.4.3" />
   </ItemGroup>
   <!-- SignalR client (integration-test transport for Relay BC push assertions) -->
   <ItemGroup>
@@ -25,12 +25,12 @@
   <!-- OpenAPI / SwaggerUI -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.8" />
-    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.1.7" />
+    <PackageVersion Include="Swashbuckle.AspNetCore.SwaggerUI" Version="10.2.1" />
   </ItemGroup>
   <!-- Test packages -->
   <ItemGroup>
     <PackageVersion Include="Alba" Version="8.5.2" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.12.0" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" PrivateAssets="all" IncludeAssets="runtime; build; native; contentfiles; analyzers; buildtransitive" />
