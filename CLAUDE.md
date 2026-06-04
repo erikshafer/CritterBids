@@ -9,7 +9,7 @@ CritterBids is an open-source auction platform built on the Critter Stack (Wolve
 ## Quick Start (First 5 Minutes)
 
 1. **Understand what you're looking at:**
-   - Single deployable API host (`src/CritterBids.Api`) currently wiring 7 BC modules together (Operations BC is planned for a later milestone)
+   - Single deployable API host (`src/CritterBids.Api`) currently wiring 8 BC modules together
    - Each BC is a separate .NET class library — no BC references another BC's internals
    - BCs communicate exclusively through types in `src/CritterBids.Contracts`
    - All currently implemented BC modules use PostgreSQL via Marten (ADR 011 — All-Marten Pivot)
@@ -111,8 +111,8 @@ These are the structural rules that define CritterBids as a modular monolith. Vi
 | Concern | Tool |
 |---|---|
 | Language | C# 14+ / .NET 10+ |
-| Message handling | Wolverine 5+ |
-| Event sourcing | Marten 8+ (PostgreSQL — all BCs) |
+| Message handling | Wolverine 6+ |
+| Event sourcing | Marten 9+ (PostgreSQL — all BCs) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
@@ -169,7 +169,7 @@ exactly one `AddMarten()` call.
 | Settlement | `CritterBids.Settlement` | PostgreSQL / Marten | Saga, financial event stream |
 | Obligations | `CritterBids.Obligations` | PostgreSQL / Marten | Saga, cancellable scheduled messages |
 | Relay | `CritterBids.Relay` | PostgreSQL / Marten | Wolverine handlers, SignalR hub |
-| Operations (planned) | _(not yet present in `src/`)_ | PostgreSQL / Marten (target) | Cross-BC projections, SignalR hub |
+| Operations | `CritterBids.Operations` | PostgreSQL / Marten | Cross-BC read-model projections, SignalR ops hub |
 
 ---
 

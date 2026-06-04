@@ -59,9 +59,9 @@ This gives the boundary enforcement of microservices without the distributed sys
 | **Relay** | PostgreSQL / Marten | Wolverine handlers, SignalR push to participants |
 | **Participants** | PostgreSQL / Marten | Event-sourced aggregate, anonymous session management |
 | **Settlement** | PostgreSQL / Marten | Saga, financial event stream, reserve evaluation |
-| **Operations (planned)** | PostgreSQL / Marten (target) | Cross-BC projections, SignalR ops dashboard |
+| **Operations** | PostgreSQL / Marten | Cross-BC read-model projections, SignalR ops dashboard |
 
-Current code in this branch includes seven BC modules: Auctions, Selling, Listings, Participants, Settlement, Obligations, and Relay. Operations remains a planned BC (targeting M7+), with current operations-facing real-time surfaces hosted via Relay's `OperationsHub` and pre-wired integration routes. All implemented BC modules run on PostgreSQL via Marten (ADR 011 — All-Marten Pivot), and the Polecat rationale is preserved as a post-MVP stretch goal where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
+All eight BC modules are active: Auctions, Selling, Listings, Participants, Settlement, Obligations, Relay, and Operations. All run on PostgreSQL via Marten (ADR 011 — All-Marten Pivot). The Polecat rationale is preserved as a post-MVP stretch goal where the swap itself becomes a live demonstration of the Critter Stack's storage-agnostic programming model.
 
 ---
 
@@ -70,8 +70,8 @@ Current code in this branch includes seven BC modules: Auctions, Selling, Listin
 | Concern | Tool |
 |---|---|
 | Language | C# 14 / .NET 10 |
-| Message handling | [Wolverine 5+](https://wolverine.netlify.app/) |
-| Event sourcing (PostgreSQL) | [Marten 8+](https://martendb.io/) |
+| Message handling | [Wolverine 6+](https://wolverine.netlify.app/) |
+| Event sourcing (PostgreSQL) | [Marten 9+](https://martendb.io/) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
 | Testing | xUnit + Shouldly + Testcontainers + Alba |
@@ -164,7 +164,7 @@ CritterBids/
 │   ├── CritterBids.Settlement/   # Settlement BC
 │   ├── CritterBids.Obligations/  # Obligations BC
 │   ├── CritterBids.Relay/        # Relay BC (SignalR push + reactive consumers)
-│   └── [planned modules/frontends added by milestone, e.g. Operations BC]
+│   └── CritterBids.Operations/  # Operations BC (cross-BC read-model projections, ops dashboard)
 ├── tests/
 │   └── [BC integration and unit test projects]
 └── docs/

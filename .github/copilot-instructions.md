@@ -1,14 +1,13 @@
 # CritterBids — GitHub Copilot Instructions
 
-CritterBids is a .NET auction platform built on the Critter Stack (Wolverine + Marten + Polecat), structured as a modular monolith. It is modeled after eBay's platform conventions.
+CritterBids is a .NET auction platform built on the Critter Stack (Wolverine + Marten + PostgreSQL), structured as a modular monolith. It is modeled after eBay's platform conventions.
 
 ## Architecture
 
 - **Modular monolith** — one deployable (`CritterBids.Api`), eight BC modules as separate projects
 - **No BC references another BC** — shared types live only in `CritterBids.Contracts`
 - **Wolverine** for message handling, sagas, and HTTP endpoints
-- **Marten** (PostgreSQL) for Auctions, Selling, Listings, Obligations, Relay BCs
-- **Polecat** (SQL Server) for Participants, Settlement, Operations BCs
+- **Marten** (PostgreSQL) for all 8 BCs (ADR 011 — All-Marten Pivot)
 - **RabbitMQ** for inter-BC integration events
 - **SignalR** for real-time bid feed and ops dashboard
 - **React + TypeScript** for both frontend SPAs
@@ -19,11 +18,11 @@ CritterBids is a .NET auction platform built on the Critter Stack (Wolverine + M
 - `IReadOnlyList<T>` not `List<T>` for collections
 - Handlers return events/messages — never call `session.Store()` directly
 - All saga terminal paths call `MarkCompleted()`
-- `opts.Policies.AutoApplyTransactions()` in every BC's Marten/Polecat config
-- `[Authorize]` on all non-auth endpoints
+- `opts.Policies.AutoApplyTransactions()` in `UseWolverine()` in `Program.cs` — not inside BC `ConfigureMarten()` calls
+- Staff-facing endpoints and `OperationsHub` gated by `StaffOnly` policy (ADR-024); participant-facing endpoints stay `[AllowAnonymous]`
 - Integration events via `OutgoingMessages` — never `IMessageBus` directly
 - `bus.ScheduleAsync()` is the only justified `IMessageBus` use in handlers
-- UUID v5 stream IDs with BC-specific namespace prefixes
+- UUID v7 stream IDs (`Guid.CreateVersion7()`) for all Marten BCs; UUID v5 with BC namespace where a natural business key exists (ADR 007)
 - No "Event" suffix on domain event type names
 - No "paddle" references — participants use `BidderId`
 
@@ -31,14 +30,14 @@ CritterBids is a .NET auction platform built on the Critter Stack (Wolverine + M
 
 | BC | Project | Storage |
 |---|---|---|
-| Participants | `CritterBids.Participants` | SQL Server / Polecat |
+| Participants | `CritterBids.Participants` | PostgreSQL / Marten |
 | Selling | `CritterBids.Selling` | PostgreSQL / Marten |
 | Auctions | `CritterBids.Auctions` | PostgreSQL / Marten |
 | Listings | `CritterBids.Listings` | PostgreSQL / Marten |
-| Settlement | `CritterBids.Settlement` | SQL Server / Polecat |
+| Settlement | `CritterBids.Settlement` | PostgreSQL / Marten |
 | Obligations | `CritterBids.Obligations` | PostgreSQL / Marten |
 | Relay | `CritterBids.Relay` | PostgreSQL / Marten |
-| Operations | `CritterBids.Operations` | SQL Server / Polecat |
+| Operations | `CritterBids.Operations` | PostgreSQL / Marten |
 
 ## Key Domain Vocabulary
 
