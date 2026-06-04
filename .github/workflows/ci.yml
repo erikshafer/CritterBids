@@ -181,6 +181,18 @@ jobs:
           - name: Listings
             project: tests/CritterBids.Listings.Tests/CritterBids.Listings.Tests.csproj
             trx: listings-tests.trx
+          - name: Settlement
+            project: tests/CritterBids.Settlement.Tests/CritterBids.Settlement.Tests.csproj
+            trx: settlement-tests.trx
+          - name: Obligations
+            project: tests/CritterBids.Obligations.Tests/CritterBids.Obligations.Tests.csproj
+            trx: obligations-tests.trx
+          - name: Relay
+            project: tests/CritterBids.Relay.Tests/CritterBids.Relay.Tests.csproj
+            trx: relay-tests.trx
+          - name: Operations
+            project: tests/CritterBids.Operations.Tests/CritterBids.Operations.Tests.csproj
+            trx: operations-tests.trx
 
     steps:
       - name: Checkout

@@ -211,7 +211,7 @@ GitHub Actions CI lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml
 
 - A `changes` job (via `dorny/paths-filter`) skips build/test execution for doc-only changes.
 - The branch-protection-friendly required check is the final `CI` aggregator job.
-- Code-path changes run restore/build, publish the API artifact, targeted unit tests (Contracts + selected Selling/Participants suites), and an integration matrix (Api, Participants, Selling, Auctions, Listings).
+- Code-path changes run restore/build, publish the API artifact, targeted unit tests (Contracts + selected Selling/Participants suites), and an integration matrix (Api, Participants, Selling, Auctions, Listings, Settlement, Obligations, Relay, Operations).
 
 ---
 
