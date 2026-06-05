@@ -1,12 +1,10 @@
 {
   "permissions": {
-    "defaultMode": "acceptEdits",
     "allow": [
       "Bash(ls:*)",
       "Bash(grep:*)",
       "Bash(awk:*)",
       "Bash(netstat:*)",
-
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -22,7 +20,6 @@
       "Bash(git add:*)",
       "Bash(git checkout:*)",
       "Bash(git restore:*)",
-
       "Bash(docker ps:*)",
       "Bash(docker logs:*)",
       "Bash(docker exec:*)",
@@ -32,7 +29,6 @@
       "Bash(docker compose:*)",
       "Bash(docker info:*)",
       "Bash(docker version:*)",
-
       "Bash(dotnet --version)",
       "Bash(dotnet --list-sdks)",
       "Bash(dotnet restore:*)",
@@ -46,7 +42,6 @@
       "Bash(dotnet workload:*)",
       "Bash(dotnet script:*)",
       "Bash(nuget:*)",
-
       "Bash(gh repo:*)",
       "Bash(gh pr:*)",
       "Bash(gh issue:*)",
@@ -55,12 +50,10 @@
       "Bash(gh workflow:*)",
       "Bash(gh release:*)",
       "Bash(gh auth:*)",
-
       "Bash(openspec:*)",
       "Bash(npx openspec:*)",
       "Bash(npx openspec@latest:*)",
       "Bash(npx ctx7@latest:*)",
-
       "WebSearch",
       "WebFetch(domain:wolverinefx.net)",
       "WebFetch(domain:wolverinefx.io)",
@@ -74,6 +67,16 @@
       "WebFetch(domain:eventmodeling.org)",
       "WebFetch(domain:eventmodelers.de)"
     ],
+    "deny": [
+      "Bash(git reset --hard:*)",
+      "Bash(git clean -f:*)",
+      "Bash(git clean -d:*)",
+      "Bash(git push --force:*)",
+      "PowerShell(git reset --hard:*)",
+      "PowerShell(git clean -f:*)",
+      "PowerShell(git clean -d:*)",
+      "PowerShell(git push --force:*)"
+    ],
     "ask": [
       "Bash(git commit:*)",
       "Bash(git push:*)",
@@ -84,15 +87,9 @@
       "PowerShell(gh pr create:*)",
       "PowerShell(npm publish:*)"
     ],
-    "deny": [
-      "Bash(git reset --hard:*)",
-      "Bash(git clean -f:*)",
-      "Bash(git clean -d:*)",
-      "Bash(git push --force:*)",
-      "PowerShell(git reset --hard:*)",
-      "PowerShell(git clean -f:*)",
-      "PowerShell(git clean -d:*)",
-      "PowerShell(git push --force:*)"
-    ]
+    "defaultMode": "acceptEdits"
+  },
+  "enabledPlugins": {
+    "frontend-design@claude-plugins-official": true
   }
 }
