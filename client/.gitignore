@@ -1,0 +1,6 @@
+# Frontend workspace ignores (ADR 025). The .NET solution at repo root has its own ignores.
+node_modules/
+dist/
+.vite/
+*.local
+*.tsbuildinfo
