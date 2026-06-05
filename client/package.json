@@ -1,0 +1,12 @@
+{
+  "name": "critterbids-client",
+  "private": true,
+  "version": "0.0.0",
+  "description": "CritterBids frontend monorepo (ADR 025). Workspace root for the bidder-facing SPA; the staff ops SPA (ops/) and the shared wire-contract package (shared/) are planned members added in later M8 slices.",
+  "workspaces": [
+    "bidder"
+  ],
+  "engines": {
+    "node": ">=22"
+  }
+}

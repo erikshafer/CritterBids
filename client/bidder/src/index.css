@@ -1,0 +1,3 @@
+/* Tailwind v4 — single-line import is the v4-native entry (ADR 013 acceptance note, 2026-06-04).
+   No @tailwind base/components/utilities directives, no tailwind.config.js, no PostCSS. */
+@import "tailwindcss";

@@ -1,0 +1,26 @@
+{
+  "name": "@critterbids/bidder",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "CritterBids bidder-facing SPA (ADR 004/012/013/025). M8-S1 scaffolds it as a minimal BiddingHub connection proof; M8-S2 promotes it in place into the real bidder shell.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.0",
+    "vite": "^8.0.0"
+  }
+}

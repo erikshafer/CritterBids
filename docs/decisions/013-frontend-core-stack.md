@@ -1,7 +1,21 @@
 # ADR 013 — Frontend Core Stack
 
-**Status:** Proposed
-**Date:** 2026-04-19
+**Status:** Accepted
+**Proposed:** 2026-04-19
+**Accepted:** 2026-06-04 (M8-S1)
+
+> **Acceptance note (2026-06-04, M8-S1).** This ADR is accepted **as proposed** — no
+> sub-choice was revised. The composition was re-verified against the 2026 ecosystem as it
+> stands at acceptance time: the version-pinned and highest-churn members (Tailwind CSS **v4**
+> and the `@microsoft/signalr` client) were spot-checked against current upstream docs. Tailwind
+> v4 remains current, and its idiomatic Vite integration is now the v4-native `@tailwindcss/vite`
+> plugin plus a single `@import "tailwindcss";` (superseding v3's PostCSS-plugin + `@tailwind`
+> directives) — a *wiring* detail the proof app follows, not a *choice* change. The
+> `@microsoft/signalr` `HubConnectionBuilder` API (`.withUrl`, `.withAutomaticReconnect`,
+> `.on`/`.start`) is unchanged. No Revisit Trigger (library abandonment, LLM-fluency inversion)
+> has fired. The five **Deferred Questions** below remain deferred — this acceptance fixes the
+> stack; it does not resolve routing, UI-state, the auth client pattern, the SignalR integration
+> pattern (ADR 014), or PWA offline scope. See `## Document History` for the full acceptance record.
 
 ---
 
@@ -166,3 +180,10 @@ Explicitly parked rather than resolved by this ADR. Each will be addressed in it
 - `@microsoft/signalr` on npm: https://www.npmjs.com/package/@microsoft/signalr
 - `vite-plugin-pwa` docs: https://vite-pwa-org.netlify.app
 - `docs/skills/frontend/` (to be created) — implementation conventions
+
+---
+
+## Document History
+
+- **2026-04-19** — Proposed at the M7→M8 boundary planning, alongside ADR 012 (Vite SPA posture). Captured the focused-library composition with each sub-choice's rationale; deferred routing, UI-state, auth client pattern, the SignalR integration pattern (ADR 014), and PWA offline scope as parked questions.
+- **2026-06-04** — `M8-S1-frontend-foundation-decisions`: **Accepted as proposed.** M8-S1 is the slice that flips the status, per the M{n}-S1 foundation-decisions pattern. The composition was re-verified against the 2026 ecosystem at acceptance time; the version-pinned / highest-churn members were spot-checked against current upstream docs (Tailwind CSS v4 — confirmed current; idiomatic Vite integration is now the v4-native `@tailwindcss/vite` plugin + `@import "tailwindcss";`, which the M8-S1 proof app follows; `@microsoft/signalr` `HubConnectionBuilder` API confirmed unchanged). No sub-choice revised; no Revisit Trigger fired. The five Deferred Questions remain deferred and are resolved in the later M8 slices that need them (routing at the first bidder-shell slice; ADR 014 — the SignalR integration pattern — when the first hub is wired from the client; PWA offline scope in a frontend skill). The "PWA from day one" posture stands as the accepted decision; whether the *minimal S1 connection-proof app* wires the manifest + service worker or defers that to the first real SPA shell is recorded in the M8-S1 retrospective (the proof is a connection test, not a shippable SPA shell).

@@ -173,6 +173,27 @@ exactly one `AddMarten()` call.
 
 ---
 
+## Frontend (M8 — `client/`)
+
+The frontend lives in `client/`, an npm-workspaces monorepo (ADR 025), separate from the .NET
+solution (`CritterBids.slnx` does not reference it). Two static Vite + React + TypeScript SPAs point
+at the same API host:
+
+| App | Path | Audience | Auth | Live channel |
+|---|---|---|---|---|
+| Bidder-facing | `client/bidder/` | Public | Anonymous | `BiddingHub` (`/hub/bidding`) |
+| Operations dashboard | `client/ops/` *(planned, M8-S5)* | Staff | `StaffToken` (ADR 024) | `OperationsHub` (`/hub/operations`) |
+
+A `client/shared/` member (planned) holds the wire-contract surface both apps share (Zod schemas,
+the SignalR integration) — the frontend analogue of `CritterBids.Contracts`. Dev uses a Vite
+dev-server proxy to the API host (`http://localhost:5180`, `ws:true`) — no CORS, no API-host change.
+The library composition is **ADR 013** (TypeScript strict, Zod, TanStack Query, Tailwind v4 +
+shadcn/ui, `@microsoft/signalr`, Vitest + Playwright, PWA); the layout, build-output, and dev-server
+story are **ADR 025**. As of M8-S1 only `client/bidder/` exists, as a minimal `BiddingHub`
+connection proof. See `docs/milestones/M8-frontend-spas.md` for the full milestone.
+
+---
+
 ## Skill Invocation Guide
 
 Load the relevant skill before implementing. Skills encode hard-won patterns.
