@@ -61,10 +61,11 @@ each lost 70–90% of its bulk by deferring generic content upstream while keepi
 | [`domain-event-conventions`](./domain-event-conventions/SKILL.md) | design | ✅ Lean | Event vocabulary + payload rules |
 | [`aspire`](./aspire/SKILL.md) | aspire | ✅ Lean | AppHost provisions Postgres + RabbitMQ; profiles, dashboard, labels |
 | [`event-modeling`](./event-modeling/SKILL.md) | design | ✅ Complete | Workshop facilitation (shared) |
-| `react-frontend` | frontend | 🔴 Not written | React + TS, SignalR hooks, bid-feed state — author on first use |
+| `react-frontend` | frontend | 🔵 Superseded | Never written here. Generic React/stack mechanics → global auto-activating skills; CritterBids SignalR client → `.claude/skills/signalr/`. See [§ Frontend](#frontend). |
 
 **Status key:** ✅ Lean = migrated and up-referencing ai-skills · 📚 Reference = documents an unused
-capability · 🟡 Placeholder = stub, fill on first real use · 🔴 Not written = create when first needed.
+capability · 🟡 Placeholder = stub, fill on first real use · 🔴 Not written = create when first needed ·
+🔵 Superseded = intentionally not written here; covered on another shelf (see notes).
 
 ---
 
@@ -120,10 +121,27 @@ Paths resolve to `<name>/SKILL.md`. The **Secondary** column is supporting conte
 
 ### Frontend
 
-| Task | Primary | Secondary |
-|---|---|---|
-| React component | `react-frontend` | — |
-| SignalR client connection / real-time bid feed | `react-frontend` | `wolverine-signalr` |
+CritterBids' frontend skill coverage lives on **two shelves, neither of which is this `docs/skills/`
+library** — which is why there is no `react-frontend` skill here:
+
+- **Generic React + stack mechanics** → **global auto-activating skills** installed at
+  `%USERPROFILE%\.claude\skills\`: `vercel-react-best-practices`, `vercel-composition-patterns`,
+  `tanstack-query-best-practices`, `tailwind`, `shadcn`, `react-hook-form`, `zod`, `vitest`,
+  `playwright`, `web-design-guidelines`. They fire automatically when the work matches — no manual load.
+- **CritterBids-specific frontend SignalR client** → the project-scoped, auto-activating
+  **`.claude/skills/signalr/SKILL.md`** (the `useBiddingHub` lifecycle hook, the ADR-023 raw-record
+  `ReceiveMessage` contract, per-hub auth, the dev-proxy URL rule, and the forthcoming ADR-014 cache
+  bridge). It is the client-side companion to the server-side `wolverine-signalr` skill in this library.
+
+| Task | Skill |
+|---|---|
+| React component / hooks / performance | global `vercel-react-best-practices`, `vercel-composition-patterns` |
+| Data fetching / caching / mutations | global `tanstack-query-best-practices` |
+| Styling | global `tailwind`, `shadcn` |
+| Forms + validation | global `react-hook-form`, `zod` |
+| Frontend tests | global `vitest`, `playwright` |
+| UI / UX / accessibility review | global `web-design-guidelines` |
+| SignalR **client** connection / real-time bid feed | project `.claude/skills/signalr/` (server side: `wolverine-signalr`) |
 
 ### Design & architecture
 
