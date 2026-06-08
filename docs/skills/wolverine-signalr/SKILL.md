@@ -1,14 +1,14 @@
 ---
 name: wolverine-signalr
-description: "Wolverine SignalR in CritterBids: Relay hubs, marker-interface CloudEvents types, group routing, request/reply, and group changes. Use when wiring real-time updates."
+description: "Wolverine SignalR in CritterBids: Relay plain hubs, direct IHubContext push, the raw-record ReceiveMessage wire contract (ADR-023, no CloudEvents envelope), group routing, request/reply, and group changes. Use when wiring real-time updates."
 cluster: wolverine
-tags: [wolverine, signalr, relay, realtime, cloudevents]
+tags: [wolverine, signalr, relay, realtime]
 ---
 
 # Wolverine + SignalR
 
-> CritterBids conventions for real-time push through Wolverine's SignalR transport.
-> Generic SignalR transport mechanics live in ai-skills `wolverine-integrations-signalr`; **this skill documents only the CritterBids-specific routing, envelope, and posture decisions.**
+> CritterBids conventions for real-time push from Relay BC handlers. CritterBids uses **plain `Hub` + direct `IHubContext` push** (ADR-023 path b), **not** the Wolverine SignalR transport.
+> Generic SignalR transport mechanics live in ai-skills `wolverine-integrations-signalr`; **this skill documents only the CritterBids-specific routing, wire contract, and posture decisions.**
 
 ## When to apply this skill
 
@@ -16,7 +16,7 @@ Use this skill when:
 
 - Adding a Relay BC notification from an integration event.
 - Changing `BiddingHub` or `OperationsHub` group enrollment.
-- Debugging the JavaScript client’s CloudEvents `type` switching.
+- Confirming the server-side wire contract a client consumes (raw record on `ReceiveMessage`).
 - Deciding whether a future feature needs `WolverineHub`, request/reply, client-driven group changes, or JSON serializer overrides.
 
 Do NOT use this skill for: generic Wolverine handler mechanics (see `wolverine-message-handlers`), integration contract design (see `integration-messaging`), or Marten projection side-effect mechanics (see `marten-projections` / `marten-event-sourcing`).
@@ -27,7 +27,7 @@ Generic Wolverine SignalR mechanics are covered upstream. Read this ai-skill (li
 
 1. `wolverine-integrations-signalr` — SignalR transport setup, `ToSignalR`, `WolverineHub`, group targeting, request/reply, client transport testing.
 
-This skill picks up at CritterBids' Relay BC decisions, CloudEvents naming finding, and “not used today, but use when…” posture.
+This skill picks up at CritterBids' Relay BC decisions, the ADR-023 wire contract, and the “not used today, but use when…” posture.
 
 ## CritterBids architecture
 
@@ -42,38 +42,26 @@ Relay is a consumer-only BC for real-time surfaces. It consumes integration even
 
 CritterBids uses plain `Hub` today because client-to-server commands go through HTTP endpoints. Use `WolverineHub` only if a future feature genuinely needs commands delivered over the WebSocket connection.
 
-## CloudEvents type format — CritterBids finding
+## Wire contract — raw notification record (ADR-023)
 
-Wolverine wraps outbound hub messages in a CloudEvents envelope. The JavaScript client must read `cloudEvent.data` for the payload and inspect `cloudEvent.type` for the message kind.
+CritterBids pushes the **raw notification record** as the `ReceiveMessage` payload. There is **no CloudEvents envelope**: the handler's argument *is* the record the client deserializes. ADR-023 chose plain-`Hub` + direct `IHubContext` push (path b) and explicitly rejected the Wolverine SignalR transport (path a) — that transport wraps each message in a CloudEvents envelope and pushes it to `IHubContext<WolverineHub>`, a hub the application never maps, so it never reaches a client connected at `/hub/bidding`.
 
-Source verification of `WolverineMessageNaming` found these `type` shapes:
-
-| If the message type… | `type` field is… | Example |
-|---|---|---|
-| Inherits `WebSocketMessage` | kebab-case / transport naming from type name | `WebSocketBidPlaced` → `bid_placed` |
-| Implements a marker interface only | fully-qualified .NET type name | `CritterBids.Relay.BiddingHub.BidPlacedNotification` |
-| Carries `[MessageIdentity("custom")]` | the attribute value | `bid.placed.v1` |
-
-CritterBids uses marker interfaces (`IBiddingHubMessage`, `IOperationsHubMessage`) because they carry routing metadata such as `ListingId` and `BidderId`. Therefore the React client splits the FQN and switches on the short type name:
+So on the wire there is **no `cloudEvent.type`, no `cloudEvent.data`, and no FQN to `.split(".")`**. A client reading those fields gets `undefined` on every branch.
 
 ```typescript
-connection.on("ReceiveMessage", cloudEvent => {
-    const typeName = (cloudEvent.type ?? "").split(".").pop() ?? "";
-    const data = cloudEvent.data;
-
-    switch (typeName) {
-        case "BidPlacedNotification": onBidPlaced(data); break;
-        case "BidderOutbidNotification": onOutbid(data); break;
-        case "ExtendedBiddingNotification": onExtended(data); break;
-    }
+// The handler argument IS the domain record (ADR-023 path b) — no envelope to unwrap.
+connection.on("ReceiveMessage", (notification: unknown) => {
+    // validate through a Zod schema at the wire boundary (ADR-013), then use it
 });
 ```
 
-Do not “fix” the client to expect kebab-case unless the server message model switches from marker interfaces to `WebSocketMessage` or `[MessageIdentity]` aliases.
+The client-side hook, lifecycle, Zod validation, and per-hub auth live in the companion **client** skill — [`.claude/skills/signalr/SKILL.md`](../../../.claude/skills/signalr/SKILL.md). Server and client skills tell the same wire-contract story; keep them in sync.
 
-## Marker-interface routing
+> **Client message-type discrimination is out of scope here.** Because there is no envelope `type`, how a client tells one notification record from another on the single `ReceiveMessage` method — a discriminator field on the record vs. distinct hub-method names, plus its Zod schema — is **M8-S3 live-bidding work, to be recorded in ADR-014**, not decided in this skill. See the client skill's "Open question" section; do not invent a discrimination scheme here.
 
-Marker interfaces live in `CritterBids.Relay`, not `CritterBids.Api`. They express domain-level routing intent.
+## Marker interfaces (documentation / future-door only)
+
+Marker interfaces live in `CritterBids.Relay`, not `CritterBids.Api`, so domain intent stays in the module. Under ADR-023 path (b) they **carry no routing behaviour** — group targeting is explicit in each handler (see below). They are retained as documentation and as a future-door affordance should Option C (transport-routed hubs) ever be reopened.
 
 ```csharp
 public interface IBiddingHubMessage
@@ -195,11 +183,11 @@ The upstream SignalR skill covers the client transport mechanics. CritterBids-sp
 
 ## Common pitfalls
 
-- **Expecting kebab-case `type` with marker interfaces.** CritterBids marker-interface messages produce FQN CloudEvents types; split on `.` in the JS client.
+- **Expecting a CloudEvents envelope on the client.** ADR-023 path (b) delivers the raw notification record on `ReceiveMessage`; there is no `.type` / `.data` and nothing to `.split(".")`. See [`.claude/skills/signalr/SKILL.md`](../../../.claude/skills/signalr/SKILL.md).
 - **Using `WolverineHub` by default.** Plain `Hub` is correct while client-to-server commands use HTTP.
-- **Putting marker interfaces in `CritterBids.Api`.** They belong in Relay BC so routing intent stays in the module.
+- **Putting marker interfaces in `CritterBids.Api`.** They belong in Relay BC so domain intent stays in the module.
 - **Query-string identity for sensitive groups.** Fine for anonymous demo bidding; not fine for staff or commercial data access.
-- **Manual hub broadcasters.** Return typed messages and let Wolverine route them unless the framework lacks the required capability.
+- **Routing pushes through the Wolverine SignalR transport.** Under ADR-023 the transport pushes to `IHubContext<WolverineHub>`, not the mapped plain hubs, so it never reaches CritterBids clients. The endorsed Relay pattern is a handler injecting `IHubContext<THub>` and calling `SendAsync` directly — the handler *is* the broadcaster; do not hand-roll a separate broadcaster singleton either.
 - **Missing React cleanup.** `useEffect` must call `connection.stop()` to avoid ghost connections.
 
 ## See also
