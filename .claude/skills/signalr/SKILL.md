@@ -134,11 +134,12 @@ connection.on("ReceiveMessage", cloudEvent => {
 });
 ```
 
-> ⚠️ The backend skill `docs/skills/wolverine-signalr/SKILL.md` still contains a
-> stale "CloudEvents type format" client snippet using `cloudEvent.type` /
-> `.split(".").pop()`. That snippet predates ADR-023's path-(b) decision and is
-> wrong for the CritterBids client. **ADR-023 is the authority.** Do not copy that
-> snippet; if you see it cited, prefer this skill + ADR-023.
+> The backend skill `docs/skills/wolverine-signalr/SKILL.md` documents the matching
+> server side of this contract (raw record on `ReceiveMessage`, no CloudEvents
+> envelope) and now agrees with this skill. **ADR-023 is the authority** if anything
+> ever drifts. If you find an older `cloudEvent.type` / `.split(".").pop()` snippet
+> anywhere, it predates ADR-023's path-(b) decision and is wrong for the CritterBids
+> client — do not copy it.
 
 ### Open question — message-type discrimination (M8-S3)
 
@@ -212,7 +213,7 @@ When M8-S3 lands ADR-014, replace this stub with the lived pattern and cross-lin
 ## Pitfalls
 
 - **Missing `connection.stop()` cleanup** → ghost connections (the #1 bug).
-- **Copying the backend skill's `cloudEvent.type` snippet** → `undefined` on every
+- **Copying any `cloudEvent.type` / `.split(".")` snippet** → `undefined` on every
   branch; the payload is the raw record (ADR-023).
 - **Hardcoding `http://localhost:5180`** → breaks the same-origin dev proxy and prod;
   use relative `/hub/...`.
@@ -230,8 +231,8 @@ When M8-S3 lands ADR-014, replace this stub with the lived pattern and cross-lin
 ## See also
 
 - **`docs/skills/wolverine-signalr/SKILL.md`** — the server side (Relay hubs,
-  handlers, group keys, broadcast architecture). Its CloudEvents *client* snippet is
-  stale per ADR-023; everything server-side is authoritative.
+  handlers, group keys, broadcast architecture). It states the same raw-record wire
+  contract; both skills agree per ADR-023.
 - **ADR-023** (`docs/decisions/023-relay-reactive-broadcast-architecture.md`) — plain
   Hub + direct `IHubContext`, no CloudEvents envelope. The wire-contract authority.
 - **ADR-024** (`docs/decisions/024-staff-token-authentication.md`) — StaffToken,
