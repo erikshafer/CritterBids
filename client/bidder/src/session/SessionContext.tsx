@@ -62,9 +62,16 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
+        // Wolverine.HTTP binds the StartParticipantSession command from the request body, so the
+        // POST needs a JSON body even though the command is an empty record — an empty body 400s
+        // ("Invalid JSON format"). "{}" satisfies the binder. (Verified live, M8-S2 smoke check.)
         const response = await fetch("/api/participants/session", {
           method: "POST",
-          headers: { Accept: "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: "{}",
         });
         if (!response.ok) {
           throw new Error(`Session start failed with ${response.status}.`);
