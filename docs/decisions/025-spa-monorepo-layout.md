@@ -43,9 +43,9 @@ client/
     └── …
 ```
 
-The two SPAs are **workspace members**, not independent projects and not one app with two route trees. A `client/shared/` member holds the surface both apps genuinely share: the typed API client, the Zod schemas that validate every HTTP response and SignalR payload at the wire boundary (ADR 013), and the SignalR integration pattern (ADR 014, forthcoming). `client/shared/` is the **frontend analogue of `CritterBids.Contracts`**: one shared contract surface, two consumers — the same shape the backend already uses to keep BCs from depending on each other's internals.
+The two SPAs are **workspace members**, not independent projects and not one app with two route trees. A `client/shared/` member holds the surface both apps genuinely share: the typed API client, the Zod schemas that validate every HTTP response and SignalR payload at the wire boundary (ADR 013), and the SignalR integration pattern (ADR 026). `client/shared/` is the **frontend analogue of `CritterBids.Contracts`**: one shared contract surface, two consumers — the same shape the backend already uses to keep BCs from depending on each other's internals.
 
-**M8-S1 footprint:** only the workspace root manifest (`client/package.json` + `client/tsconfig.base.json`) and `client/bidder/` are created. `client/ops/` and `client/shared/` are planned homes; they are authored in the slices that need them (ops shell at M8-S5; `shared/` when the second consumer or ADR 014 makes the duplication real). The bidder proof app is scaffolded **directly at its final `client/bidder/` home**, not a throwaway location — the layout is decided here, so the proof does not strand code at a path this ADR disowns.
+**M8-S1 footprint:** only the workspace root manifest (`client/package.json` + `client/tsconfig.base.json`) and `client/bidder/` are created. `client/ops/` and `client/shared/` are planned homes; they are authored in the slices that need them (ops shell at M8-S5; `shared/` when the second consumer or ADR 026 makes the duplication real). The bidder proof app is scaffolded **directly at its final `client/bidder/` home**, not a throwaway location — the layout is decided here, so the proof does not strand code at a path this ADR disowns.
 
 ### 2. Build-output integration — host-served static files, single deployable
 
@@ -87,7 +87,7 @@ The dev-server proxy is the decision for MVP. If a future deployment genuinely r
 
 ### Source layout
 
-- **Two fully independent Vite projects** (`client/bidder/`, `client/ops/`, no workspace, no shared package). Simplest to start — zero workspace tooling. **Rejected** because the two apps share a real contract surface: the same Zod schemas validate the same API/hub payloads in both apps, and the SignalR integration pattern (ADR 014) is identical for both hubs. Independent projects would duplicate that surface and let it drift — the precise failure the backend avoids with `CritterBids.Contracts`. The workspace cost (a root `package.json` with a `workspaces` array) is small; the DRY-on-the-wire-contract benefit is large and pedagogically on-message for a reference architecture.
+- **Two fully independent Vite projects** (`client/bidder/`, `client/ops/`, no workspace, no shared package). Simplest to start — zero workspace tooling. **Rejected** because the two apps share a real contract surface: the same Zod schemas validate the same API/hub payloads in both apps, and the SignalR integration pattern (ADR 026) is identical for both hubs. Independent projects would duplicate that surface and let it drift — the precise failure the backend avoids with `CritterBids.Contracts`. The workspace cost (a root `package.json` with a `workspaces` array) is small; the DRY-on-the-wire-contract benefit is large and pedagogically on-message for a reference architecture.
 - **Single Vite app, two route trees** (one bundle, `/` for bidder and `/ops` for staff). **Rejected:** it couples the public bidder bundle to staff-only code (a bundle-size and information-exposure smell), contradicts the `bounded-contexts.md` two-window / two-SPA projector framing, and blurs the anonymous-vs-`StaffOnly` auth split that ADR 024 draws cleanly between the two apps.
 
 ### Build-output integration
@@ -129,8 +129,8 @@ The dev-server proxy is the decision for MVP. If a future deployment genuinely r
 | ADR 001 — Modular Monolith | **Echoes.** Host-served static output keeps the single-deployable ethos; `client/shared/` mirrors `CritterBids.Contracts`'s shared-contract boundary. |
 | ADR 004 — React for Frontend Applications | **Depends on.** The two React SPAs this ADR lays out. |
 | ADR 012 — Frontend: Vite SPA, Not a Meta-Framework | **Depends on / constrained by.** Static Vite output, backend owns contracts — this ADR's build-output posture is the concrete encoding of ADR 012's stance. |
-| ADR 013 — Frontend Core Stack | **Peer (same slice).** ADR 013 fixes *which libraries*; ADR 025 fixes *where the code lives and how it builds/serves*. `client/shared/` is the home of ADR 013's Zod wire schemas and (via ADR 014) its SignalR integration. |
-| ADR 014 — SignalR Integration Pattern (forthcoming) | **Provides a home for.** When ADR 014 is authored (M8-S3, first hub wired from the client), its Provider + hook + cache-bridge code lives in `client/shared/`. |
+| ADR 013 — Frontend Core Stack | **Peer (same slice).** ADR 013 fixes *which libraries*; ADR 025 fixes *where the code lives and how it builds/serves*. `client/shared/` is the home of ADR 013's Zod wire schemas and (via ADR 026) its SignalR integration. |
+| ADR 026 — SignalR Integration Pattern | **Provides a home for.** ADR 026 was authored at M8-S3b (first hub wired from a client); its Provider + hook + cache-bridge code lands in `client/bidder/src/signalr/` now and moves to `client/shared/` when the ops app becomes the second consumer. |
 | ADR 024 — Staff Auth Posture | **Preserved.** The dev-server proxy choice is specifically the one that does not touch ADR 024's auth/CORS surface. |
 
 ---

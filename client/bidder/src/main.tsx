@@ -6,10 +6,11 @@ import { RouterProvider } from "@tanstack/react-router";
 import "./index.css";
 import { router } from "@/router";
 import { SessionProvider } from "@/session/SessionContext";
+import { SignalRProvider } from "@/signalr/SignalRProvider";
 
-// One QueryClient for the app. Defaults are conservative for a live-auction read surface:
-// data is treated as authoritative-on-fetch (no hub push drives queries this slice — that
-// re-query bridge is ADR 014 / M8-S3), so we keep a short staleTime and let refetch-on-focus stand.
+// One QueryClient for the app. The BiddingHub cache bridge (ADR 026) now drives re-queries on push,
+// so the cache is the live mirror of the read model — a short staleTime keeps reads fresh between
+// pushes, and refetch-on-focus stands.
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -18,11 +19,16 @@ const queryClient = new QueryClient({
   },
 });
 
+// Provider order: QueryClientProvider (the cache the bridge writes to) → SessionProvider (the held
+// ParticipantId the SignalRProvider enrols into its bidder group) → SignalRProvider (the single
+// BiddingHub connection) → RouterProvider (pages consume the live channel via the ADR 026 hooks).
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <SessionProvider>
-        <RouterProvider router={router} />
+        <SignalRProvider>
+          <RouterProvider router={router} />
+        </SignalRProvider>
       </SessionProvider>
     </QueryClientProvider>
   </StrictMode>,
