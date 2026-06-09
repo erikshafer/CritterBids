@@ -4,6 +4,7 @@
     <PackageReference Include="WolverineFx" />
     <PackageReference Include="WolverineFx.RuntimeCompilation" />
     <PackageReference Include="WolverineFx.Http" />
+    <PackageReference Include="WolverineFx.Http.Marten" />
     <PackageReference Include="WolverineFx.Marten" />
     <PackageReference Include="WolverineFx.RabbitMQ" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />

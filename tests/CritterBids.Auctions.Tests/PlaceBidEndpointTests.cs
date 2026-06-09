@@ -71,6 +71,49 @@ public class PlaceBidEndpointTests : IAsyncLifetime
         placed.BidCount.ShouldBe(1);
     }
 
+    /// <summary>
+    /// Local-forward regression guard (M8-S3b integrated-host findings, Bug #2 boundary). An
+    /// accepted HTTP-origin bid forwards <see cref="BidPlaced"/> in-process
+    /// (UseFastEventForwarding) to the <b>local</b> Auction Closing saga handler. Observable: the
+    /// saga doc (Id = listingId) advances to BidCount=1 / CurrentHighBid=30.
+    ///
+    /// <para><b>Scope limit (important).</b> This proves the <i>local</i> forward path only. The
+    /// actual Bug #2 surface — the <c>PublishMessage&lt;BidPlaced&gt;().ToRabbitQueue(...)</c>
+    /// routes to Listings / Relay / Operations — is NOT exercised here: the Auctions fixture calls
+    /// <c>DisableAllExternalWolverineTransports()</c> and excludes those BC handlers, so the
+    /// outgoing RabbitMQ routes are inert and the forwarded event lands only on the local saga.
+    /// This test passes on BOTH the pre-H1 (synchronous Execute) endpoint and the H1
+    /// (<c>[BoundaryModel]</c>) endpoint — the cross-BC propagation gap can only be verified
+    /// against a live Aspire host with real RabbitMQ.</para>
+    /// </summary>
+    [Fact]
+    public async Task PlaceBid_Accepted_ForwardsBidPlacedLocally_ToAuctionClosingSaga()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        var now = DateTimeOffset.UtcNow;
+
+        await SeedOpenListingWithSaga(listingId, sellerId, startingBid: 25m, close: now.AddMinutes(5));
+        await _fixture.SeedParticipantCreditCeilingAsync(bidderId, creditCeiling: 500m);
+
+        var (tracked, _) = await _fixture.TrackedHttpCall(s =>
+        {
+            s.Post.Json(new PlaceBidRequest(listingId, bidderId, 30m)).ToUrl("/api/auctions/bids");
+            s.StatusCodeShouldBe(200);
+        });
+
+        // The forwarded BidPlaced must have been handled in-process during the tracked call.
+        tracked.Executed.MessagesOf<BidPlaced>().ShouldNotBeEmpty();
+
+        // And it must have advanced the saga — the end-to-end proof the event reached a consumer.
+        var saga = await _fixture.LoadSaga<AuctionClosingSaga>(listingId);
+        saga.ShouldNotBeNull();
+        saga!.BidCount.ShouldBe(1);
+        saga.CurrentHighBid.ShouldBe(30m);
+        saga.CurrentHighBidderId.ShouldBe(bidderId);
+    }
+
     // ─── Rejections: status mapping + machine-readable ProblemDetails reason ───
 
     [Fact]
