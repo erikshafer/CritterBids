@@ -34,6 +34,30 @@ public static class PlaceBidHandler
         IDocumentSession session,
         TimeProvider time)
     {
+        // The bus / proxy-saga auto-bid path discards the outcome — the audit stream and the
+        // listing's acceptance events already carry the decision for downstream consumers. The
+        // void return keeps this a plain Wolverine message handler (no cascading-return surprise).
+        await Execute(command, session, time);
+    }
+
+    /// <summary>
+    /// Shared accept/reject + DCB-write core used by BOTH the bus handler
+    /// (<see cref="HandleAsync"/>, which discards the outcome) and the HTTP endpoint
+    /// (<see cref="PlaceBidEndpoint"/>, which maps the outcome to a 2xx body or a 4xx
+    /// ProblemDetails). Both callers go through the identical
+    /// <c>FetchForWritingByTags</c> + <c>AssertDcbConsistency</c> write and the same
+    /// <see cref="BidRejected"/> audit append, so the optimistic-concurrency guarantee and the
+    /// audit stream are preserved regardless of caller (M8-S3a result path).
+    ///
+    /// <para>Named <c>Execute</c> — NOT a Wolverine handler-convention name — so it is not
+    /// discovered as a second message handler for <see cref="PlaceBid"/>. Same rationale as
+    /// <see cref="Decide"/>.</para>
+    /// </summary>
+    public static async Task<BidOutcome> Execute(
+        PlaceBid command,
+        IDocumentSession session,
+        TimeProvider time)
+    {
         var query = BuildQuery(command.ListingId);
         var boundary = await session.Events.FetchForWritingByTags<BidConsistencyState>(query);
         var state = boundary.Aggregate ?? new BidConsistencyState();
@@ -44,15 +68,39 @@ public static class PlaceBidHandler
         if (reason is not null)
         {
             await AppendRejectionAudit(session, command, state, reason, now);
-            return;
+            return new BidOutcome.Rejected(reason, state.CurrentHighBid);
         }
 
-        foreach (var @event in AcceptanceEvents(command, state, now))
+        var accepted = AcceptanceEvents(command, state, now);
+        foreach (var @event in accepted)
         {
             var wrapped = session.Events.BuildEvent(@event);
             wrapped.AddTag(new ListingStreamId(command.ListingId));
             session.Events.Append(command.ListingId, wrapped);
         }
+
+        var placed = accepted.OfType<BidPlaced>().Single();
+        var triggered = accepted.OfType<ExtendedBiddingTriggered>().SingleOrDefault();
+        var extended = triggered is null
+            ? null
+            : new ExtendedBiddingOutcome(triggered.PreviousCloseAt, triggered.NewCloseAt);
+
+        // Cumulative reserve status as of this bid — for the S3b bidder UI ("is this going to
+        // sell?"). True when there is no reserve to clear, it was already met by a prior bid, or
+        // this bid crossed it (the emitted ReserveMet signal).
+        var reserveMet = state.ReserveThreshold is null
+            || state.ReserveMet
+            || accepted.OfType<ReserveMet>().Any();
+
+        return new BidOutcome.Accepted(
+            ListingId: command.ListingId,
+            BidId: command.BidId,
+            BidderId: command.BidderId,
+            Amount: placed.Amount,
+            BidCount: placed.BidCount,
+            CurrentHighBid: placed.Amount,
+            ReserveMet: reserveMet,
+            ExtendedBidding: extended);
     }
 
     /// <summary>

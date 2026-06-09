@@ -121,7 +121,7 @@ The two `BidPlaced` and `BuyItNowOptionRemoved` integration events flow over `li
 
 ### Things deliberately not included
 
-- The bidder-facing HTTP endpoint and PlaceBidSheet UI. *(`defer`; the M3 `PlaceBid` command is bus-dispatched test-only per its docstring, and the HTTP/UI path is M6 frontend-MVP territory.)*
+- The PlaceBidSheet UI. *(`defer` to M8-S3b. The bidder-facing `POST /api/auctions/bids` HTTP endpoint over the `PlaceBid` command **landed at M8-S3a**, `[AllowAnonymous]` per ADR-024 — the `PlaceBid` command is no longer bus-dispatch-only.)*
 - Bid rejection paths (slice 3.2): below minimum, exceeds credit ceiling, listing closed, seller-cannot-bid. *(`alternate-path-failure`; rejection journeys deserve their own narratives.)*
 - The `BidRejected` audit-stream design and its exclusion from the DCB query. *(`implementation-detail`; M3-S4 retro and W002-7 captured the rationale.)*
 - Bid-increment policy ($1 below $100, $5 at $100+). The narrative renders the minimum as "starting bid or current-high-plus-increment" without naming the increment scale. *(`implementation-detail`.)*
@@ -255,7 +255,7 @@ The following were deliberately not narrated in this happy-path bidder spine. Ea
 
 - Rejoin-vs-new-session behavior on QR re-scan (Moment 1; trigger: production usage at scale revealing duplicate-scan patterns).
 - Lived-code audit of the Flash session-start cascade (Moment 3; trigger: M4-S5 ships the Auctions-side `SessionStartedHandler` fan-out and M4-S6 ships the Listings-side `SessionMembershipHandler`).
-- Bidder-facing HTTP endpoint and PlaceBidSheet UI for `PlaceBid` (Moment 4; trigger: M6 frontend MVP, when the `[AllowAnonymous]` posture lifts and the `/api/auctions/bids` endpoint is wired).
+- Bidder-facing PlaceBidSheet UI for `PlaceBid` (Moment 4; trigger: M8-S3b live-bidding slice). **The `POST /api/auctions/bids` HTTP endpoint landed at M8-S3a** as `[AllowAnonymous]` over the existing `PlaceBid` DCB command; the original trigger's "when the `[AllowAnonymous]` posture lifts" assumption was wrong — per ADR-024 bidder-facing endpoints stay anonymous, so the endpoint shipped without the posture changing, and the credit ceiling is sourced server-side from the Auctions-local `ParticipantCreditCeiling` projection rather than carried on the wire.
 - Lived-code audit of the Relay BC's BiddingHub, Outbid push, and connection projection (Moments 5 and 6; trigger: M4 Tier 4 ship).
 - Lived-code audit of the entire Settlement saga (Moment 8; trigger: M5 ship).
 
