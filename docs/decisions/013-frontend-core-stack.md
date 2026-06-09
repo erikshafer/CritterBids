@@ -52,7 +52,7 @@ The focused-composition approach also aligns with the CritterBids-as-reference-a
 - Styling system.
 - Component library.
 - Forms and validation.
-- Real-time client library (the *integration pattern* is deferred to ADR 014).
+- Real-time client library (the *integration pattern* is ADR 026, resolved M8-S3b).
 - Testing strategy (unit, integration, end-to-end).
 - Progressive Web App posture (day-one adoption vs retrofit).
 
@@ -61,7 +61,7 @@ The focused-composition approach also aligns with the CritterBids-as-reference-a
 - Routing library (TanStack Router vs React Router v7). Revisited when routing requirements are concrete.
 - UI state management beyond server state (Zustand, TanStack Store, or just React Context). No preemptive choice; adopted when a concrete need surfaces.
 - Authentication client pattern (JWT vs cookie, token refresh strategy). Waits on Participants BC.
-- SignalR integration pattern (Provider, hook, TanStack Query cache bridge). ADR 014, after the first real hub exists on the backend.
+- SignalR integration pattern (Provider, hook, TanStack Query cache bridge). **RESOLVED → ADR 026** (M8-S3b), after the first real hub was wired from a client.
 - Visual design tokens, branding, accessibility audit process.
 
 ---
@@ -94,7 +94,7 @@ The focused-composition approach also aligns with the CritterBids-as-reference-a
 
 **`@microsoft/signalr`.** The official client. Abstracts WebSockets, Server-Sent Events, and long polling behind a unified API; negotiates the best available transport per connection; handles reconnection automatically when configured with `.withAutomaticReconnect()`. No credible alternative for integrating with ASP.NET Core SignalR hubs.
 
-**Important scope note:** this ADR chooses the *library*. The integration *pattern* (a `SignalRProvider` React Context, a `useListen(event, handler)` hook, and a bridge into the TanStack Query cache) is deferred to ADR 014, which requires backend concurrence on hub method signatures and event shapes. The frontend will not pin the integration pattern in advance of the backend's first real hub.
+**Important scope note:** this ADR chooses the *library*. The integration *pattern* (a `SignalRProvider` React Context, a `useListen(event, handler)` hook, and a bridge into the TanStack Query cache) was deferred until a real hub was wired from a client; it is now **ADR 026** (resolved M8-S3b). The frontend did not pin the integration pattern in advance of the backend's first real hub.
 
 ### Testing
 
@@ -147,12 +147,12 @@ This decision should be reconsidered if any of the following become true:
 
 ## Deferred Questions
 
-Explicitly parked rather than resolved by this ADR. Each is addressed in its own milestone or a subsequent ADR; resolutions are marked inline and dated. As of M8-S2, the routing library is resolved and four questions remain parked.
+Explicitly parked rather than resolved by this ADR. Each is addressed in its own milestone or a subsequent ADR; resolutions are marked inline and dated. As of M8-S3b, the routing library and the SignalR integration pattern are resolved and three questions remain parked.
 
 - **Routing library — RESOLVED → TanStack Router** (M8-S2, 2026-06-08). The first slice with concrete bidder routes (catalog `/`, listing-detail `/listing/$id`) resolved this parked choice in favor of **TanStack Router**: fully type-safe routes with first-class search-params-as-state, and the same lineage as the already-accepted TanStack Query, chosen over React Router v7's broader-ecosystem / larger-LLM-training-footprint pull. M8-S2 wires it **code-based** (no `@tanstack/router-plugin`, no generated route-tree file) at the bidder app's small route count; a later slice may migrate to file-based routing if routes grow. See the M8-S2 retrospective.
 - **UI state management beyond server state.** For modal open/closed, theme, ephemeral UI state: Zustand is the current lightweight default. TanStack Store is a credible alternative. React Context may be sufficient. Do not scaffold state management preemptively; adopt when a concrete need arises.
 - **Authentication client pattern.** JWT with refresh tokens vs cookie-based auth. Affects CORS, sticky-session requirements, and SignalR `accessTokenFactory` behavior. Waits on Participants BC decisions.
-- **SignalR integration pattern.** ADR 014. Provider + hook + TanStack Query cache bridge. Requires backend concurrence on at least one hub's contracts.
+- **SignalR integration pattern — RESOLVED → ADR 026** (M8-S3b, 2026-06-08). Provider + `useListen` hook + TanStack Query cache bridge, authored once the first hub was wired from a client (M8-S1 proof → M8-S2 shell → M8-S3a bid endpoint). The pattern fixes "push = re-query, never render-the-payload" and normalizes Relay's heterogeneous push surface with Zod at the boundary. (The milestone doc's pre-acceptance references to this as "ADR 014" were a stale collision — 014 is the accepted Cross-BC Read-Model Extension Shape — corrected to ADR 026 in the same slice.)
 - **PWA offline scope.** App shell only vs. caching listings data vs. queueing offline bid submissions. Captured in a frontend skill, not an ADR.
 
 ---
@@ -164,7 +164,7 @@ Explicitly parked rather than resolved by this ADR. Each is addressed in its own
 | ADR 001 — Modular Monolith | **Unaffected.** Library choices are internal to the frontend build output. |
 | ADR 004 — React for Frontend Applications | **Extended.** ADR 004 picked React + TypeScript; this ADR picks the ecosystem around them. |
 | ADR 012 — Frontend: Vite SPA, Not a Meta-Framework | **Depends on.** SPA posture from ADR 012 enables the focused-library composition approach adopted here. |
-| ADR 014 — SignalR Integration Pattern (forthcoming) | **Depends on this.** Client library choice (`@microsoft/signalr`) established here; integration pattern is ADR 014's subject. |
+| ADR 026 — SignalR Integration Pattern | **Depends on this.** Client library choice (`@microsoft/signalr`) established here; the integration pattern is ADR 026's subject (resolved M8-S3b). |
 
 ---
 
@@ -187,4 +187,5 @@ Explicitly parked rather than resolved by this ADR. Each is addressed in its own
 
 - **2026-04-19** — Proposed at the M7→M8 boundary planning, alongside ADR 012 (Vite SPA posture). Captured the focused-library composition with each sub-choice's rationale; deferred routing, UI-state, auth client pattern, the SignalR integration pattern (ADR 014), and PWA offline scope as parked questions.
 - **2026-06-04** — `M8-S1-frontend-foundation-decisions`: **Accepted as proposed.** M8-S1 is the slice that flips the status, per the M{n}-S1 foundation-decisions pattern. The composition was re-verified against the 2026 ecosystem at acceptance time; the version-pinned / highest-churn members were spot-checked against current upstream docs (Tailwind CSS v4 — confirmed current; idiomatic Vite integration is now the v4-native `@tailwindcss/vite` plugin + `@import "tailwindcss";`, which the M8-S1 proof app follows; `@microsoft/signalr` `HubConnectionBuilder` API confirmed unchanged). No sub-choice revised; no Revisit Trigger fired. The five Deferred Questions remain deferred and are resolved in the later M8 slices that need them (routing at the first bidder-shell slice; ADR 014 — the SignalR integration pattern — when the first hub is wired from the client; PWA offline scope in a frontend skill). The "PWA from day one" posture stands as the accepted decision; whether the *minimal S1 connection-proof app* wires the manifest + service worker or defers that to the first real SPA shell is recorded in the M8-S1 retrospective (the proof is a connection test, not a shippable SPA shell).
+- **2026-06-08** — `M8-S3b-bidder-live-bidding`: **SignalR-integration Deferred Question resolved → ADR 026.** With the first hub wired from a client (the M8-S1 proof → M8-S2 shell → M8-S3a bid endpoint chain), the parked integration-pattern question was resolved by authoring ADR 026 (`SignalRProvider` Context + `useListen` hook + TanStack Query cache bridge; Zod-normalized heterogeneous push wire; "push = re-query, never render-the-payload"). The other three Deferred Questions (UI-state management, auth client pattern, PWA offline scope) remain parked. The milestone doc's stale `ADR 014` references for this pattern were corrected to `ADR 026` in the same slice (014 is the accepted Cross-BC Read-Model Extension Shape). No core-stack member changed.
 - **2026-06-08** — `M8-S2-bidder-spa-shell-catalog`: **Routing Deferred Question resolved → TanStack Router.** The first slice with concrete bidder routes resolved the parked routing choice in favor of TanStack Router (type-safe routes + first-class search-params-as-state + shared lineage with the accepted TanStack Query, over React Router v7's larger LLM-training footprint), wired code-based for the bidder app's small route set. The other four Deferred Questions (UI-state management, auth client pattern, the SignalR integration pattern → ADR 014, PWA offline scope) remain parked. The "PWA from day one" posture was honored on the first real shell: `vite-plugin-pwa` (manifest + service-worker registration, app-shell precache only — offline *data* scope still parked) landed in M8-S2, discharging the carry-forward recorded at S1. No core-stack member was added outside the accepted set. See the M8-S2 retrospective.

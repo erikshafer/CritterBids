@@ -1,6 +1,8 @@
 import { getRouteApi, Link } from "@tanstack/react-router";
 
 import { ListingNotFoundError, useListing } from "@/catalog/queries";
+import { useWatchListing } from "@/signalr/hooks";
+import { LiveBidding } from "@/bidding/LiveBidding";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -11,12 +13,15 @@ import { formatUsd, statusVariant } from "@/lib/format";
 // router ⇄ page import cycle). The id segment is validated by the router's path pattern.
 const route = getRouteApi("/listing/$id");
 
-// Narrative 001 Moment 2 / listing detail. Read-only over `GET /api/listings/{id}`, which 404s on
-// an unknown id — surfaced here as a distinct not-found state (queries.ts throws ListingNotFoundError).
-// The detail binds to CatalogListingView, the SAME shape the list returns; there is no separate
-// ListingDetailView in the lived backend (M8-S2 finding).
+// Narrative 001 Moments 2–7 / listing detail + live bidding. The static card binds to
+// CatalogListingView over `GET /api/listings/{id}` (the SAME shape the list returns — no separate
+// ListingDetailView in the lived backend, M8-S2 finding); the LiveBidding surface (M8-S3b) adds
+// real-time bid placement + outbid/extended/gavel affordances over the BiddingHub.
 export function ListingDetailPage() {
   const { id } = route.useParams();
+  // Join this listing's BiddingHub group as soon as the route is known (ADR 026); the cache bridge
+  // re-queries the line below on every relevant push.
+  useWatchListing(id);
   const { data: listing, isPending, isError, error, refetch } = useListing(id);
 
   if (isPending) {
@@ -40,9 +45,6 @@ export function ListingDetailPage() {
     );
   }
 
-  const price = listing.currentHighBid ?? listing.startingBid;
-  const priceLabel = listing.currentHighBid != null ? "Current bid" : "Starting bid";
-
   return (
     <div className="space-y-4">
       <BackLink />
@@ -54,26 +56,17 @@ export function ListingDetailPage() {
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
-          <div>
-            <p className="text-muted-foreground text-xs">{priceLabel}</p>
-            <p className="text-3xl font-semibold">{formatUsd(price)}</p>
-          </div>
           <dl className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-3">
             <Field label="Format" value={listing.format} />
             <Field label="Starting bid" value={formatUsd(listing.startingBid)} />
             {listing.buyItNow != null && (
               <Field label="Buy it now" value={formatUsd(listing.buyItNow)} />
             )}
-            <Field label="Bids" value={String(listing.bidCount)} />
-            {listing.hammerPrice != null && (
-              <Field label="Hammer price" value={formatUsd(listing.hammerPrice)} />
-            )}
           </dl>
-          <p className="text-muted-foreground text-xs">
-            Live bidding arrives in a later release — this is the read-only listing view.
-          </p>
         </CardContent>
       </Card>
+
+      <LiveBidding listing={listing} />
     </div>
   );
 }

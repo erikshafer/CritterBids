@@ -1,12 +1,11 @@
 import { HubConnectionState } from "@microsoft/signalr";
 
-import { useBiddingHub } from "@/useBiddingHub";
+import { useHubConnectionState } from "@/signalr/hooks";
 import { cn } from "@/lib/utils";
 
-// Dot colour + label per SignalR connection state. The BiddingHub stays connected and observable
-// across the app (the hook lives in the persistent shell header), but M8-S2 wires NO bid data —
-// the live bid feed / placement / outbid handling is M8-S3 (ADR 014). This is the S1 proof's
-// connection signal, retained.
+// Dot colour + label per SignalR connection state. The BiddingHub connection is owned by the
+// app-wide SignalRProvider (ADR 026); this indicator just reads its live state. As of M8-S3b the
+// live bid feed, placement, and outbid/extended/gavel affordances ride that same connection.
 const DOT: Record<HubConnectionState, string> = {
   [HubConnectionState.Connected]: "bg-green-500",
   [HubConnectionState.Connecting]: "bg-amber-500",
@@ -16,7 +15,7 @@ const DOT: Record<HubConnectionState, string> = {
 };
 
 export function ConnectionIndicator() {
-  const { status } = useBiddingHub();
+  const { status } = useHubConnectionState();
 
   return (
     <span
