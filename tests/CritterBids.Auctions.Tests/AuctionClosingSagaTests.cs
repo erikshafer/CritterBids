@@ -78,7 +78,11 @@ public class AuctionClosingSagaTests : IAsyncLifetime
         var closeAt = DateTimeOffset.UtcNow.AddHours(1);
 
         await _fixture.Host.InvokeMessageAndWaitAsync(BuildBiddingOpened(listingId, closeAt));
-        await _fixture.Host.InvokeMessageAndWaitAsync(new BidPlaced(
+        // M8 Bug #2 fix: BidPlaced now has two BC-local handlers (AuctionClosingDispatchHandler
+        // + ProxyBidDispatchHandler), so Send (fan-out) rather than Invoke (single-handler) —
+        // same rationale as the ListingWithdrawn test below. The tracked session waits for the
+        // bridge's ClosingBidObserved cascade into the saga.
+        await _fixture.Host.SendMessageAndWaitAsync(new BidPlaced(
             ListingId: listingId,
             BidId: Guid.CreateVersion7(),
             BidderId: bidderId,

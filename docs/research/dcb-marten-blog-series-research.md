@@ -36,6 +36,14 @@ it lands directly on the seam where our bug lives (the Wolverine.HTTP + DCB writ
 
 Companion code: `dcb-coupon-sample` repo (coupon-redemption sample, plain-Marten and Wolverine variants).
 
+> **Distillation verified 2026-06-09 (follow-up session):** all four posts were re-fetched and
+> re-read end-to-end. §1–§4 and §8 of this doc are faithful to the source — no misquotes, no missed
+> traps found. One scope confirmation that matters for Bug #2: **the series ends at the DCB write;
+> it never covers what happens to appended events downstream in Wolverine's messaging layer**
+> (`MultipleHandlerBehavior`, sagas, sticky handlers, broker fan-out). Bug #2's root cause (§5.5)
+> lives entirely in that uncovered layer — the series was the wrong lens for it, which is itself a
+> useful negative result.
+
 **Our pinned versions (relevant throughout):** Marten **9.6.0** (transitive via `WolverineFx.Marten`),
 Wolverine **6.5.1**, `WolverineFx.RuntimeCompilation` **6.5.1** referenced. We are *past* the 9.4.0
 hard-cap line (see §4.4).
@@ -371,6 +379,13 @@ session**. The series points at three candidate root causes, in priority order:
 > `fix/m8-bid-http-event-forwarding-h1`).** See §5.0 for the result and the refined diagnosis. The
 > three hypotheses below are kept verbatim as the *pre-experiment* reasoning; H1 was the leading one
 > and the live run disproved it. Read §5.0 first.
+>
+> **✅ RESOLVED 2026-06-09 (follow-up session) — ROOT CAUSE FOUND. Read §5.5.** The bug is NOT in
+> DCB, NOT in the publish path, and NOT HTTP-vs-queued: it is a Wolverine consume-side dispatch
+> defect under `MultipleHandlerBehavior.Separated` when a message type has exactly one saga type
+> plus other handlers. §5.0–§5.4 below are preserved as the experiment trail; their inferences about
+> "local forwarding works / external doesn't" were a misreading of the same symptom (§5.5 explains
+> what was actually happening).
 
 ### 5.0 Experiment result — local forward works, external RabbitMQ routing does not (H1 falsified)
 
@@ -780,6 +795,97 @@ queued handler. **Working plumbing proven:** routing `PlaceBid` to a durable loc
 works; pairing it with whatever makes `BidPlaced` route externally would complete the fix once JasperFx
 identifies the cause.
 
+> **Superseded by §5.5** — the eight experiments all failed for one reason none of them touched:
+> the publishes all SUCCEEDED; the deliveries were eaten on the consume side.
+
+### 5.5 ✅ ROOT CAUSE (2026-06-09 follow-up session) — `SagaChain` keeps a single saga as the DEFAULT handler under `Separated`, which suppresses the sticky-handler fan-out
+
+The follow-up session took the two investigative steps the original eight experiments never did:
+**(1) read the Wolverine 6.5.1 source** for `UseFastEventForwarding` + route resolution +
+handler-graph dispatch (the repo is on disk at `C:\Code\JasperFx\wolverine`; the 6.5.1 tag was
+fetched from upstream and read via `git show FETCH_HEAD:...` without touching the working tree),
+and **(2) instrument the live runtime** instead of inferring from envelope tables: a dev
+`PreviewSubscriptions` probe (`src/CritterBids.Api/Dev/RoutingProbeEndpoint.cs`) plus a full live
+run with `Logging__LogLevel__Wolverine=Debug`.
+
+**What the source says (all symmetric — routing was never the problem):**
+- Fast event forwarding is `PublishIncomingEventsBeforeCommit`, a session listener that does
+  `_bus.PublishAsync(e)` for each pending `IEvent` wrapper before `SaveChanges`
+  (`Wolverine.Marten/Publishing/OutboxedSessionFactory.cs` + `PublishIncomingEventsBeforeCommit.cs`).
+- The wrapper routes via `MartenEventRouter` (first, non-additive custom route source):
+  `RoutingFor(Event<T>)` → `RoutingFor(IEvent<T>)` → `EventUnwrappingMessageRoute` over
+  `RoutingFor(T)` = the raw type's `ExplicitRouting` subscriptions (our three
+  `PublishMessage<BidPlaced>().ToRabbitQueue(...)` rules).
+- The live probe confirmed it: `Event<BidPlaced>` and `Event<BiddingOpened>` both resolve to their
+  three RabbitMQ unwrapping routes, message transformed to the raw contract type.
+
+**What the debug log shows (one accepted HTTP bid):** `BidPlaced` envelopes **enqueued for sending
+to all three rabbit queues, sent, received back in-process, and "Successfully processed"** — on
+every queue. The publish side has been working through *every* prior experiment. The difference
+from `BiddingOpened`: after processing, `BiddingOpened` shows fan-out relays
+(`Enqueued for sending BiddingOpened to local://critterbids.listings.auctionstatushandler/`, ...);
+`BidPlaced` shows **no local relays at all**.
+
+**The defect (Wolverine 6.5.1):**
+- `BidPlaced`'s chain is a `SagaChain` (the `AuctionClosingSaga.Handle([SagaIdentityFrom] BidPlaced)`
+  continue-handler). `SagaChain.maybeAssignStickyHandlers` makes all NON-saga handlers sticky on
+  their own local queues under `Separated`, **but only separates the saga calls when
+  `groupedSagas.Length > 1`** — a single saga type stays in the chain's default `Handlers`.
+- `HandlerGraph.HandlerFor(messageType, endpoint)` only builds the `FanoutMessageHandler` (the
+  relay from an external endpoint to every sticky local queue) **when
+  `chain.HasDefaultNonStickyHandlers()` is false**. The lone saga keeps it true → each rabbit
+  delivery executes the default chain (the saga) only → `ProxyBidDispatchHandler`, Listings,
+  Relay ×2, and Operations ×2 starve silently. "Successfully processed," zero dead letters.
+- `BiddingOpened` works because its saga involvement is a saga-START via a separate static class
+  (`StartAuctionClosingSagaHandler`) — not a `Saga`-typed method — so its chain is a plain
+  `HandlerChain`, all handlers sticky, no defaults, fan-out fires. (The fan-out × 3 queues is also
+  the full explanation of Bug #3's saga-start `DocumentAlreadyExistsException` dead letters.)
+
+**Reinterpreting the §5.0–§5.4 evidence:** the "saga advanced = local forward works" inference was
+wrong. The saga advance WAS the external delivery — consumed inline at the rabbit listener (no
+durable-inbox rows; the `wolverine_incoming_envelopes` rows seen for other types are the durable
+**local sticky-queue copies** created by fan-out, which `BidPlaced` never reaches). Single-handler
+chains (`BuyItNowOptionRemoved`, `BidRejected`) skip sticky grouping entirely (`grouping.Count() > 1`
+gate), stay default, and execute directly at the rabbit endpoint — which is why they were never
+symptomatic.
+
+**Predictions (same mechanism), verified live:** `ReserveMet` and `ExtendedBiddingTriggered`
+(saga continue-handlers + Relay route) — sent, received, "Successfully processed," **no relay** →
+Relay starved, saga state perfect (`BidCount=2, ReserveHasBeenMet=true, Status=Extended`).
+**Predicted, unverified:** `BuyItNowPurchased` and `ListingWithdrawn` starve their
+Listings/Settlement/Operations/ProxyBidDispatch consumers identically — two latent integration
+bugs nothing has surfaced yet.
+
+**Fix directions** (detail in the rewritten escalation doc
+[`jasperfx-escalation-bidplaced-cross-bc-delivery.md`](./jasperfx-escalation-bidplaced-cross-bc-delivery.md)):
+1. **Upstream (preferred):** in `SagaChain.maybeAssignStickyHandlers`, separate the single-saga
+   case under `Separated` exactly like the multi-saga case (or, more generally, make
+   `HandlerFor(Type, Endpoint)` fan out to sticky locals even when defaults exist). Erik has the
+   JasperFx channel; the escalation doc is now a root-caused bug report with a minimal generic repro.
+2. **App-level interim — IMPLEMENTED AND LIVE-VERIFIED (same day, branch
+   `fix/m8-auction-closing-dispatch-bridge`):** dispatcher-bridge the saga's five contract-event
+   continue-handlers through Auctions-internal commands, mirroring `ProxyBidDispatchHandler`
+   (M4-S3 Path C) — `AuctionClosingDispatchHandler` → `Closing*Observed` commands. Makes every
+   contract-event chain saga-free → all-sticky → fan-out works. Live result: an HTTP bid now
+   updates `CatalogListingView.CurrentHighBid` (the first time ever), Operations'
+   `BidActivityHandler` and Relay's handlers receive `BidPlaced`, and the saga advances via the
+   bridged commands (idempotency absorbs the once-per-queue copies). Full suite green (293
+   tests, one Invoke→Send test edit). **Bug #2 is FIXED at the application level.**
+3. **NOT a fix:** anything on the publish side (forwarding vs Marten event subscriptions vs
+   explicit publish) — the consume-side dispatch eats the delivery regardless.
+
+**Design verdict (the "did we design the workflow wrong?" question):** No. The DCB write shape,
+the tagged-append, `UseFastEventForwarding`, and the per-BC queue topology are all sound and all
+worked. The single design wrinkle that *exposed* the framework defect is `AuctionClosingSaga`
+subscribing to shared integration events directly via `[SagaIdentityFrom]` continue-handlers while
+six other handlers consume the same types — the one shape `Separated` mishandles. Notably, the
+M4-S3 `ProxyBidManagerSaga` dispatcher-bridge (adopted for composite-key correlation) accidentally
+immunized that saga against this bug; `AuctionClosingSaga`'s direct subscription stepped in it.
+
+**Secondary upstream finding:** `wolverine-diagnostics describe-routing <type> --explain` NREs at
+`MessageRoute.Describe()` (MessageRoute.cs:204) in this app (null-`Sender` route in description
+mode) — small separate bug; the live `PreviewSubscriptions` probe was the workaround.
+
 ---
 
 ## 6. Candidate approach changes for CritterBids (for discussion — not yet decided)
@@ -807,6 +913,13 @@ identifies the cause.
 ---
 
 ## 7. Open questions to take forward
+
+> **2026-06-09 resolution status:** Q1–Q3 are ANSWERED by §5.5 — forwarding intercepts every
+> outboxed session's appends regardless of endpoint shape, append API, or delivery mode, and routes
+> them correctly; there is no string-vs-Guid mismatch; nothing is excluded by design. The failure
+> was consume-side dispatch (`SagaChain` default-handler vs sticky fan-out). Q4 stands, narrowed:
+> the canonical endpoint IS transparent to the sync 200 contract (verified live — accepted bids
+> return 200 with the full response body).
 
 - **Q1 (Bug #2 core):** Does `UseFastEventForwarding` forward events appended via
   `boundary.AppendOne` inside a Wolverine-generated DCB endpoint, but *not* events appended via

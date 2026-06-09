@@ -53,13 +53,20 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   });
 
   // React 19 StrictMode double-invokes effects in dev; this guard ensures one POST per real mount.
+  //
+  // Deliberately NO cancelled-flag cleanup here. With the startedRef guard, StrictMode's
+  // setup→cleanup→setup sequence leaves exactly one in-flight fetch — started by the FIRST
+  // invocation, whose cleanup has already run by the time the response arrives. A cancelled flag
+  // therefore dropped the only result on the floor: the POST returned 201 but the state stayed
+  // "establishing" forever on every fresh-storage dev visit (found in the M8 Bug #2 fix-up
+  // walkthrough). The provider lives for the app's lifetime, so applying the result from the
+  // torn-down effect instance is safe — and a setState after a real unmount is a no-op.
   const startedRef = useRef(false);
 
   useEffect(() => {
     if (state.status === "established" || startedRef.current) return;
     startedRef.current = true;
 
-    let cancelled = false;
     void (async () => {
       try {
         // Wolverine.HTTP binds the StartParticipantSession command from the request body, so the
@@ -78,7 +85,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         }
         const body: unknown = await response.json().catch(() => null);
         const id = extractParticipantId(response.headers.get("Location"), body);
-        if (cancelled) return;
         if (!id) {
           setState({ participantId: null, status: "error" });
           return;
@@ -88,13 +94,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       } catch {
         // A failed session start must NOT block anonymous catalog reads: the catalog endpoints
         // are [AllowAnonymous] and need no participant id (prompt acceptance criteria / milestone).
-        if (!cancelled) setState({ participantId: null, status: "error" });
+        setState({ participantId: null, status: "error" });
       }
     })();
-
-    return () => {
-      cancelled = true;
-    };
   }, [state.status]);
 
   return (
