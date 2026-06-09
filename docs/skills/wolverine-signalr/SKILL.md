@@ -131,6 +131,29 @@ Guidance:
 
 Query-string group enrollment is acceptable for current anonymous participant sessions because listing/bid feed data is public demo data and `BidderId` is not a trust anchor. For staff or commercially sensitive group keys, derive identity from JWT claims only.
 
+## At-least-once delivery reaches the client (M8 Bug #2 fix-up lesson)
+
+The modular-monolith topology delivers each integration event to a Relay handler **once per
+consuming RabbitMQ queue** (at-least-once × `Separated` fan-out — `BidPlaced` arrives 3×), so the
+hub pushes **the same notification multiple times**. Every server-side consumer absorbs this
+idempotently (saga guards, read-model upserts); a SignalR push has no such absorption — the
+duplicates reach the browser.
+
+Rules for any push-fed surface:
+
+- **Every notification record must carry a dedupe identity** (`BidPlacedNotification` carries
+  `BidId`). When designing a new notification, ask "what field lets a client drop the second copy?" —
+  a timestamp is NOT it: the fan-out copies share `OccurredAt`.
+- **Clients dedupe by that identity, bounded** (see `client/bidder/src/bidding/LiveActivity.tsx`:
+  a capped seen-set keyed `bid-${bidId}`).
+- **Never derive React list keys from timestamps or list length.** The fan-out copies' identical
+  `occurredAt` plus a length pinned at the cap minted duplicate React keys, which corrupts keyed
+  reconciliation and strands ghost DOM nodes far past the cap (observed: 33 rendered entries in an
+  8-cap list, 65 duplicate-key warnings). Use the dedupe identity or a monotonic per-mount sequence.
+
+The client-side halves of these rules live in the companion [`.claude/skills/signalr/SKILL.md`](../../../.claude/skills/signalr/SKILL.md);
+keep the two in sync.
+
 ## Hub authentication (ADR-024)
 
 OperationsHub is gated by `[Authorize(Policy = "StaffOnly")]` (ADR-024). The StaffToken authentication handler reads the credential from:
@@ -189,6 +212,8 @@ The upstream SignalR skill covers the client transport mechanics. CritterBids-sp
 - **Query-string identity for sensitive groups.** Fine for anonymous demo bidding; not fine for staff or commercial data access.
 - **Routing pushes through the Wolverine SignalR transport.** Under ADR-023 the transport pushes to `IHubContext<WolverineHub>`, not the mapped plain hubs, so it never reaches CritterBids clients. The endorsed Relay pattern is a handler injecting `IHubContext<THub>` and calling `SendAsync` directly — the handler *is* the broadcaster; do not hand-roll a separate broadcaster singleton either.
 - **Missing React cleanup.** `useEffect` must call `connection.stop()` to avoid ghost connections.
+- **Push consumers without a duplicate-absorption answer.** The fan-out delivers each event once per consuming queue; transient UI fed by pushes must dedupe by message identity (see § At-least-once delivery reaches the client).
+- **Timestamp- or length-derived React keys on push-fed lists.** Fan-out copies share `occurredAt`; duplicate keys corrupt reconciliation and leave ghost DOM nodes.
 
 ## See also
 
