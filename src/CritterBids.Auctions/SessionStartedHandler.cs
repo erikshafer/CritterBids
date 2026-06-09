@@ -90,12 +90,6 @@ public static class SessionStartedHandler
                 listingId, cancellationToken);
             if (published is null) continue;
 
-            // Idempotency: pre-query the listing stream's state. If a prior delivery of
-            // SessionStarted already opened this listing, the stream exists — skip.
-            // Mirrors the M3 ListingPublishedHandler idiom (file: ListingPublishedHandler.cs).
-            var existing = await session.Events.FetchStreamStateAsync(listingId);
-            if (existing is not null) continue;
-
             var bidding = new BiddingOpened(
                 ListingId: listingId,
                 SellerId: published.SellerId,
@@ -109,7 +103,12 @@ public static class SessionStartedHandler
                 MaxDuration: maxDuration,
                 OpenedAt: openedAt);
 
-            session.Events.StartStream<Listing>(listingId, bidding);
+            // Append a TAGGED BiddingOpened via the DCB boundary (idempotent; skips if already
+            // open). The prior `StartStream<Listing>` + `FetchStreamStateAsync` guard was broken in
+            // the shared store: Selling's SellerListing owns the listingId stream, so the stream
+            // always existed (skip-forever) and the event was untagged (invisible to the bid DCB).
+            // See OpenListingForBidding for the full rationale.
+            await OpenListingForBidding.AppendIfNotOpenAsync(session, bidding, cancellationToken);
         }
 
         // AutoApplyTransactions commits after Handle returns. UseFastEventForwarding then

@@ -58,12 +58,6 @@ public static class ListingPublishedHandler
             return;
         }
 
-        var existing = await session.Events.FetchStreamStateAsync(message.ListingId);
-        if (existing is not null)
-        {
-            return;
-        }
-
         var duration = message.Duration.Value;
 
         var opened = new BiddingOpened(
@@ -79,6 +73,10 @@ public static class ListingPublishedHandler
             MaxDuration: duration,
             OpenedAt: DateTimeOffset.UtcNow);
 
-        session.Events.StartStream<Listing>(message.ListingId, opened);
+        // Append a TAGGED BiddingOpened via the DCB boundary (idempotent). Replaces the broken
+        // `FetchStreamStateAsync` guard + untagged `StartStream<Listing>` — in the shared store the
+        // listingId stream already exists (Selling's SellerListing), so the old guard skipped
+        // forever and the event was never tag-visible to the bid DCB. See OpenListingForBidding.
+        await OpenListingForBidding.AppendIfNotOpenAsync(session, opened);
     }
 }
