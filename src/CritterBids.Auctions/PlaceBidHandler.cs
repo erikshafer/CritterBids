@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using JasperFx.Events;
 using JasperFx.Events.Tags;
 using Marten;
 
@@ -62,7 +63,43 @@ public static class PlaceBidHandler
         var boundary = await session.Events.FetchForWritingByTags<BidConsistencyState>(query);
         var state = boundary.Aggregate ?? new BidConsistencyState();
 
-        var now = time.GetUtcNow();
+        // Bus / auto-bid path: append accepted events directly to the listing's primary stream
+        // (the M3-S4 shape, unchanged). FetchForWritingByTags has already queued the
+        // AssertDcbConsistency operation on the session, so the optimistic-concurrency guarantee
+        // holds regardless of which append sink is used.
+        return await DecideAndWrite(
+            command, state, session,
+            appendAccepted: wrapped => session.Events.Append(command.ListingId, wrapped),
+            now: time.GetUtcNow());
+    }
+
+    /// <summary>
+    /// Shared decision + write core: evaluates the rejection rules against an ALREADY-FETCHED
+    /// <see cref="BidConsistencyState"/>, writes the <see cref="BidRejected"/> audit on rejection,
+    /// or builds + tags the acceptance events and hands each to <paramref name="appendAccepted"/>.
+    /// Returns the <see cref="BidOutcome"/> both callers map.
+    ///
+    /// <para>The append SINK differs by caller and is the only difference between the two paths:
+    /// <list type="bullet">
+    ///   <item>the bus handler (<see cref="Execute"/>) appends straight to the listing stream via
+    ///         <c>session.Events.Append</c>;</item>
+    ///   <item>the HTTP endpoint (<see cref="PlaceBidEndpoint"/>) appends through the
+    ///         Wolverine-generated <c>IEventBoundary&lt;BidConsistencyState&gt;.AppendOne</c> on the
+    ///         outbox-enrolled session, so <c>UseFastEventForwarding</c> routes the appended events
+    ///         to their <c>PublishMessage&lt;BidPlaced&gt;().ToRabbitQueue(...)</c> destinations
+    ///         (Listings / Relay / Operations). This is the M8-S3b Bug #2 fix.</item>
+    /// </list>
+    /// Both sinks tag identically (<see cref="ListingStreamId"/>) and both run after
+    /// <c>FetchForWritingByTags</c> has queued the DCB consistency assertion, so the
+    /// optimistic-concurrency guarantee is preserved on either path.</para>
+    /// </summary>
+    internal static async Task<BidOutcome> DecideAndWrite(
+        PlaceBid command,
+        BidConsistencyState state,
+        IDocumentSession session,
+        Action<IEvent> appendAccepted,
+        DateTimeOffset now)
+    {
         var reason = EvaluateRejection(command, state, now);
 
         if (reason is not null)
@@ -76,7 +113,7 @@ public static class PlaceBidHandler
         {
             var wrapped = session.Events.BuildEvent(@event);
             wrapped.AddTag(new ListingStreamId(command.ListingId));
-            session.Events.Append(command.ListingId, wrapped);
+            appendAccepted(wrapped);
         }
 
         var placed = accepted.OfType<BidPlaced>().Single();

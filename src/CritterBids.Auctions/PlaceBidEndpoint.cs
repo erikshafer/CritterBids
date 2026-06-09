@@ -1,8 +1,10 @@
+using JasperFx.Events.Tags;
 using Marten;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Wolverine.Http;
+using Wolverine.Marten;
 
 namespace CritterBids.Auctions;
 
@@ -47,9 +49,15 @@ public sealed record PlaceBidResponse(
 ///         <see cref="StartProxyBidManagerSagaHandler"/> reads). The browser never supplies it.</item>
 ///   <item>Server-generates a UUID v7 <c>BidId</c> (ADR 007). A client idempotency key for
 ///         safe retry-on-dropped-response is deferred to M8-S3b, which owns the retry story.</item>
-///   <item>Runs the decision + DCB write via <see cref="PlaceBidHandler.Execute"/> — the same
-///         core the bus handler uses — so the <c>AssertDcbConsistency</c> guarantee and the
-///         <see cref="BidRejected"/> audit write are preserved.</item>
+///   <item>Runs the decision + DCB write through the canonical Wolverine <c>[BoundaryModel]</c>
+///         shape (M8-S3b Bug #2 fix): <see cref="Load"/> declares the consistency boundary as an
+///         <c>EventTagQuery</c>; Wolverine fetches + projects <see cref="BidConsistencyState"/>,
+///         injects the <see cref="IEventBoundary{T}"/>, and saves the outbox-enrolled session. The
+///         decision + audit + acceptance events run in <see cref="PlaceBidHandler.DecideAndWrite"/>
+///         (shared with the bus handler), appended via <c>boundary.AppendOne</c> so
+///         <c>UseFastEventForwarding</c> routes the accepted events to their RabbitMQ destinations
+///         (Listings / Relay / Operations) — the propagation the prior synchronous
+///         <c>Execute</c>-over-injected-session path silently dropped.</item>
 ///   <item>Maps the outcome: acceptance → 200 + <see cref="PlaceBidResponse"/>; rejection →
 ///         a ProblemDetails 4xx with a machine-readable <c>reason</c> (400 for input-relative
 ///         rejections, 409 Conflict for listing-state rejections).</item>
@@ -63,14 +71,26 @@ public sealed record PlaceBidResponse(
 /// never started a session, or the projection has not caught up) is an HTTP precondition failure
 /// OUTSIDE the five domain rejection reasons: the endpoint returns 404 <c>UnknownBidder</c>
 /// WITHOUT running the DCB decision or writing a <see cref="BidRejected"/> audit entry — there is
-/// no domain decision to audit when the bidder cannot be sourced.</para>
+/// no domain decision to audit when the bidder cannot be sourced. The boundary is still fetched by
+/// the generated <see cref="Load"/> step, but nothing is appended, so the empty save is a no-op.</para>
 /// </summary>
 public static class PlaceBidEndpoint
 {
+    /// <summary>
+    /// Declares the DCB consistency boundary for this command. Wolverine runs <c>Load</c> first
+    /// (its <see cref="PlaceBidRequest"/> parameter is bound by name from the request body), fetches
+    /// the events matching the returned <c>EventTagQuery</c>, projects them into
+    /// <see cref="BidConsistencyState"/>, and injects the boundary into <see cref="Post"/>. Same
+    /// query the bus handler uses (<see cref="PlaceBidHandler.BuildQuery"/>).
+    /// </summary>
+    public static EventTagQuery Load(PlaceBidRequest request) =>
+        PlaceBidHandler.BuildQuery(request.ListingId);
+
     [WolverinePost("/api/auctions/bids")]
     [AllowAnonymous]
     public static async Task<IResult> Post(
         PlaceBidRequest request,
+        [BoundaryModel] IEventBoundary<BidConsistencyState> boundary,
         IDocumentSession session,
         TimeProvider time,
         CancellationToken cancellationToken)
@@ -96,7 +116,21 @@ public static class PlaceBidEndpoint
             Amount: request.Amount,
             CreditCeiling: ceiling.CreditCeiling);
 
-        var outcome = await PlaceBidHandler.Execute(command, session, time);
+        // Decide + write over the ALREADY-FETCHED boundary, appending accepted events through
+        // boundary.AppendOne. The boundary's queued DCB consistency assertion fires on the generated
+        // SaveChanges; the decision + audit + outcome shaping live in the shared DecideAndWrite.
+        //
+        // NOTE (M8-S3b Bug #2): accepted events reach the LOCAL AuctionClosingSaga (UseFastEvent
+        // forwarding, in-process) but NOT the external RabbitMQ consumers (Listings / Relay /
+        // Operations) — HTTP-endpoint-origin events do not get sent through Wolverine's outbox to
+        // external transports in this app (six fixes attempted, all failed; see
+        // docs/research/dcb-marten-blog-series-research.md §5.0/§5.1). Pending JasperFx escalation /
+        // async-202; the read model + BiddingHub live-update remain affected.
+        var state = boundary.Aggregate ?? new BidConsistencyState();
+        var outcome = await PlaceBidHandler.DecideAndWrite(
+            command, state, session,
+            appendAccepted: wrapped => boundary.AppendOne(wrapped),
+            now: time.GetUtcNow());
 
         return outcome switch
         {
