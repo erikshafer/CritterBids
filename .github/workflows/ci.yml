@@ -29,6 +29,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       code: ${{ steps.filter.outputs.code }}
+      frontend: ${{ steps.filter.outputs.frontend }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -37,10 +38,12 @@ jobs:
         id: filter
         with:
           # The `code` filter is true when any file relevant to building or testing
-          # the .NET solution has changed. Doc-only PRs (e.g. README, docs/**, *.md,
-          # LICENSE, CODE_OF_CONDUCT) do not match, and the build/test jobs are
-          # skipped — the final `ci` aggregator job then succeeds so branch
-          # protection still passes.
+          # the .NET solution has changed; the `frontend` filter is true when the
+          # client/ SPA workspace changes. Doc-only PRs (e.g. README, docs/**, *.md,
+          # LICENSE, CODE_OF_CONDUCT) match neither, and the build/test/frontend jobs
+          # are skipped — the final `ci` aggregator job then succeeds so branch
+          # protection still passes. A change to this workflow file trips both filters
+          # so the full suite re-validates when CI itself changes.
           filters: |
             code:
               - 'src/**'
@@ -53,6 +56,9 @@ jobs:
               - 'global.json'
               - 'nuget.config'
               - '.editorconfig'
+              - '.github/workflows/ci.yml'
+            frontend:
+              - 'client/**'
               - '.github/workflows/ci.yml'
 
   build:
@@ -233,39 +239,66 @@ jobs:
           path: ./test-results
           retention-days: 5
 
+  frontend:
+    name: Frontend
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build (tsc strict + vite build)
+        run: npm run build -w @critterbids/bidder
+
+      - name: Test (vitest)
+        run: npm test -w @critterbids/bidder
+
   # Aggregator job suitable for use as the single required status check in
-  # branch protection. It succeeds when:
-  #   * the PR touches no code paths (build/unit/integration jobs are skipped), or
-  #   * every dependent job reports success.
-  # It fails when any required job failed or was cancelled.
+  # branch protection. A dependent job result of `success` or `skipped` is
+  # acceptable (a job skips when its path filter did not match — e.g. a
+  # frontend-only PR skips the .NET jobs, a backend-only PR skips Frontend,
+  # a doc-only PR skips all). The aggregator fails only when a job that
+  # actually ran reports `failure` or `cancelled`.
   ci:
     name: CI
-    needs: [ changes, build, unit-tests, integration-tests ]
+    needs: [ changes, build, unit-tests, integration-tests, frontend ]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         env:
-          CODE_CHANGED: ${{ needs.changes.outputs.code }}
           BUILD_RESULT: ${{ needs.build.result }}
           UNIT_RESULT: ${{ needs.unit-tests.result }}
           INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
         run: |
           set -euo pipefail
-
-          if [ "${CODE_CHANGED}" != "true" ]; then
-            echo "No code changes detected; build and tests were skipped."
-            exit 0
-          fi
 
           failed=0
           for entry in \
             "build:${BUILD_RESULT}" \
             "unit-tests:${UNIT_RESULT}" \
-            "integration-tests:${INTEGRATION_RESULT}"; do
+            "integration-tests:${INTEGRATION_RESULT}" \
+            "frontend:${FRONTEND_RESULT}"; do
             name="${entry%%:*}"
             result="${entry##*:}"
-            if [ "${result}" != "success" ]; then
+            # `success` and `skipped` pass; only a job that ran and did not
+            # succeed (failure/cancelled) blocks the aggregator.
+            if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
               echo "::error::Required job '${name}' did not succeed (result: ${result})"
               failed=1
             fi
@@ -274,4 +307,4 @@ jobs:
           if [ "${failed}" -ne 0 ]; then
             exit 1
           fi
-          echo "All required jobs succeeded."
+          echo "All required jobs passed or were skipped."
