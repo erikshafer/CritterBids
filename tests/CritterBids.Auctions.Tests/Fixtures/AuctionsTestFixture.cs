@@ -9,6 +9,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 using Wolverine;
 using Wolverine.Marten;
+using Wolverine.Tracking;
 
 namespace CritterBids.Auctions.Tests.Fixtures;
 
@@ -140,6 +141,26 @@ public class AuctionsTestFixture : IAsyncLifetime
     {
         await using var session = GetDocumentSession();
         return await session.LoadAsync<T>(id);
+    }
+
+    // ─── HTTP invocation helper (M8-S3a) ──────────────────────────────────────
+
+    /// <summary>
+    /// Drive an Alba HTTP scenario inside a Wolverine tracked session so any in-process
+    /// cascading/forwarded work the request triggers drains deterministically before the call
+    /// returns. The bid endpoint's accepted <c>BidPlaced</c> is forwarded (UseFastEventForwarding)
+    /// to the Auction Closing saga + proxy dispatcher; this keeps that fan-out from racing the next
+    /// test's data cleanup. Mirrors <c>SellingTestFixture.TrackedHttpCall</c>.
+    /// </summary>
+    public async Task<(ITrackedSession, Alba.IScenarioResult)> TrackedHttpCall(
+        Action<Alba.Scenario> configuration)
+    {
+        Alba.IScenarioResult result = null!;
+        var tracked = await Host.ExecuteAndWaitAsync(async () =>
+        {
+            result = await Host.Scenario(configuration);
+        });
+        return (tracked, result);
     }
 
     // ─── M3-S5b saga seed helpers ─────────────────────────────────────────────
