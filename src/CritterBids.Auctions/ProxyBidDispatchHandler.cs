@@ -24,12 +24,13 @@ namespace CritterBids.Auctions;
 /// <see cref="ListingWithdrawn"/>) similarly broadcast to every active proxy on the listing
 /// — each saga terminates independently.</para>
 ///
-/// <para><b>Coexistence with AuctionClosingSaga.</b> The Auction Closing saga subscribes to
-/// <see cref="BidPlaced"/> and <see cref="ListingWithdrawn"/> within the Auctions BC; the
-/// dispatcher's new terminal methods add a second handler for each of
-/// <see cref="ListingSold"/> / <see cref="ListingPassed"/> / <see cref="ListingWithdrawn"/>.
-/// With <c>MultipleHandlerBehavior.Separated</c>, each handler runs on its own sticky local
-/// queue; tests dispatching these events must use <c>SendMessageAndWaitAsync</c> rather
+/// <para><b>Coexistence with AuctionClosingSaga.</b> Since the M8 Bug #2 fix, the Auction
+/// Closing saga no longer subscribes to <see cref="BidPlaced"/> / <see cref="ListingWithdrawn"/>
+/// directly — <see cref="AuctionClosingDispatchHandler"/> bridges them (same Path-C shape as
+/// this dispatcher), so the contract-event chains hold only plain sticky handlers and the
+/// Separated-mode fan-out reaches every consumer. With
+/// <c>MultipleHandlerBehavior.Separated</c>, each handler runs on its own sticky local
+/// queue; tests dispatching multi-handler events must use <c>SendMessageAndWaitAsync</c> rather
 /// than <c>InvokeMessageAndWaitAsync</c> per the M4-S3 retro and the wolverine-sagas skill
 /// §"Multiple Handlers + Separated — Send, Don't Invoke".</para>
 ///

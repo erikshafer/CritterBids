@@ -16,15 +16,22 @@ namespace CritterBids.Auctions;
 /// no-ops — S5b lands the real close evaluation and outcome-event emission. Terminal-state
 /// handlers (BuyItNowPurchased, ListingWithdrawn) and MarkCompleted() calls are S5b.
 ///
-/// Correlation (M3-S5 OQ1 Path A): Saga.Id = ListingId. Each handler parameter for an
-/// integration event carries [SagaIdentityFrom(nameof(X.ListingId))] — this overrides
-/// Wolverine's default {SagaName}Id convention so the contracts stay unchanged and the
-/// saga id matches the listing id 1:1 as §3 scenarios specify.
+/// Correlation (M3-S5 OQ1 Path A, amended M8 Bug #2): Saga.Id = ListingId. The saga no longer
+/// handles the cross-BC contract events directly — under MultipleHandlerBehavior.Separated,
+/// Wolverine 6.5.1 keeps a single saga type as a contract-event chain's DEFAULT handler, which
+/// suppresses the sticky-handler fan-out and starves every other consumer (Listings / Relay /
+/// Operations) of externally-delivered events. AuctionClosingDispatchHandler bridges each
+/// contract event into a saga-directed Closing*Observed internal command; each handler
+/// parameter carries [SagaIdentityFrom(nameof(X.ListingId))] so the saga id still matches the
+/// listing id 1:1 with zero contract changes. See
+/// docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md.
 ///
-/// Idempotency (M3-S5 OQ2): BidCount monotonicity. BidPlaced is ignored if its BidCount
-/// is ≤ the saga's stored count — DCB guarantees monotonic BidCount per listing, so stale
-/// re-deliveries drop without an allocation-growing hash set. ReserveMet is idempotent by
-/// set-to-true. The Start handler checks for saga existence before creating.
+/// Idempotency (M3-S5 OQ2): BidCount monotonicity. ClosingBidObserved is ignored if its
+/// BidCount is ≤ the saga's stored count — DCB guarantees monotonic BidCount per listing, so
+/// stale re-deliveries (including the once-per-queue bridge fan-out) drop without an
+/// allocation-growing hash set. ClosingReserveMetObserved is idempotent by set-to-true. The
+/// Start handler checks for saga existence before creating. Late deliveries to a completed
+/// (deleted) saga are absorbed by the static NotFound methods.
 ///
 /// Concurrency (M3-S5 OQ3): numeric revisions + the existing
 /// AuctionsConcurrencyRetryPolicies.OnException&lt;ConcurrencyException&gt; policy registered
@@ -43,7 +50,7 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
     public bool ExtendedBiddingEnabled { get; set; }
     public AuctionClosingStatus Status { get; set; } = AuctionClosingStatus.AwaitingBids;
 
-    public void Handle([SagaIdentityFrom(nameof(BidPlaced.ListingId))] BidPlaced message)
+    public void Handle([SagaIdentityFrom(nameof(ClosingBidObserved.ListingId))] ClosingBidObserved message)
     {
         if (message.BidCount <= BidCount) return;
 
@@ -57,13 +64,13 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
         }
     }
 
-    public void Handle([SagaIdentityFrom(nameof(ReserveMet.ListingId))] ReserveMet message)
+    public void Handle([SagaIdentityFrom(nameof(ClosingReserveMetObserved.ListingId))] ClosingReserveMetObserved message)
     {
         ReserveHasBeenMet = true;
     }
 
     public async Task Handle(
-        [SagaIdentityFrom(nameof(ExtendedBiddingTriggered.ListingId))] ExtendedBiddingTriggered message,
+        [SagaIdentityFrom(nameof(ClosingExtendedBiddingObserved.ListingId))] ClosingExtendedBiddingObserved message,
         IMessageBus bus,
         IMessageStore messageStore,
         CancellationToken cancellationToken)
@@ -144,8 +151,18 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
     // emitted instead of AssertSagaStateExistsFrame when a static method by that name exists.
     public static OutgoingMessages NotFound(CloseAuction message) => new();
 
+    // Same convention for the bridge-dispatched observed commands: contract events fan out
+    // once per consuming RabbitMQ queue, so a late copy can arrive after a terminal handler
+    // already MarkCompleted-deleted the saga document (e.g. a ClosingBidObserved racing the
+    // close, or the second/third queue's copy of a terminal event). Absorb silently.
+    public static OutgoingMessages NotFound(ClosingBidObserved message) => new();
+    public static OutgoingMessages NotFound(ClosingReserveMetObserved message) => new();
+    public static OutgoingMessages NotFound(ClosingExtendedBiddingObserved message) => new();
+    public static OutgoingMessages NotFound(ClosingBuyItNowObserved message) => new();
+    public static OutgoingMessages NotFound(ClosingListingWithdrawnObserved message) => new();
+
     public async Task Handle(
-        [SagaIdentityFrom(nameof(BuyItNowPurchased.ListingId))] BuyItNowPurchased message,
+        [SagaIdentityFrom(nameof(ClosingBuyItNowObserved.ListingId))] ClosingBuyItNowObserved message,
         IMessageStore messageStore,
         CancellationToken cancellationToken)
     {
@@ -168,16 +185,16 @@ public sealed class AuctionClosingSaga : Wolverine.Saga
     }
 
     public async Task Handle(
-        [SagaIdentityFrom(nameof(CritterBids.Contracts.Selling.ListingWithdrawn.ListingId))] CritterBids.Contracts.Selling.ListingWithdrawn message,
+        [SagaIdentityFrom(nameof(ClosingListingWithdrawnObserved.ListingId))] ClosingListingWithdrawnObserved message,
         IMessageStore messageStore,
         CancellationToken cancellationToken)
     {
-        // Idempotency — same guard shape as Handle(BuyItNowPurchased). Withdrawal is the
+        // Idempotency — same guard shape as Handle(ClosingBuyItNowObserved). Withdrawal is the
         // "terminate without evaluation" path: no reserve check, no outcome event, no money
         // moves (workshop scenario 3.10; ListingWithdrawn.cs §Consumed by → Auctions BC).
         if (Status == AuctionClosingStatus.Resolved) return;
 
-        // Same explicit-cancel rationale as Handle(BuyItNowPurchased) — Path a from M3-S5b
+        // Same explicit-cancel rationale as Handle(ClosingBuyItNowObserved) — Path a from M3-S5b
         // OQ2. Until a Selling-side publisher lands (deferred per M3 §3), the only producer
         // is the test fixture; cancellation discipline still matters because future producers
         // will inherit this saga's terminal contract unchanged.

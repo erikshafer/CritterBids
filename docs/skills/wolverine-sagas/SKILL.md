@@ -98,7 +98,7 @@ Use this shape when each step depends on the previous step and no external traff
 
 ## Correlation conventions
 
-Prefer a direct saga id on commands (`{SagaName}Id`) or `[SagaIdentityFrom(nameof(Command.SomeId))]` when the inbound contract already carries the saga key.
+Prefer a direct saga id on commands (`{SagaName}Id`) or `[SagaIdentityFrom(nameof(Command.SomeId))]` when the inbound contract already carries the saga key — **but only when the saga is the message type's sole handler** (see the Separated-mode caveat below).
 
 For composite or one-to-many correlation, use a dispatcher command instead of inventing unsupported Wolverine identity resolvers. `ProxyBidManagerSaga.Id` is derived from `(ListingId, BidderId)`, and a single `BidPlaced` can target many proxy sagas, so CritterBids uses:
 
@@ -107,6 +107,35 @@ For composite or one-to-many correlation, use a dispatcher command instead of in
 3. `ProxyBidManagerSaga` correlates normally with `[SagaIdentityFrom(nameof(ProxyBidObserved.SagaId))]`.
 
 This keeps correlation infrastructure out of the original integration contract.
+
+## Separated-mode rule: never let a saga subscribe directly to a multi-consumer contract event
+
+Under `MultipleHandlerBehavior.Separated`, Wolverine 6.5.1 keeps a SINGLE saga type's
+continue-handlers in the chain's default `Handlers` (`SagaChain.maybeAssignStickyHandlers` only
+separates sagas into sticky chains when more than one saga type handles the message). A chain
+with a default handler never fans externally-delivered (RabbitMQ) messages out to the sticky
+local queues the other handlers live on — the saga silently consumes every broker delivery,
+every other consumer starves, the log says "Successfully processed", and nothing dead-letters.
+This was the root cause of M8 Bug #2 (`BidPlaced` never reaching Listings / Relay / Operations).
+
+Rules:
+
+- A saga may handle a message type directly only when the saga is that type's **sole** in-process
+  handler (e.g. a scheduled `CloseAuction`).
+- When a contract event has other consumers, bridge the saga behind an internal dispatcher
+  command — `AuctionClosingDispatchHandler` → `Closing*Observed` is the 1:1 shape (pure
+  translation, no query); `ProxyBidDispatchHandler` → `ProxyBidObserved` is the one-to-many shape.
+- Saga **start** via a separate static handler class is safe: that chain is a plain
+  `HandlerChain`, all handlers go sticky, and fan-out works (this is why `BiddingOpened` never
+  exhibited the bug).
+- Bridge-relayed commands arrive once per consuming queue (at-least-once × fan-out); keep the
+  saga's idempotency guards and add static `NotFound` absorbers for post-completion stragglers.
+
+Root cause analysis + upstream fix proposal:
+`docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md` and
+`docs/research/wolverine-upstream-saga-sticky-separation-handoff.md`. Revisit this rule if the
+upstream fix ships (the bridge remains the preferred design either way — it decouples the saga
+from contract churn).
 
 ## Scheduling rule
 
@@ -140,6 +169,7 @@ If a correlated message can legitimately arrive after completion, add a static `
 - **Premature `MarkCompleted()`.** Closing while a dispute/return/timeout branch is still active drops later compensation messages.
 - **Overwide saga state.** Carrying emission-only fields through the saga increases numeric-revision conflicts and schema churn.
 - **Composite correlation in the public contract.** Derived one-to-many saga ids belong in an internal dispatcher command, not a cross-BC event.
+- **Saga continue-handler on a multi-consumer contract event.** Under `Separated`, the lone saga stays the default handler and silently starves every sticky consumer of broker deliveries (M8 Bug #2) — bridge it via a dispatcher command.
 - **Invoke path in separated mode.** Use send/publish for fanout messages; reserve invoke for a known single handler.
 
 ## See also
