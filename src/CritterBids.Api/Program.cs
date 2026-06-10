@@ -1,3 +1,4 @@
+using CritterBids.Api;
 using CritterBids.Api.Auth;
 using CritterBids.Auctions;
 using CritterBids.Contracts;
@@ -421,6 +422,13 @@ var app = builder.Build();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Commit-time optimistic-concurrency conflicts (DCB consistency check, per-stream appends, saga
+// revisions) surface AFTER an endpoint method returns and Wolverine HTTP chains do not consume
+// failure rules at 6.5.1 — map them to a graceful 409 here (M8-S3a deferred item; see the
+// middleware's docstring and ADR 027's session).
+app.UseMiddleware<ConcurrencyConflictMiddleware>();
+
 app.MapWolverineEndpoints();
 
 // ── Relay SignalR hubs ───────────────────────────────────────────────────────
