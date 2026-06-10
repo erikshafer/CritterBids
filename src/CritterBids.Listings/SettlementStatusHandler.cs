@@ -15,10 +15,13 @@ namespace CritterBids.Listings;
 /// single-source per sibling. Second lived application of the M3-D2 Path A cross-BC
 /// read-model extension pattern formalized by ADR-014 (M5-S6).
 ///
-/// Status-transition guard: only <c>"Sold"</c> → <c>"Settled"</c> is legal.
-/// <c>"Passed"</c> listings never settle (the financial workflow only runs on the sold
-/// paths). Any non-"Sold" arrival state no-ops without throwing — mirrors the M5-S3
-/// <c>PendingSettlementHandler</c> status-preservation discipline.
+/// Status-transition guard (amended M8-S3c): <c>"Settled"</c> is reached from any
+/// pre-terminal status — normally from <c>"Sold"</c>, but under ADR 027's exactly-once
+/// delivery <c>SettlementCompleted</c> can process before <c>ListingSold</c> (they ride
+/// different queues and the settlement pipeline completes in milliseconds), so earlier
+/// statuses take the transition too. The no-sale terminals (<c>"Passed"</c>,
+/// <c>"Withdrawn"</c>) never settle and absorb contradictory arrivals without throwing —
+/// mirrors the M5-S3 <c>PendingSettlementHandler</c> status-preservation discipline.
 ///
 /// Tolerant upsert per <c>marten-projections.md §"Handler-Driven Projections — Tolerant
 /// Upsert"</c>: <c>LoadAsync</c>; if absent (a structurally near-impossible cross-queue
@@ -51,11 +54,16 @@ public static class SettlementStatusHandler
             return;
         }
 
-        // Only the "Sold" → "Settled" transition is legal. "Passed" listings never
-        // produce SettlementCompleted (the failure path emits PaymentFailed instead),
-        // so this guard primarily defends against earlier-phase arrivals from re-delivery
-        // or unexpected queue interleaving.
-        if (existing.Status != "Sold") return;
+        // "Settled" is absorbing (re-delivery no-ops) and the no-sale terminals ("Passed",
+        // "Withdrawn") never produce SettlementCompleted — a contradictory arrival leaves them
+        // untouched. Every pre-terminal status ("Published", "Open", "Closed", "Sold") takes the
+        // transition: under ADR 027's exactly-once delivery, SettlementCompleted (on
+        // listings-settlement-events) can legitimately process BEFORE ListingSold (on
+        // listings-auctions-events) — the settlement pipeline completes in milliseconds — and the
+        // former Sold-only guard left the row stuck at "Sold" forever once the trailing fan-out
+        // duplicates that used to retry the transition disappeared (M8-S3c live verification).
+        // AuctionStatusHandler's outcome handlers preserve an already-Settled row symmetrically.
+        if (existing.Status is "Settled" or "Passed" or "Withdrawn") return;
 
         session.Store(existing with
         {

@@ -88,6 +88,10 @@ public static class AuctionStatusHandler
         var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
             ?? new CatalogListingView { Id = message.ListingId };
 
+        // M8-S3c: Settled is absorbing — SettlementCompleted (listings-settlement-events) can
+        // process before this queue's close signal under exactly-once delivery.
+        if (view.Status == "Settled") return;
+
         // Mechanical close signal — followed by ListingSold or ListingPassed on the
         // timer paths (per S5b retro §"What M3-S6 should know" §3). Not emitted on
         // the BIN or Withdrawn terminal paths.
@@ -109,9 +113,11 @@ public static class AuctionStatusHandler
         // Final outcome on the sold path — preceded by BiddingClosed on the
         // timer path. SoldAt overrides any prior ClosedAt set by BiddingClosed
         // so the catalog reflects the terminal time of sale.
+        // M8-S3c: an already-Settled row keeps its terminal (SettlementCompleted on the other
+        // queue can process first under exactly-once delivery); the sale payload still lands.
         session.Store(view with
         {
-            Status      = "Sold",
+            Status      = view.Status == "Settled" ? "Settled" : "Sold",
             HammerPrice = message.HammerPrice,
             WinnerId    = message.WinnerId,
             BidCount    = message.BidCount,
@@ -152,9 +158,11 @@ public static class AuctionStatusHandler
         // §"What M3-S6 should know" §5). Status transitions directly from
         // any prior state ("Published" or "Open") to "Sold". HammerPrice
         // captures the BIN price; WinnerId is the buyer.
+        // M8-S3c: an already-Settled row keeps its terminal (the BIN settlement pipeline can
+        // outrun this queue's copy under exactly-once delivery); the sale payload still lands.
         session.Store(view with
         {
-            Status      = "Sold",
+            Status      = view.Status == "Settled" ? "Settled" : "Sold",
             HammerPrice = message.Price,
             WinnerId    = message.BuyerId,
             ClosedAt    = message.PurchasedAt
