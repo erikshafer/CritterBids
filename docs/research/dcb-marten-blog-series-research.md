@@ -883,7 +883,8 @@ M4-S3 `ProxyBidManagerSaga` dispatcher-bridge (adopted for composite-key correla
 immunized that saga against this bug; `AuctionClosingSaga`'s direct subscription stepped in it.
 
 **Secondary upstream finding:** `wolverine-diagnostics describe-routing <type> --explain` NREs at
-`MessageRoute.Describe()` (MessageRoute.cs:204) in this app (null-`Sender` route in description
+`MessageRoute.Describe()` (MessageRoute.cs:204) in this app (description-mode route with
+null-tolerant members; the throwing dereference is the route's `Serializer`, per independent review
 mode) — small separate bug; the live `PreviewSubscriptions` probe was the workaround.
 
 ---

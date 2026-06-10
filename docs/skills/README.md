@@ -55,6 +55,7 @@ each lost 70–90% of its bulk by deferring generic content upstream while keepi
 | [`polecat-event-sourcing`](./polecat-event-sourcing/SKILL.md) | polecat | 📚 Reference | Not used (ADR 011 all-Marten); kept for post-feature-complete + siblings |
 | [`critter-stack-testing-patterns`](./critter-stack-testing-patterns/SKILL.md) | testing | ✅ Lean | 5 CritterBids-only patterns incl. `IWolverineExtension` cross-BC isolation |
 | [`diagnostics`](./diagnostics/SKILL.md) | observability | ✅ Lean | Source-verified CLI; corrects two ai-skills errors |
+| [`message-flow-diagnosis`](./message-flow-diagnosis/SKILL.md) | observability | ✅ Lean | Live delivery tracing: publish-vs-consume tree, `PreviewSubscriptions` probe, log signatures, envelope-table semantics (M8 Bug #2) |
 | [`observability`](./observability/SKILL.md) | observability | 🟡 Placeholder | OTEL/Prometheus/Grafana scaffold; extend on first Hetzner deploy |
 | [`adding-bc-module`](./adding-bc-module/SKILL.md) | infrastructure | ✅ Lean | Modular-monolith BC registration procedure |
 | [`csharp-coding-standards`](./csharp-coding-standards/SKILL.md) | core | ✅ Lean | `sealed record`, `IReadOnlyList<T>`, no "Event" suffix, `BidderId` not paddle |
@@ -103,6 +104,8 @@ Paths resolve to `<name>/SKILL.md`. The **Secondary** column is supporting conte
 | Inspecting full app configuration | `diagnostics` | — |
 | Debugging "why is my handler not firing?" | `diagnostics` | `wolverine-message-handlers` |
 | Debugging "why is `tracked.Sent.MessagesOf<T>()` zero?" | `diagnostics` | `wolverine-message-handlers` |
+| Tracing "message produced but consumer never saw it" (integrated host) | `message-flow-diagnosis` | `diagnostics` |
+| Verifying live routing of a type (incl. `Event<T>` forwarding wrappers) | `message-flow-diagnosis` | — |
 | Inspecting retry / circuit-breaker policies | `diagnostics` | — |
 | Schema drift check for CI / pre-deploy verification | `diagnostics` | `aspire` |
 

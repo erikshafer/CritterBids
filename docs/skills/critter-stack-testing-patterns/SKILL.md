@@ -70,7 +70,7 @@ Host = await AlbaHost.For<Program>(builder =>
 
 Use the Alba `Scenario` pattern for JSON responses. `IAlbaHost.GetAsJson<T>()` does not exist in Alba 8.5.2.
 
-## Five CritterBids-only patterns to preserve
+## Six CritterBids-only patterns to preserve
 
 ### 1. Cross-BC handler isolation via `IWolverineExtension` exclusion
 
@@ -176,6 +176,27 @@ protected override Task<AuthenticateResult> HandleAuthenticateAsync()
 }
 ```
 
+### 6. Fresh-state browser smoke against the live integrated host
+
+Green build + green unit tests + green integration tests have now twice shipped a broken end-to-end
+flow (M8-S2: session POST missing its JSON body; M8 Bug #2 fix-up: session bootstrap dropped under
+StrictMode, live-feed ghost entries). The class of bug is the same each time: mocked-fetch unit
+tests verify *response handling*, not request shape, React effect lifecycle, or push-delivery
+semantics — and isolated-BC integration fixtures replace the exact transport behavior under test
+(`DisableAllExternalWolverineTransports`). Before declaring a user-facing slice done:
+
+- **Run the SPA against the live Aspire host and drive it in a real browser** (the bugs only exist
+  where the layers meet).
+- **Start from fresh state**: new browser contexts (fresh `sessionStorage`/`localStorage`) per
+  simulated user. Cached session ids masked the StrictMode bootstrap bug across an entire milestone.
+- **Use one context per simulated participant** for cross-client behaviors (live feed, outbid push) —
+  two tabs in one context share storage and therefore share a session.
+- **Watch the console**: React duplicate-key warnings and SignalR negotiation errors are findings,
+  not noise.
+- Zero-install scripting recipe: `npm i playwright-core` in a throwaway directory +
+  `chromium.launch({ channel: "msedge" })` drives the system Edge headless — no browser download, no
+  admin rights. See the walkthrough scripts pattern in the M8 Bug #2 fix-up session (PR #90).
+
 ## Common pitfalls
 
 - **Registering only `AddMarten()` in a fixture.** The BC module's `ConfigureMarten()` contributions and services are missing; register both `AddMarten()` and `AddXyzModule()` in `ConfigureServices`.
@@ -183,6 +204,7 @@ protected override Task<AuthenticateResult> HandleAuthenticateAsync()
 - **Using direct handler calls for persistence assertions.** Direct calls skip `AutoApplyTransactions` and outbox behavior.
 - **Assuming test parallelism is harmless.** Shared PostgreSQL + Marten cleanup creates cross-test interference unless every suite has deterministic stream IDs/data isolation. Default to sequential.
 - **Using old Polecat fixture patterns.** CritterBids is all-Marten; Polecat fixture notes are archival only.
+- **Declaring a user-facing slice done on green tests alone.** Run the fresh-state browser smoke (pattern 6); request-contract, effect-lifecycle, and push-delivery bugs are invisible to mocked and isolated-fixture tests.
 
 ## See also
 
