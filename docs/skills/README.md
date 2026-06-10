@@ -46,6 +46,7 @@ each lost 70–90% of its bulk by deferring generic content upstream while keepi
 | [`wolverine-sagas`](./wolverine-sagas/SKILL.md) | wolverine | ✅ Lean | `MarkCompleted` on all terminal states, doc-saga vs ES aggregate, `ScheduleAsync` |
 | [`integration-messaging`](./integration-messaging/SKILL.md) | wolverine | ✅ Lean | Per-BC queue/durability posture, Settlement/Relay breakers, `DeliverWithin` rule |
 | [`wolverine-signalr`](./wolverine-signalr/SKILL.md) | wolverine | ✅ Lean | Raw-record `ReceiveMessage` contract (no CloudEvents), hub auth incl. the v7+ `accessTokenFactory` client consequence, group/dedupe posture |
+| [`wolverine-http-frontend-contract`](./wolverine-http-frontend-contract/SKILL.md) | wolverine | ✅ Lean | Browser-side wire contract (M8): JSON-body-required command POSTs, `CreationResponse` Location id, STJ wire shapes, ProblemDetails `reason` codes, `[]`-never-404, no-auto-retry rule |
 | [`marten-event-sourcing`](./marten-event-sourcing/SKILL.md) | marten | ✅ Lean | UUID v7 identity, single-`AddMarten` wiring, `AutoApplyTransactions`, lessons L1–L9 |
 | [`marten-projections`](./marten-projections/SKILL.md) | marten | ✅ Lean | Combined native + EF Core, tolerant upsert, seeded caches |
 | [`marten-querying`](./marten-querying/SKILL.md) | marten | ✅ Lean | Schema-per-BC, streaming JSON, compiled-query posture |
@@ -90,6 +91,7 @@ Paths resolve to `<name>/SKILL.md`. The **Secondary** column is supporting conte
 | DCB boundary model | `dynamic-consistency-boundary` | `marten-event-sourcing` |
 | Integration event (cross-BC) | `integration-messaging` | `domain-event-conventions` |
 | SignalR hub + real-time push | `wolverine-signalr` | — |
+| HTTP endpoint a SPA consumes / frontend code calling `/api/*` | `wolverine-http-frontend-contract` | `.claude/skills/frontend-slice-discipline` |
 | Broadcast live view via projection side effect | `projection-side-effects-for-broadcast-live-views` | `wolverine-signalr` |
 | Derived domain event from projection state | `projection-side-effects-for-broadcast-live-views` | `marten-event-sourcing` |
 | New BC module registration | `adding-bc-module` | `marten-event-sourcing` |
@@ -124,8 +126,10 @@ Paths resolve to `<name>/SKILL.md`. The **Secondary** column is supporting conte
 
 ### Frontend
 
-CritterBids' frontend skill coverage lives on **two shelves, neither of which is this `docs/skills/`
-library** — which is why there is no `react-frontend` skill here:
+CritterBids' frontend skill coverage spans **three shelves**. Generic mechanics stay global,
+project-specific client conventions and working process are project-scoped, and the one
+Critter-Stack-coupled piece lives in this library — which is why there is still no general
+`react-frontend` skill here:
 
 - **Generic React + stack mechanics** → **global auto-activating skills** installed at
   `%USERPROFILE%\.claude\skills\`: `vercel-react-best-practices`, `vercel-composition-patterns`,
@@ -137,6 +141,14 @@ library** — which is why there is no `react-frontend` skill here:
   per-hub auth including the `OperationsHub` `skipNegotiation` credential dance, the dev-proxy URL
   rule, and push-fed dedupe rules). It is the client-side companion to the server-side
   `wolverine-signalr` skill in this library.
+- **Frontend working discipline** → the project-scoped, auto-activating
+  **`.claude/skills/frontend-slice-discipline/SKILL.md`** (M8 distillation: read the lived backend
+  first, render the lived subset + record carry-forwards, verify the installed toolchain, the
+  live-smoke playbook, recurring test conventions).
+- **The Wolverine.HTTP wire contract as seen from the browser** →
+  [`wolverine-http-frontend-contract`](./wolverine-http-frontend-contract/SKILL.md) in **this**
+  library (cluster `wolverine`) — Critter-Stack-coupled, dual-audience (frontend agents and
+  endpoint authors), and portable to sibling Critter Stack projects.
 
 | Task | Skill |
 |---|---|
