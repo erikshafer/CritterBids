@@ -2,13 +2,14 @@
 name: signalr
 description: >-
   CritterBids React SignalR client conventions for the bidder and ops SPAs
-  (client/bidder, client/ops). Covers the useBiddingHub connection-lifecycle hook,
-  HubConnection build/start/reconnect/teardown, the ReceiveMessage raw-record
-  contract (ADR-023 — NO CloudEvents envelope), per-hub auth (anonymous BiddingHub
-  vs StaffToken OperationsHub access_token negotiate, ADR-024), same-origin /hub
-  URLs via the Vite dev proxy (ADR-025), and the forthcoming SignalR → TanStack
-  Query cache bridge (ADR-014, built M8-S3). Use when writing, reviewing, or
-  debugging SignalR client code in the CritterBids frontend.
+  (client/bidder, client/ops). Covers the ADR-026 integration pattern (app-wide
+  SignalRProvider Context + useListen + TanStack Query cache bridge), the
+  ReceiveMessage raw-record contract and its Zod normalization (ADR-023 — NO
+  CloudEvents envelope, no wire discriminator), per-hub auth (anonymous BiddingHub
+  vs StaffToken OperationsHub — accessTokenFactory + skipNegotiation, ADR-024),
+  same-origin /hub URLs via the Vite dev proxy (ADR-025), and push-fed dedupe
+  rules. Use when writing, reviewing, or debugging SignalR client code in the
+  CritterBids frontend.
 ---
 
 # CritterBids SignalR — React Client
@@ -16,7 +17,7 @@ description: >-
 > The **client** side of CritterBids real-time. The **server** side (Relay hubs,
 > handlers, group targeting, the broadcast architecture) lives in the backend skill
 > `docs/skills/wolverine-signalr/SKILL.md`. This skill documents only what runs in
-> the browser: the `HubConnection`, its lifecycle, the wire contract the client
+> the browser: the connection ownership pattern, the wire contract the client
 > deserializes, per-hub auth, and how pushes reach the UI.
 >
 > Generic `@microsoft/signalr` API mechanics are well-trained; reach for `find-docs`
@@ -26,223 +27,230 @@ description: >-
 ## When to apply
 
 - Writing or editing any `HubConnection` code in `client/bidder/` or `client/ops/`.
-- Adding a live-update hook (bid feed, outbid banner, ops board refresh).
-- Wiring the `OperationsHub` staff-token connection (M8-S5).
-- Bridging hub pushes into the TanStack Query cache (M8-S3+, ADR-014).
-- Debugging "the connection drops" / "the payload is `undefined`" / "ghost connections".
+- Adding a live-update surface (bid feed, outbid banner, ops board refresh).
+- Touching the `OperationsHub` staff-token connection or the auth gate around it.
+- Bridging hub pushes into the TanStack Query cache (ADR-026).
+- Debugging "the connection drops" / "the payload is `undefined`" / "401 on connect" /
+  "ghost connections" / duplicate feed entries.
 
 Do **not** use this for backend hub/handler/group-routing work — that is
 `docs/skills/wolverine-signalr/SKILL.md` and ADR-023.
 
 ## The two hubs
 
-| Hub | URL | Audience | Client auth | Built in |
+| Hub | URL | Audience | Client auth | Lived code |
 |---|---|---|---|---|
-| `BiddingHub` | `/hub/bidding` | public bidders | **none** (anonymous) | `client/bidder/` — proof exists (M8-S1); live feed M8-S3 |
-| `OperationsHub` | `/hub/operations` | staff/operators | `StaffToken` via `access_token` on negotiate (ADR-024) | `client/ops/` — M8-S5 (not yet built) |
+| `BiddingHub` | `/hub/bidding` | public bidders | **none** (anonymous) | `client/bidder/src/signalr/` (full ADR-026 pattern, M8-S3b) |
+| `OperationsHub` | `/hub/operations` | staff/operators | `StaffToken` via `accessTokenFactory` + `skipNegotiation` (see § Per-hub auth) | `client/ops/src/signalr/` (S5 plumbing; cache bridge arrives M8-S6) |
 
 Both are **outbound-only** in CritterBids: the server pushes, the client listens.
 Client→server actions (placing a bid) go through **HTTP endpoints**, not the hub.
 Do not reach for `connection.invoke(...)` / `connection.send(...)` to mutate state —
-that is not how CritterBids is wired (ADR-023 §Request/reply posture).
+the only invokes are the BiddingHub group joins (`JoinListingGroup` / `JoinBidderGroup`).
 
-## Connection lifecycle — the canonical hook
+## The integration pattern (ADR-026) — one Provider, hooks, cache bridge
 
-The established shape is `client/bidder/src/useBiddingHub.ts`. **One `HubConnection`
-per hook, lifetime tied to the component** (start on mount, stop on unmount). Copy
-this skeleton for any new live-update hook:
+**One app-wide `HubConnection` per SPA, owned by a Provider Context mounted above the
+router.** This superseded M8-S2's `useBiddingHub` (a connection per component) — do
+not copy any per-component-connection hook; it predates ADR-026.
 
-```typescript
-useEffect(() => {
-  const connection = new HubConnectionBuilder()
-    .withUrl("/hub/bidding")          // same-origin; see URL rule below
-    .withAutomaticReconnect()         // non-negotiable (ADR-013)
-    .configureLogging(LogLevel.Information)
-    .build();
+The three parts (bidder reference implementation in `client/bidder/src/signalr/`):
 
-  const syncStatus = () => setStatus(connection.state);
+1. **`SignalRProvider`** (`SignalRProvider.tsx`) — builds the connection
+   (`.withAutomaticReconnect()` non-negotiable, single `ReceiveMessage` handler),
+   owns start/stop in one mount-scoped effect, re-joins watched groups on reconnect,
+   exposes `status` / `lastError` and a `subscribe` fan-out. The connection factory
+   is injectable (`createConnection` prop) so tests drive pushes through a fake
+   connection without touching the production path.
+2. **`useListen(handler)`** (`hooks.ts`) — component subscription to **parsed**
+   messages, handler held in a ref so the subscription registers once. For
+   **transient affordances only** (activity ticker, toast) — never to render payload
+   fields as authoritative state. Companions: `useHubConnectionState()`,
+   `useWatchListing(id)`.
+3. **The TanStack Query cache bridge** (`cacheBridge.ts`) — the load-bearing rule:
+   **a hub push is a "something changed, refetch" signal, never authoritative data.**
+   `applyHubMessage(queryClient, message)` translates every parsed message into
+   `invalidateQueries` calls (`["listing", id]`, `["catalog"]`); the query functions
+   re-fetch the authoritative read model. The Provider runs the bridge **first**,
+   then fans out to `useListen` subscribers — by the time a listener runs, the
+   re-query is already in flight. No push field is ever written into the cache as
+   truth. (Bidder optimistic updates are a separate concern: a *local* optimistic
+   bid reconciled against the HTTP 200 and rolled back on rejection is your own
+   write, not a hub payload.)
 
-  connection.on("ReceiveMessage", (payload: unknown) => { /* see contract below */ });
+The ops app replicates the Provider shape with the staff credential
+(`client/ops/src/signalr/SignalRProvider.tsx`); its parse surface + cache bridge are
+M8-S6 work. When the ops app becomes the second full consumer, the shared pieces move
+to `client/shared/` (ADR-025) — until then, small duplication (`RECEIVE_MESSAGE`) is
+tolerated.
 
-  connection.onreconnecting(error => { setLastError(error?.message ?? "reconnecting"); syncStatus(); });
-  connection.onreconnected(()    => { setLastError(null); syncStatus(); });
-  connection.onclose(error       => { setLastError(error?.message ?? null); syncStatus(); });
-
-  let cancelled = false;            // guards setState after unmount
-  setStatus(HubConnectionState.Connecting);
-  connection.start()
-    .then(()    => { if (!cancelled) { setLastError(null); syncStatus(); } })
-    .catch(err  => { if (!cancelled) { setLastError(/* message */); syncStatus(); } });
-
-  return () => { cancelled = true; void connection.stop(); };  // MANDATORY cleanup
-}, []);                              // empty deps — connection is created once
-```
-
-Non-negotiable lifecycle rules:
-
-1. **Always return a cleanup that calls `connection.stop()`.** Without it, React
-   Strict Mode's double-mount and every remount leak a live socket ("ghost
-   connections"). This is the single most common SignalR-client bug.
-2. **`.withAutomaticReconnect()` always** (ADR-013). Conference Wi-Fi drops; the
-   client must recover without a page reload.
-3. **Guard async `setState` with a `cancelled` flag.** `start()` resolves
-   asynchronously; the component may already be unmounted. Setting state on an
-   unmounted component is a bug the flag prevents.
-4. **Empty dependency array.** The connection is built once for the component's
-   life. If the URL/group must change (e.g. switch which listing you watch),
-   prefer tearing down and rebuilding via a keyed remount over mutating a live
-   connection.
-5. **Surface `connection.state` to the UI.** Bidders need to see Connecting /
-   Connected / Reconnecting / Disconnected — a silent dead socket erodes trust in
-   a live-bidding UX.
+Live beats are **derived from view transitions, not push payloads**: "outbid" =
+the held participant was high bidder and the re-queried view's `currentHighBidderId`
+flipped away; "extended bidding" = `scheduledCloseAt` moved later; "you won" =
+terminal status + `winnerId` match. There is **no server `Outbid` push** — do not
+wait for one.
 
 ## URL & dev-proxy rule (ADR-025)
 
 **Always use a same-origin relative path: `/hub/bidding`, `/hub/operations`.**
 Never hardcode `http://localhost:5180` or any absolute origin.
 
-- **Dev:** the Vite dev server proxies `/api` and `/hub` (with `ws: true`) to the
-  API host at `:5180`. The browser stays same-origin, so there is no CORS and the
+- **Dev:** each SPA's Vite dev server proxies `/api` and `/hub` (with `ws: true`) to
+  the API host at `:5180`. The browser stays same-origin, so there is no CORS and the
   WebSocket upgrade tunnels through the proxy. This is why no `AddCors`/`UseCors`
-  exists on the API host — do not add one to "fix" a dev connection problem;
-  check the Vite proxy config instead.
+  exists on the API host — do not add one to "fix" a dev connection problem; check
+  the Vite proxy config instead. Both SPAs run simultaneously (bidder `:5173`, ops
+  `:5174` at base `/ops/`).
 - **Prod:** each SPA is served from the same host that maps the hubs, so the same
   relative path resolves directly.
 
-## The `ReceiveMessage` contract (ADR-023) — read carefully
+## The `ReceiveMessage` contract (ADR-023) and its normalization (ADR-026)
 
 The server method name is **`ReceiveMessage`** for every push, on both hubs.
-
 **The payload is the raw notification record, delivered directly. There is NO
-CloudEvents envelope.** ADR-023 chose plain-Hub direct `IHubContext` push (path b)
-and explicitly rejected the Wolverine SignalR *transport* (path a) that would have
-wrapped messages in a CloudEvents envelope.
+CloudEvents envelope** — no `.type`, no `.data`, nothing to `.split(".")`.
+
+**There is also no wire discriminator.** The lived Relay contract is heterogeneous
+(M8-S3b finding): some records carry an `eventType` string, others are distinguished
+only structurally (presence of `bidId` vs `winnerId` vs `settlementId`). The client
+therefore normalizes at the boundary — `parseHubMessage(payload)`
+(`client/bidder/src/signalr/messages.ts`) tries Zod schemas most-specific-first and
+returns one discriminated union with a client-assigned `kind`
+(`bidPlaced | listingSold | settlementCompleted | bidderEvent | listingEvent`), or
+**`null` for an unrecognized shape** — logged-and-ignored, never thrown, so a future
+notification type cannot tear down the connection.
 
 ```typescript
-// ✅ CORRECT (ADR-023 path b) — the handler argument IS the domain record
-connection.on("ReceiveMessage", (notification: unknown) => {
-  // validate notification through a Zod schema (ADR-013), then use it
+// ✅ The Provider's single handler (ADR-026): parse → bridge → fan out.
+connection.on(RECEIVE_MESSAGE, (payload: unknown) => {
+  const message = parseHubMessage(payload);
+  if (message === null) return;          // forward-compatible: ignore unknown shapes
+  applyHubMessage(queryClient, message);  // re-query FIRST
+  for (const listener of listeners) listener(message);
 });
 ```
 
-```typescript
-// ❌ WRONG — this is path-(a) envelope code that ADR-023 REJECTED.
-// CritterBids payloads have no `.type` and no `.data`; both are undefined.
-connection.on("ReceiveMessage", cloudEvent => {
-  const typeName = (cloudEvent.type ?? "").split(".").pop();  // always undefined here
-  const data = cloudEvent.data;                                // always undefined here
-});
-```
-
-> The backend skill `docs/skills/wolverine-signalr/SKILL.md` documents the matching
-> server side of this contract (raw record on `ReceiveMessage`, no CloudEvents
-> envelope) and now agrees with this skill. **ADR-023 is the authority** if anything
-> ever drifts. If you find an older `cloudEvent.type` / `.split(".").pop()` snippet
-> anywhere, it predates ADR-023's path-(b) decision and is wrong for the CritterBids
-> client — do not copy it.
-
-### Open question — message-type discrimination (M8-S3)
-
-Because there is no envelope `type`, how the client distinguishes a `BidPlaced`
-from a `BidderOutbid` (both arriving on `ReceiveMessage`) is **not yet pinned
-down** — the proof hook captures the payload untyped on purpose. The discriminator
-(a field on the record, or distinct hub-method names) **plus** the Zod schema that
-validates each shape at the wire boundary is **M8-S3 live-bidding work**. Do not
-invent a discrimination scheme here; resolve it in M8-S3 against the actual Relay
-notification records and record it in ADR-014. When in doubt, confirm the record
-shapes against `CritterBids.Relay`'s notification types and ADR-023.
+Wire facts: System.Text.Json web defaults — camelCase keys, decimals as JSON numbers,
+Guids/DateTimeOffsets as strings. Confirm record shapes against
+`src/CritterBids.Relay/Notifications/` before adding a schema; the rest of the app
+switches on `kind` only.
 
 ## Per-hub auth
 
 ### BiddingHub — anonymous
 
-No credential. The hub is `[AllowAnonymous]`; the proof connects with a bare
-`.withUrl("/hub/bidding")`. Send no token.
+No credential. The proof is a bare `.withUrl("/hub/bidding")`. Send no token.
 
-### OperationsHub — StaffToken (ADR-024), built M8-S5
+### OperationsHub — StaffToken (ADR-024), lived shape from M8-S5
 
-SignalR clients **cannot set custom headers on the negotiate POST**, so the staff
-credential rides as the `access_token` **query string** on negotiate. The
-`@microsoft/signalr` client does this for you via `accessTokenFactory`:
+The backend `StaffToken` scheme reads the hub credential **only** from the
+`access_token` query string on the `/hub/operations` path (and the `X-Staff-Token`
+header on every other path; never a query string on HTTP).
+
+**The v7+ client transport trap:** since SignalR 7, `@microsoft/signalr` delivers
+`accessTokenFactory` tokens to HTTP requests — **including the negotiate POST** — as
+an `Authorization: Bearer` header (`AccessTokenHttpClient`); the `access_token`
+query parameter is appended **only to the browser WebSocket upgrade**, where headers
+are impossible. Against a query-string-only scheme, a default negotiate-first
+`start()` therefore **401s before any WebSocket opens**. The lived resolution:
 
 ```typescript
 new HubConnectionBuilder()
-  .withUrl("/hub/operations", { accessTokenFactory: () => getStaffToken() })
+  .withUrl("/hub/operations", {
+    transport: HttpTransportType.WebSockets,
+    skipNegotiation: true,                       // the WS upgrade — the request that
+    accessTokenFactory: () => getStaffToken(),   // carries ?access_token= — is the
+  })                                             // connection's ONLY request
   .withAutomaticReconnect()
   .build();
 ```
 
-Rules:
+Trade-offs, accepted for the staff dashboard: no SSE/long-polling fallback, and
+`skipNegotiation` is incompatible with Azure SignalR Service. The post-MVP
+alternative is the backend scheme learning the Bearer-header read (the recorded
+ADR-024 JWT migration path) — a backend change, escalated, never a frontend
+workaround beyond the above.
 
-- The staff token comes **from config, never hardcoded** (ADR-024). `getStaffToken()`
-  reads it from the app's configured source; it is the same `StaffToken` used as the
-  `X-Staff-Token` **header** on staff HTTP calls.
-- Header for HTTP, `access_token` query string for the hub negotiate — two transports,
-  one secret.
-- Handle **401** (missing/invalid token). **403 is structurally unreachable** under
-  the single-shared-secret posture, so don't build a 403 branch.
+Rules around the credential (lived in `client/ops/src/auth/`):
 
-(`client/ops/` does not exist yet — this is the prescribed shape for M8-S5, grounded
-in ADR-024 and the library's documented `accessTokenFactory`, not yet lived code.)
+- **One secret, two transports:** the same token rides `X-Staff-Token` on staff HTTP
+  (via `createStaffFetch`) and `access_token` on the hub upgrade. Never hardcode it;
+  the operator enters it at the auth gate and it is held in `sessionStorage`.
+- **Validate before storing.** Browsers report a 401 WS upgrade as an opaque
+  `close 1006` with no status — the hub cannot tell you "wrong token." The gate
+  therefore probes a real staff GET (`/api/operations/lot-board`) with the candidate
+  in `X-Staff-Token` **before** storing it: 2xx → store, 401 → "rejected" at the
+  gate, 5xx/network → "API unreachable" (distinct from a wrong token).
+- **Mount the credentialed Provider inside the auth gate.** No token → no connection
+  attempt; clearing the token unmounts the Provider, whose effect cleanup stops the
+  connection. No token-change reconnect logic needed — a token change is a remount.
+- **Every 401 clears the stored token and re-shows the gate** (`createStaffFetch`
+  funnels them). **403 is structurally unreachable** under the single-shared-secret
+  posture — don't build a 403 branch.
 
-## SignalR → TanStack Query cache bridge — STUB (ADR-014, M8-S3)
+## Push-fed surfaces must dedupe (at-least-once reaches the browser)
 
-**Not yet designed or built. Do not author the bridge from this skill.**
+The broker topology can deliver an integration event to Relay more than once, and a
+SignalR push has no server-side absorption — duplicates reach the browser. For any
+transient push-fed UI (feeds, tickers):
 
-Current reality: the proof hook holds messages in local `useState`; `client/bidder/`
-has **no TanStack Query dependency** at all. The integration pattern — a
-`SignalRProvider` Context, a `useListen(event, handler)` hook, and the bridge into
-the TanStack Query cache — is **deferred to ADR-014** (ADR-013 §Deferred Questions),
-authored at **M8-S3** when the first hub is wired into the real app. Its code will
-live in the planned `client/shared/` (the frontend analogue of `CritterBids.Contracts`).
-
-The **one constraint already decided** that the bridge must honor:
-
-> **A hub push is a "re-query" signal, not authoritative data.** Treat
-> `ReceiveMessage` as cache invalidation — `queryClient.invalidateQueries(...)` for
-> the affected key — and refetch the authoritative HTTP endpoint. **Do not render
-> the push payload as truth** and do not treat it as read-your-own-write. This is the
-> M7 §5 eventual-consistency contract between Relay push and the read models
-> (`docs/milestones/M7-operations-bc.md` §5; M8 milestone §"Relay push = re-query").
->
-> (Bidder optimistic updates are a separate concern: a *local* optimistic bid with
-> rollback on HTTP rejection is fine; that is your own write, not a hub payload.)
-
-When M8-S3 lands ADR-014, replace this stub with the lived pattern and cross-link it.
+- **Dedupe by the notification's identity field** (`BidPlacedNotification.BidId`),
+  bounded (capped seen-set — see `client/bidder/src/bidding/LiveActivity.tsx`).
+  A timestamp is NOT an identity: duplicate copies share `occurredAt`.
+- **Never derive React list keys from timestamps or list length** — duplicate keys
+  corrupt keyed reconciliation and strand ghost DOM nodes.
+- Authoritative surfaces are naturally idempotent: the cache bridge re-queries the
+  read model, and invalidating twice is harmless.
 
 ## Pitfalls
 
-- **Missing `connection.stop()` cleanup** → ghost connections (the #1 bug).
+- **Default negotiate against the `OperationsHub`** → 401 before any socket opens;
+  `accessTokenFactory` puts a Bearer header on negotiate, which the scheme does not
+  read. Use `skipNegotiation: true` + WebSockets (§ Per-hub auth).
+- **Treating a hub start failure as an auth signal** → a browser 401 upgrade is an
+  opaque 1006; auth detection belongs on an HTTP probe with `X-Staff-Token`.
+- **A connection per component / per hook** → superseded by the ADR-026 app-wide
+  Provider; multiple redundant sockets per client.
+- **Missing `connection.stop()` in the Provider's effect cleanup** → ghost
+  connections. (In dev, StrictMode's double-mount logs one benign
+  `Failed to start the HttpConnection before stop() was called` from the torn-down
+  first connection — expected noise, not a bug, provided the cleanup exists.)
 - **Copying any `cloudEvent.type` / `.split(".")` snippet** → `undefined` on every
   branch; the payload is the raw record (ADR-023).
+- **Switching on a wire `type`/discriminator field** → none exists; parse through
+  `parseHubMessage` and switch on the client-assigned `kind`.
+- **Rendering a push payload as authoritative state** → violates the re-query
+  contract; the bridge invalidates and the query re-fetches.
 - **Hardcoding `http://localhost:5180`** → breaks the same-origin dev proxy and prod;
   use relative `/hub/...`.
-- **Adding `AddCors`/`UseCors` to the API host** to fix a dev connection → wrong layer;
-  the Vite proxy (ADR-025) is the mechanism. A backend CORS change is escalated, not
-  made silently.
-- **Hardcoding the staff token** → ADR-024 violation; read from config.
-- **Rendering a push payload as authoritative state** → violates the M7 §5 re-query
-  contract; invalidate + refetch instead.
-- **`connection.invoke(...)` to place a bid** → bids go over HTTP; the hub is
-  outbound-only.
-- **Inventing a message-type discriminator** before M8-S3 → confirm the real Relay
-  record shapes first.
+- **Adding `AddCors`/`UseCors` to the API host** to fix a dev connection → wrong
+  layer; the Vite proxy (ADR-025) is the mechanism.
+- **`connection.invoke(...)` to mutate state** → commands go over HTTP; the hubs are
+  outbound-only (group joins are the only invokes).
+- **Timestamp- or length-derived React keys on push-fed lists** → duplicate keys;
+  dedupe by message identity.
 
 ## See also
 
 - **`docs/skills/wolverine-signalr/SKILL.md`** — the server side (Relay hubs,
-  handlers, group keys, broadcast architecture). It states the same raw-record wire
-  contract; both skills agree per ADR-023.
+  handlers, group keys, broadcast architecture). Same wire-contract story; keep the
+  two in sync.
 - **ADR-023** (`docs/decisions/023-relay-reactive-broadcast-architecture.md`) — plain
-  Hub + direct `IHubContext`, no CloudEvents envelope. The wire-contract authority.
-- **ADR-024** (`docs/decisions/024-staff-token-authentication.md`) — StaffToken,
-  `X-Staff-Token` header vs `access_token` negotiate query string.
+  Hub + direct `IHubContext`, raw record on `ReceiveMessage`. The wire-contract
+  authority.
+- **ADR-026** (`docs/decisions/026-signalr-integration-pattern.md`) — the Provider +
+  `useListen` + cache-bridge pattern this skill summarizes; resolved ADR-013's
+  deferred question (early docs called it "ADR-014" — that number belongs to the
+  Cross-BC Read-Model Extension Shape; 026 is correct).
+- **ADR-024** (`docs/decisions/024-staff-auth-posture-resumption.md`) — StaffToken:
+  `X-Staff-Token` header for HTTP, `access_token` query string for the hub path.
 - **ADR-025** (`docs/decisions/025-spa-monorepo-layout.md`) — `client/` layout, Vite
-  dev proxy (`ws: true`), build-output integration.
-- **ADR-013** (`docs/decisions/013-frontend-core-stack.md`) — `@microsoft/signalr`,
-  TanStack Query, Zod-at-the-boundary; defers the integration pattern to ADR-014.
-- **ADR-014** — SignalR integration pattern (Provider + `useListen` + cache bridge).
-  *Forthcoming, M8-S3.* Update this skill's bridge stub when it lands.
+  dev proxy (`ws: true`), base paths, the planned `client/shared/` home.
+- **Lived reference code:** `client/bidder/src/signalr/` (full pattern),
+  `client/ops/src/signalr/` + `client/ops/src/auth/` (credentialed variant + gate).
+- **M8-S5 retro** (`docs/retrospectives/M8-S5-ops-spa-shell-staff-auth-retrospective.md`)
+  § S5.3 Discovery — the full accessTokenFactory transport analysis with package-source
+  evidence.
 - **Global skills** that auto-activate alongside this one: `tanstack-query-best-practices`
   (the cache bridge), `zod` (wire-boundary validation), `vercel-react-best-practices`
   (hook/effect correctness), `vitest` / `playwright` (testing the live connection).

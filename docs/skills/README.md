@@ -45,7 +45,7 @@ each lost 70–90% of its bulk by deferring generic content upstream while keepi
 | [`wolverine-message-handlers`](./wolverine-message-handlers/SKILL.md) | wolverine | ✅ Lean | Handler shape + AP findings (routing-rule, lambda-factory, InvokeAsync) |
 | [`wolverine-sagas`](./wolverine-sagas/SKILL.md) | wolverine | ✅ Lean | `MarkCompleted` on all terminal states, doc-saga vs ES aggregate, `ScheduleAsync` |
 | [`integration-messaging`](./integration-messaging/SKILL.md) | wolverine | ✅ Lean | Per-BC queue/durability posture, Settlement/Relay breakers, `DeliverWithin` rule |
-| [`wolverine-signalr`](./wolverine-signalr/SKILL.md) | wolverine | ✅ Lean | FQN CloudEvents `type` + client `.split(".").pop()`, group-change posture |
+| [`wolverine-signalr`](./wolverine-signalr/SKILL.md) | wolverine | ✅ Lean | Raw-record `ReceiveMessage` contract (no CloudEvents), hub auth incl. the v7+ `accessTokenFactory` client consequence, group/dedupe posture |
 | [`marten-event-sourcing`](./marten-event-sourcing/SKILL.md) | marten | ✅ Lean | UUID v7 identity, single-`AddMarten` wiring, `AutoApplyTransactions`, lessons L1–L9 |
 | [`marten-projections`](./marten-projections/SKILL.md) | marten | ✅ Lean | Combined native + EF Core, tolerant upsert, seeded caches |
 | [`marten-querying`](./marten-querying/SKILL.md) | marten | ✅ Lean | Schema-per-BC, streaming JSON, compiled-query posture |
@@ -132,9 +132,11 @@ library** — which is why there is no `react-frontend` skill here:
   `tanstack-query-best-practices`, `tailwind`, `shadcn`, `react-hook-form`, `zod`, `vitest`,
   `playwright`, `web-design-guidelines`. They fire automatically when the work matches — no manual load.
 - **CritterBids-specific frontend SignalR client** → the project-scoped, auto-activating
-  **`.claude/skills/signalr/SKILL.md`** (the `useBiddingHub` lifecycle hook, the ADR-023 raw-record
-  `ReceiveMessage` contract, per-hub auth, the dev-proxy URL rule, and the forthcoming ADR-014 cache
-  bridge). It is the client-side companion to the server-side `wolverine-signalr` skill in this library.
+  **`.claude/skills/signalr/SKILL.md`** (the ADR-026 `SignalRProvider` + `useListen` + TanStack Query
+  cache-bridge pattern, the ADR-023 raw-record `ReceiveMessage` contract and its Zod normalization,
+  per-hub auth including the `OperationsHub` `skipNegotiation` credential dance, the dev-proxy URL
+  rule, and push-fed dedupe rules). It is the client-side companion to the server-side
+  `wolverine-signalr` skill in this library.
 
 | Task | Skill |
 |---|---|
