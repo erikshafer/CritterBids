@@ -33,13 +33,23 @@ namespace CritterBids.Auctions;
 /// Start handler checks for saga existence before creating. Late deliveries to a completed
 /// (deleted) saga are absorbed by the static NotFound methods.
 ///
-/// Concurrency (M3-S5 OQ3): numeric revisions + the existing
+/// Concurrency (M3-S5 OQ3, enforced M8-S3c): numeric revisions + the existing
 /// AuctionsConcurrencyRetryPolicies.OnException&lt;ConcurrencyException&gt; policy registered
 /// in AuctionsModule covers saga document writes — no saga-specific retry wiring added.
+/// <b>IRevisioned is load-bearing:</b> Wolverine's Marten saga persistence emits the
+/// revision-checked update (UpdateSagaRevisionFrame) only when the saga implements
+/// JasperFx.IRevisioned; without it the schema's UseNumericRevisions bumps revisions but a
+/// plain Update last-writer-wins. The S3c live verification caught exactly that: two
+/// concurrent ClosingBidObserved both loaded BidCount=0 and the FIRST bid's write committed
+/// last, closing the auction with the wrong winner — a race the fan-out era's duplicate
+/// deliveries had been silently repairing.
 /// </summary>
-public sealed class AuctionClosingSaga : Wolverine.Saga
+public sealed class AuctionClosingSaga : Wolverine.Saga, JasperFx.IRevisioned
 {
     public Guid Id { get; set; }
+
+    /// <summary>Marten numeric revision (JasperFx.IRevisioned) — see the concurrency docstring note.</summary>
+    public int Version { get; set; }
     public Guid ListingId { get; set; }
     public Guid? CurrentHighBidderId { get; set; }
     public decimal CurrentHighBid { get; set; }

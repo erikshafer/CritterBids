@@ -45,13 +45,30 @@ A saga is orchestration state: mutable, write-heavy, read-light, and disposable 
 | One immediate cross-stream rule | DCB | Auction bid validation / capacity-like rules |
 | Stateless transformation or notification | Message handler | Relay notification handlers |
 
-Document-based sagas use Marten documents with numeric revisions:
+Document-based sagas use Marten documents with numeric revisions — and the saga must implement
+`JasperFx.IRevisioned`, or the revisions are bumped but never enforced:
 
 ```csharp
+public sealed class AuctionClosingSaga : Wolverine.Saga, JasperFx.IRevisioned
+{
+    public int Version { get; set; }   // load-bearing, not decoration
+    ...
+}
+
 opts.Schema.For<AuctionClosingSaga>()
     .Identity(x => x.Id)
     .UseNumericRevisions(true);
 ```
+
+Wolverine's Marten saga persistence (6.5.1, `MartenPersistenceFrameProvider.DetermineUpdateFrame`)
+emits the revision-checked `UpdateSagaRevisionFrame` only when the saga type implements
+`IRevisioned`; otherwise it generates a plain `IDocumentSession.Update` and concurrent saga
+writes last-writer-win silently. CritterBids shipped three milestones with the schema half only —
+the M8-S3c live verification caught two concurrent `ClosingBidObserved` handlers closing an
+auction with the WRONG winner (both loaded `BidCount = 0`; the stale write committed last). The
+fan-out era's duplicate deliveries had been masking the race by re-applying the lost update.
+Pair the interface with an `OnException<ConcurrencyException>().RetryWithCooldown(...)` policy so
+the losing write reloads and re-applies through the saga's idempotency guards.
 
 Keep saga state minimal. Store a field only if it gates a `Handle` branch; load emission-only payload data from the source of truth when emitting terminal messages. This avoided widening `AuctionClosingSaga` just to carry `SellerId` for `ListingSold`.
 
