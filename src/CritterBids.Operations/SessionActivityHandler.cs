@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -28,6 +29,7 @@ namespace CritterBids.Operations;
 /// <c>SessionStarted.ListingIds</c> is unioned (not assigned over) the accumulated set via
 /// <see cref="Union"/>.</para>
 /// </summary>
+[StickyHandler("operations-auctions-events")]
 public static class SessionActivityHandler
 {
     public static async Task Handle(

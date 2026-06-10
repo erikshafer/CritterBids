@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Selling;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -22,9 +23,15 @@ namespace CritterBids.Operations;
 /// <see cref="LotBoardStatusRules.Advance"/> prevents the seed from regressing
 /// <see cref="LotBoardView.Status"/> back to <see cref="LotBoardStatus.Draft"/> (ADR 014 seed-handler
 /// discipline).</para>
+///
+/// <para><b>METHOD-level sticky bindings (ADR 027, M8-S3c).</b> This class consumes from two
+/// Operations-owned queues — <c>ListingPublished</c> rides <c>operations-selling-events</c> while
+/// <c>ListingWithdrawn</c> rides <c>operations-auctions-events</c> per the M7 milestone §2 queue
+/// table literal — so the bindings sit on the methods, not the class.</para>
 /// </summary>
 public static class LotBoardSellingHandler
 {
+    [StickyHandler("operations-selling-events")]
     public static async Task Handle(
         ListingPublished message,
         IDocumentSession session,
@@ -49,6 +56,7 @@ public static class LotBoardSellingHandler
         });
     }
 
+    [StickyHandler("operations-auctions-events")]
     public static async Task Handle(
         ListingWithdrawn message,
         IDocumentSession session,

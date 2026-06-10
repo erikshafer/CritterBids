@@ -132,19 +132,28 @@ All current experiments were reverted; the bid endpoint + `PlaceBidHandler` are 
 
 ---
 
-## Bug #3 — `AuctionClosingSaga` start not idempotent under redelivery (EXPLAINED — fix scheduled via ADR 027)
+## Bug #3 — `AuctionClosingSaga` start not idempotent under redelivery (✅ RESOLVED — M8-S3c, ADR 027)
 
-> **EXPLAINED (2026-06-09).** The redeliveries are the Separated fan-out delivering one copy per
-> consuming RabbitMQ queue (3× for `BiddingOpened`) — the saga-start races its own duplicates. The
-> same class of noise appears on `ListingSold` (Settlement saga start) and `SettlementCompleted`
-> (PostSaleCoordination start) now that those flows run end-to-end. ADR 027 (per-BC sticky queue
-> bindings) eliminates the duplicate copies at the source; implementation is the M8-S3c session.
+> **RESOLVED (2026-06-09, M8-S3c).** ADR 027's per-BC sticky bindings eliminated the duplicate
+> copies at the source: `StartAuctionClosingSagaHandler` is sticky to the new
+> `auctions-auctions-events` self-consumption queue, so exactly one `BiddingOpened` delivery starts
+> exactly one saga. Live-verified on fresh containers: `wolverine_dead_letters` stayed at **0**
+> across a full seed→bid→BIN→withdraw→close→settle journey (the pre-S3c baseline accumulated 2
+> `DocumentAlreadyExistsException` rows per seeded listing). The same fix covers the `ListingSold`
+> (Settlement saga start) and `SettlementCompleted` (PostSaleCoordination start) instances of the
+> noise class. The `LoadAsync` existence guard stays as at-least-once redelivery hygiene.
+>
+> The S3c live verification also surfaced — and fixed — two races this duplicate traffic had been
+> *masking*: a saga lost-update (`UseNumericRevisions` configured but unenforced because the sagas
+> did not implement `JasperFx.IRevisioned`; two concurrent `ClosingBidObserved` closed an auction
+> with the wrong winner) and an order-fragile catalog guard (`SettlementCompleted` processing before
+> `ListingSold` left `CatalogListingView` stuck at `"Sold"`). See the M8-S3c retrospective.
 
 `BiddingOpened` dead-letters twice with `JasperFx.DocumentAlreadyExistsException: AuctionClosingSaga
 <listingId>` — the saga-start handler creates the saga on first delivery, then a redelivery re-attempts
-creation. The close is still scheduled (functionally OK), but the dead-letters are noise. Likely a
-`StartAuctionClosingSagaHandler` at-least-once-idempotency gap; separate from the bidding path. Not
-investigated further.
+creation. The close is still scheduled (functionally OK), but the dead-letters are noise. *(Pre-S3c
+reading, preserved as the record: the redeliveries were the Separated fan-out delivering one copy per
+consuming RabbitMQ queue — the saga-start raced its own duplicates.)*
 
 ---
 

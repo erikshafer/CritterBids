@@ -1,4 +1,5 @@
 using CritterBids.Contracts.Auctions;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -28,16 +29,23 @@ namespace CritterBids.Auctions;
 /// so translation needs no query. Late deliveries to an already-completed saga are absorbed by
 /// the saga's static <c>NotFound</c> methods.</para>
 ///
-/// <para><b>Delivery count.</b> Contract events fan out once per consuming RabbitMQ queue (the
-/// same at-least-once shape <c>BiddingOpened</c> has always had), so the saga may receive each
-/// observed command several times. Its existing idempotency guards (BidCount monotonicity,
-/// set-to-true, terminal-status early returns) absorb the duplicates.</para>
+/// <para><b>Delivery count.</b> Under ADR 027 each contract event arrives exactly once, on the
+/// <c>auctions-auctions-events</c> queue this class is sticky to. The saga's idempotency guards
+/// (BidCount monotonicity, set-to-true, terminal-status early returns) remain as at-least-once
+/// REDELIVERY hygiene — broker redeliveries still duplicate, steady-state traffic no longer does.</para>
+///
+/// <para><b>One sticky chain per (message type, endpoint) — ADR 027 / M8-S3c.</b> Wolverine 6.5.1
+/// resolves the sticky handler for an endpoint with <c>ByEndpoint.FirstOrDefault</c>, so two handler
+/// classes sticky to the same queue for the same message type would silently starve one of them.
+/// <c>BidPlaced</c> and <c>ListingWithdrawn</c> are consumed by BOTH Auctions dispatchers, so their
+/// discovered handlers live on <see cref="ProxyBidDispatchHandler"/> (which needs the saga query
+/// anyway) and this class contributes pure <c>Translate</c> functions the proxy dispatcher emits
+/// alongside its own commands. The three events only the closing saga observes keep their
+/// discovered handlers here.</para>
 /// </summary>
+[StickyHandler("auctions-auctions-events")]
 public static class AuctionClosingDispatchHandler
 {
-    public static ClosingBidObserved Handle(BidPlaced message) =>
-        new(message.ListingId, message.BidderId, message.Amount, message.BidCount);
-
     public static ClosingReserveMetObserved Handle(ReserveMet message) =>
         new(message.ListingId);
 
@@ -47,6 +55,18 @@ public static class AuctionClosingDispatchHandler
     public static ClosingBuyItNowObserved Handle(BuyItNowPurchased message) =>
         new(message.ListingId);
 
-    public static ClosingListingWithdrawnObserved Handle(CritterBids.Contracts.Selling.ListingWithdrawn message) =>
+    /// <summary>
+    /// Pure translation for the closing saga's BidPlaced observation. Not named <c>Handle</c> on
+    /// purpose — discovery for BidPlaced at the auctions queue belongs to
+    /// <see cref="ProxyBidDispatchHandler"/>, which emits this command alongside the proxy fan-out.
+    /// </summary>
+    public static ClosingBidObserved Translate(BidPlaced message) =>
+        new(message.ListingId, message.BidderId, message.Amount, message.BidCount);
+
+    /// <summary>
+    /// Pure translation for the closing saga's withdrawal observation. Not named <c>Handle</c> —
+    /// see <see cref="Translate(BidPlaced)"/>.
+    /// </summary>
+    public static ClosingListingWithdrawnObserved Translate(CritterBids.Contracts.Selling.ListingWithdrawn message) =>
         new(message.ListingId);
 }

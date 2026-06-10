@@ -1,6 +1,7 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -9,11 +10,17 @@ namespace CritterBids.Auctions;
 /// class — per the Wolverine-sagas skill the Start pattern lives outside the saga type so
 /// Wolverine can distinguish "create + persist" from "load existing and handle".
 ///
-/// Idempotency: if a saga already exists for this ListingId (re-delivery of BiddingOpened),
-/// the handler returns null so Wolverine skips saga creation. Note that in the post-DCB
-/// pipeline, BiddingOpened fires once per listing from the Listings projection, so this
-/// is a defensive guard for redelivery, not a frequent path.
+/// Sticky to the BC's own <c>auctions-auctions-events</c> queue (ADR 027, M8-S3c): exactly one
+/// BiddingOpened delivery starts exactly one saga. Before the sticky binding the Separated
+/// fan-out delivered one copy per consuming queue (3×) and the duplicate starts raced past the
+/// LoadAsync guard into DocumentAlreadyExistsException dead letters on every flow — the
+/// "Bug #3" noise class, eliminated by this binding.
+///
+/// Idempotency: if a saga already exists for this ListingId (broker re-delivery of
+/// BiddingOpened), the handler returns null so Wolverine skips saga creation — kept as
+/// at-least-once redelivery hygiene.
 /// </summary>
+[StickyHandler("auctions-auctions-events")]
 public static class StartAuctionClosingSagaHandler
 {
     public static async Task<AuctionClosingSaga?> Handle(

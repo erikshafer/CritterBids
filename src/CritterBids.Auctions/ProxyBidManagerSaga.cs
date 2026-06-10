@@ -44,9 +44,16 @@ namespace CritterBids.Auctions;
 /// (4.6 / 4.7 / 4.8), credit-ceiling cap, two-proxy bidding war (4.10),
 /// register-while-outbid (4.11). All M4-S4.</para>
 /// </summary>
-public sealed class ProxyBidManagerSaga : Wolverine.Saga
+public sealed class ProxyBidManagerSaga : Wolverine.Saga, JasperFx.IRevisioned
 {
     public Guid Id { get; set; }
+
+    /// <summary>
+    /// Marten numeric revision (JasperFx.IRevisioned) — required for Wolverine to emit the
+    /// revision-checked saga update; the schema's UseNumericRevisions alone does not enforce
+    /// optimistic concurrency (M8-S3c finding, see AuctionClosingSaga's concurrency note).
+    /// </summary>
+    public int Version { get; set; }
     public Guid ListingId { get; set; }
     public Guid BidderId { get; set; }
     public decimal MaxAmount { get; set; }

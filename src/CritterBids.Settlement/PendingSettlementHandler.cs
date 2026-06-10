@@ -2,6 +2,7 @@ using CritterBids.Contracts.Auctions;
 using CritterBids.Contracts.Selling;
 using CritterBids.Contracts.Settlement;
 using Marten;
+using Wolverine.Attributes;
 using SellingListingWithdrawn = CritterBids.Contracts.Selling.ListingWithdrawn;
 
 namespace CritterBids.Settlement;
@@ -36,9 +37,19 @@ namespace CritterBids.Settlement;
 /// prevent the second delivery in production, but the upsert is safe under at-least-once redelivery
 /// either way. The handler does not regress an already-terminal row's status to
 /// <see cref="PendingSettlementStatus.Pending"/>.</para>
+///
+/// <para><b>METHOD-level sticky bindings (ADR 027, M8-S3c).</b> This one class consumes from
+/// THREE Settlement-owned queues, so the sticky bindings sit on the methods, not the class
+/// (the fluent <c>AddStickyHandler</c> form is type-level and cannot express this split —
+/// the reason the attribute form was chosen for the whole slice): the Selling-source events
+/// ride <c>settlement-selling-events</c>, <c>ListingPassed</c> rides
+/// <c>settlement-auctions-events</c>, and the BC's own <c>SettlementCompleted</c> /
+/// <c>PaymentFailed</c> ride the new <c>settlement-settlement-events</c> self-consumption
+/// queue (before S3c they were fan-out-fed from queues other BCs own).</para>
 /// </summary>
 public static class PendingSettlementHandler
 {
+    [StickyHandler("settlement-selling-events")]
     public static async Task Handle(
         ListingPublished message,
         IDocumentSession session,
@@ -63,6 +74,7 @@ public static class PendingSettlementHandler
         });
     }
 
+    [StickyHandler("settlement-auctions-events")]
     public static async Task Handle(
         ListingPassed message,
         IDocumentSession session,
@@ -76,6 +88,7 @@ public static class PendingSettlementHandler
         session.Store(existing with { Status = PendingSettlementStatus.Expired });
     }
 
+    [StickyHandler("settlement-selling-events")]
     public static async Task Handle(
         SellingListingWithdrawn message,
         IDocumentSession session,
@@ -89,6 +102,7 @@ public static class PendingSettlementHandler
         session.Store(existing with { Status = PendingSettlementStatus.Expired });
     }
 
+    [StickyHandler("settlement-settlement-events")]
     public static async Task Handle(
         SettlementCompleted message,
         IDocumentSession session,
@@ -102,6 +116,7 @@ public static class PendingSettlementHandler
         session.Store(existing with { Status = PendingSettlementStatus.Consumed });
     }
 
+    [StickyHandler("settlement-settlement-events")]
     public static async Task Handle(
         PaymentFailed message,
         IDocumentSession session,

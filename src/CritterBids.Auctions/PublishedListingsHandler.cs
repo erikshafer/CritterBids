@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Selling;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -25,20 +26,19 @@ namespace CritterBids.Auctions;
 /// <c>OutgoingMessages</c>; no <c>IMessageBus</c>. Mirrors the M5-S3
 /// <see cref="CritterBids.Settlement.PendingSettlementHandler"/> shape verbatim.</para>
 ///
-/// <para><b>Multi-handler-on-<c>ListingPublished</c> within Auctions BC.</b> After M4-S5,
-/// the Auctions BC has TWO handlers for <c>ListingPublished</c>:
-/// <see cref="ListingPublishedHandler"/> (M3 — opens the Listing aggregate's primary
-/// stream with <c>BiddingOpened</c>) and this handler (caches the projection row). Same
-/// cross-cut as the M4-S3 <c>BidPlaced</c> two-handler topology. Under
-/// <see cref="Wolverine.MultipleHandlerBehavior.Separated"/>, each handler runs on its
-/// own endpoint — any in-test dispatch of <c>ListingPublished</c> via the bus must use
-/// <c>SendMessageAndWaitAsync</c> per <c>wolverine-sagas.md</c> §"Multiple Handlers +
-/// Separated". The existing M3 <c>BiddingOpenedConsumerTests</c> calls
-/// <c>ListingPublishedHandler.Handle()</c> directly and is unaffected.</para>
+/// <para><b>Single discovered <c>ListingPublished</c> handler for the BC (ADR 027, M8-S3c).</b>
+/// The M4-S5 shape had TWO discovered Auctions handlers for <c>ListingPublished</c> (this cache
+/// upsert + <see cref="ListingPublishedHandler"/>'s timed stream-open), fed by the Separated
+/// fan-out. Sticky dispatch executes at most one handler class per (message type, endpoint), so
+/// the upsert is now a plain function (<see cref="UpsertPublishedListingAsync"/>, deliberately
+/// not named <c>Handle</c>) invoked from <see cref="ListingPublishedHandler"/>'s discovered
+/// handler. <c>ListingWithdrawn</c> keeps its discovered handler here, sticky to the same
+/// <c>auctions-selling-events</c> queue — one class per (event, queue) holds.</para>
 /// </summary>
+[StickyHandler("auctions-selling-events")]
 public static class PublishedListingsHandler
 {
-    public static async Task Handle(
+    public static async Task UpsertPublishedListingAsync(
         ListingPublished message,
         IDocumentSession session,
         CancellationToken cancellationToken)

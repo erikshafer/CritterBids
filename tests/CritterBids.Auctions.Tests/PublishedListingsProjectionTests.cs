@@ -19,7 +19,8 @@ namespace CritterBids.Auctions.Tests;
 ///     <c>WithdrawnAt</c>; idempotent on re-delivery.</item>
 /// </list>
 ///
-/// <para>Tests call <see cref="PublishedListingsHandler.Handle(ListingPublished, IDocumentSession, CancellationToken)"/>
+/// <para>Tests call <see cref="PublishedListingsHandler.UpsertPublishedListingAsync(ListingPublished, IDocumentSession, CancellationToken)"/>
+/// (the upsert function ListingPublishedHandler's discovered handler invokes since M8-S3c)
 /// and <see cref="PublishedListingsHandler.Handle(ListingWithdrawn, IDocumentSession, CancellationToken)"/>
 /// directly against an isolated <see cref="IDocumentSession"/> — bypasses Wolverine to
 /// keep the assertion focused on the projection's upsert behaviour. Same shape as
@@ -67,7 +68,7 @@ public class PublishedListingsProjectionTests : IAsyncLifetime
 
         await using (var session = _fixture.GetDocumentSession())
         {
-            await PublishedListingsHandler.Handle(message, session, default);
+            await PublishedListingsHandler.UpsertPublishedListingAsync(message, session, default);
             await session.SaveChangesAsync();
         }
 

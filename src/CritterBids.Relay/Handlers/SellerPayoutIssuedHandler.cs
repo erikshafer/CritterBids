@@ -3,9 +3,11 @@ using CritterBids.Relay.History;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+[StickyHandler("relay-settlement-events")]
 public static class SellerPayoutIssuedHandler
 {
     public static async Task Handle(

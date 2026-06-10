@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -58,7 +59,13 @@ namespace CritterBids.Auctions;
 /// <para><b>MaxDuration.</b> Workshop 002 platform default is 2x original duration. The
 /// fan-out computes <c>MaxDuration = DurationMinutes * 2</c> and stamps it onto every
 /// emitted <see cref="BiddingOpened"/>, same convention as the M3 path.</para>
+///
+/// <para><b>Sticky to <c>auctions-auctions-events</c> (ADR 027, M8-S3c).</b> The S3c audit
+/// live-verified that this handler never had a direct local forwarding path — it was fed by the
+/// Separated fan-out from the three queues other BCs own (3 copies per session start). Under
+/// ADR 027 it consumes the BC's own queue copy exactly once.</para>
 /// </summary>
+[StickyHandler("auctions-auctions-events")]
 public static class SessionStartedHandler
 {
     public static async Task Handle(

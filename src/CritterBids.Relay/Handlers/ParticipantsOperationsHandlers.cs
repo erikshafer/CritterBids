@@ -3,9 +3,11 @@ using CritterBids.Contracts.Participants;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+[StickyHandler("relay-participants-events")]
 public static class ParticipantsOperationsHandler
 {
     public static Task Handle(ParticipantSessionStarted message, IHubContext<OperationsHub> hub, CancellationToken cancellationToken) =>

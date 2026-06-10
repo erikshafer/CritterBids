@@ -98,12 +98,14 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
             .ToRabbitQueue("listings-auctions-events");
 
-        // M4-S5: Auctions BC publishes the Session-aggregate trio to the same
-        // listings-auctions-events queue. Listings consumes them at M4-S6 in the new
-        // SessionMembershipHandler sibling class. No new queue — the M3-S6 ListenTo
-        // below covers the Auctions → Listings traffic for the entire BC.
-        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionCreated>()
-            .ToRabbitQueue("listings-auctions-events");
+        // M4-S5: Auctions BC publishes the Session-aggregate events the Listings BC consumes
+        // (AuctionsSessionHandler: ListingAttachedToSession + SessionStarted) to the same
+        // listings-auctions-events queue. No new queue — the M3-S6 ListenTo below covers the
+        // Auctions → Listings traffic for the entire BC.
+        // M8-S3c: the SessionCreated route that also pointed here was REMOVED — Listings has no
+        // SessionCreated consumer, and under ADR 027's sticky dispatch a delivery at a queue with
+        // no sticky match throws NoHandlerForEndpointException (the fan-out previously absorbed
+        // the consumer-less copy silently). Truthful topology: no consumer, no route.
         opts.PublishMessage<CritterBids.Contracts.Auctions.ListingAttachedToSession>()
             .ToRabbitQueue("listings-auctions-events");
         opts.PublishMessage<CritterBids.Contracts.Auctions.SessionStarted>()
@@ -257,14 +259,13 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("relay-obligations-events");
 
         // M6-S4: Obligations → Relay publish routes for the failure-path integration events.
-        // DeadlineEscalated is the fifth Obligations contract (ADR 005 additive); DisputeOpened /
-        // DisputeResolved were frozen at M6-S1. All three are append+emit on the post-sale saga and
-        // are wired publish-only — the Relay (M6-S5–S7) and Operations (M7) consumers ship later.
-        // Publish-only so the saga's OutgoingMessages-emitted events have a route (and
-        // Wolverine.Tracking's tracked.Sent assertions resolve once a consumer listens); without it
-        // they would land in tracked.NoRoutes.
-        opts.PublishMessage<CritterBids.Contracts.Obligations.DeadlineEscalated>()
-            .ToRabbitQueue("relay-obligations-events");
+        // DisputeOpened / DisputeResolved were frozen at M6-S1; both are append+emit on the
+        // post-sale saga and gained their Relay consumers (ObligationsRelayHandler) at M6-S5–S7.
+        // M8-S3c: the DeadlineEscalated → relay-obligations-events route was REMOVED — the planned
+        // Relay consumer never shipped, and the consumer-less copy made the Operations handler
+        // execute twice per escalation via the Separated default chain (DeadlineEscalated rides
+        // operations-obligations-events below, its only consuming queue). Truthful topology: no
+        // consumer, no route. Restore the route together with the Relay handler if it ships.
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeOpened>()
             .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
@@ -352,6 +353,62 @@ builder.UseWolverine(opts =>
         opts.PublishMessage<CritterBids.Contracts.Listings.LotWatchRemoved>()
             .ToRabbitQueue("relay-listings-events");
         opts.ListenToRabbitQueue("relay-listings-events");
+
+        // M8-S3c (ADR 027): auctions-auctions-events — the Auctions BC's broker self-consumption
+        // queue. Under ADR 027 every BC's broker-fed handlers bind sticky to that BC's own queue,
+        // and a sticky match at the receiving endpoint suppresses the Separated fan-out entirely —
+        // so the Auctions-side consumers of Auctions-family events (the two dispatcher bridges,
+        // the closing-saga start handler, and the Flash-session fan-out) lose the fan-out delivery
+        // path they used to ride and get their own queue instead. Self-consumption through the
+        // broker is consistent with the extraction story: an extracted Auctions service would
+        // consume its own events the same way. The event list is the audit-confirmed consumer set:
+        //   BiddingOpened            → StartAuctionClosingSagaHandler (saga start, exactly once —
+        //                              this binding is what eliminates the Bug #3-class
+        //                              DocumentAlreadyExistsException dead letters)
+        //   BidPlaced                → ProxyBidDispatchHandler (emits ClosingBidObserved +
+        //                              ProxyBidObserved×N; one sticky chain per endpoint, so the
+        //                              two former dispatcher methods were consolidated)
+        //   ReserveMet / ExtendedBiddingTriggered / BuyItNowPurchased
+        //                            → AuctionClosingDispatchHandler
+        //   ListingSold / ListingPassed → ProxyBidDispatchHandler
+        //   SessionStarted           → SessionStartedHandler (the Flash-session fan-out is
+        //                              broker-fed — live-verified at the S3c audit; it never had a
+        //                              direct local forwarding path)
+        // ListingWithdrawn (a Selling contract) also rides this queue for the dispatcher bridge —
+        // the auctions-selling-events copy feeds PublishedListingsHandler, this copy feeds the
+        // saga bridges. AutoProvision() declares the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BiddingOpened>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BidPlaced>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ReserveMet>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ExtendedBiddingTriggered>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingSold>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ListingPassed>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Auctions.SessionStarted>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.PublishMessage<CritterBids.Contracts.Selling.ListingWithdrawn>()
+            .ToRabbitQueue("auctions-auctions-events");
+        opts.ListenToRabbitQueue("auctions-auctions-events");
+
+        // M8-S3c (ADR 027): settlement-settlement-events — the Settlement BC's broker
+        // self-consumption queue, surfaced by the S3c consumer audit (the ADR named only the
+        // Auctions one). Settlement's PendingSettlementHandler consumes the BC's OWN
+        // SettlementCompleted / PaymentFailed (workshop 003 §8.6/§8.7) and was fed by the fan-out
+        // from the queues other BCs own; with those consumers bound sticky the fan-out never
+        // fires, so Settlement gets the same self-consumption queue the same ADR logic gives
+        // Auctions. AutoProvision() declares the queue at startup.
+        opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("settlement-settlement-events");
+        opts.PublishMessage<CritterBids.Contracts.Settlement.PaymentFailed>()
+            .ToRabbitQueue("settlement-settlement-events");
+        opts.ListenToRabbitQueue("settlement-settlement-events");
     }
 
     opts.Policies.AutoApplyTransactions();

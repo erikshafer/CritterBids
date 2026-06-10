@@ -36,6 +36,12 @@ public static class RoutingProbeEndpoint
             Guid.NewGuid(), Guid.NewGuid(), 25m, 50m, 100m, now.AddMinutes(5),
             true, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(15), TimeSpan.FromMinutes(10), now);
         var reserveMet = new ReserveMet(Guid.NewGuid(), 55m, now);
+        // M8-S3c probes: the types the two ADR 027 self-consumption queues carry.
+        var sessionStarted = new SessionStarted(Guid.NewGuid(), [Guid.NewGuid()], now);
+        var settlementCompleted = new CritterBids.Contracts.Settlement.SettlementCompleted(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), 55m, 5.5m, 49.5m, now);
+        var paymentFailed = new CritterBids.Contracts.Settlement.PaymentFailed(
+            Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid(), "probe", now);
 
         var probes = new Dictionary<string, object>
         {
@@ -45,6 +51,10 @@ public static class RoutingProbeEndpoint
             ["Event<BiddingOpened> (forwarding wrapper)"] = new Event<BiddingOpened>(biddingOpened),
             ["ReserveMet (raw)"] = reserveMet,
             ["Event<ReserveMet> (forwarding wrapper)"] = new Event<ReserveMet>(reserveMet),
+            ["SessionStarted (raw)"] = sessionStarted,
+            ["Event<SessionStarted> (forwarding wrapper)"] = new Event<SessionStarted>(sessionStarted),
+            ["SettlementCompleted (raw)"] = settlementCompleted,
+            ["PaymentFailed (raw)"] = paymentFailed,
         };
 
         var results = new Dictionary<string, object>();

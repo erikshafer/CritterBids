@@ -1,5 +1,6 @@
 using CritterBids.Contracts;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Selling;
 
@@ -21,6 +22,7 @@ namespace CritterBids.Selling;
 /// state — satisfying Wolverine's at-least-once delivery guarantee.
 /// </para>
 /// </remarks>
+[StickyHandler("selling-participants-events")]
 public static class SellerRegistrationCompletedHandler
 {
     public static void Handle(

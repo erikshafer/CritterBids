@@ -1,6 +1,7 @@
 using CritterBids.Contracts.Auctions;
 using CritterBids.Contracts.Selling;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -41,13 +42,29 @@ namespace CritterBids.Auctions;
 /// AutoApplyTransactions() policy to commit the session through the Wolverine pipeline in
 /// production. The two S3 integration tests invoke this handler directly and call
 /// SaveChangesAsync explicitly — same pattern as Listings' CatalogListingViewTests.
+///
+/// <para><b>Single discovered ListingPublished handler for the BC (ADR 027, M8-S3c).</b> Sticky
+/// dispatch executes at most one handler class per (message type, endpoint), so the BC's two
+/// ListingPublished jobs — the M4-S5 <see cref="PublishedListings"/> cache upsert and this
+/// timed-open path — now run from this one discovered handler, sticky to
+/// <c>auctions-selling-events</c>. The cache upsert runs FIRST and unconditionally (Flash
+/// listings need their <see cref="PublishedListings"/> row; only the stream-open is
+/// Duration-gated). The upsert logic stays in
+/// <see cref="PublishedListingsHandler.UpsertPublishedListingAsync"/> — same class, no longer
+/// separately discovered for this event.</para>
 /// </summary>
+[StickyHandler("auctions-selling-events")]
 public static class ListingPublishedHandler
 {
     public static async Task Handle(
         ListingPublished message,
-        IDocumentSession session)
+        IDocumentSession session,
+        CancellationToken cancellationToken)
     {
+        // ADR 027 consolidation: maintain the PublishedListings cache row for every published
+        // listing (Flash included) before the Duration gate below.
+        await PublishedListingsHandler.UpsertPublishedListingAsync(message, session, cancellationToken);
+
         // Flash-format guard (M4-S5 item 9). Flash listings (Duration == null) open
         // for bidding via SessionStartedHandler's fan-out, not this per-listing path.
         // Skipping here is additive and harmless when invoked directly with a non-null

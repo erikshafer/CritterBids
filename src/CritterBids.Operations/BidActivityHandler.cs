@@ -18,14 +18,16 @@ namespace CritterBids.Operations;
 /// not create a duplicate row — <c>BidId</c> is the key — but the explicit skip keeps the rows
 /// genuinely immutable / append-only rather than silently re-writing on redelivery.)</para>
 ///
-/// <para><b>Dual consumption of <c>BidPlaced</c>.</b> The same <c>BidPlaced</c> event also feeds the
-/// lot board via <see cref="LotBoardAuctionsHandler"/>; under <c>MultipleHandlerBehavior.Separated</c>
-/// these are two independent Operations handler chains (upsert + append) on one message type — both
-/// run, each idempotent, neither sharing the other's transaction.</para>
+/// <para><b>No longer separately discovered (ADR 027, M8-S3c).</b> The M7 shape ran this append as
+/// its own handler chain beside <see cref="LotBoardAuctionsHandler"/>'s <c>BidPlaced</c> upsert.
+/// Sticky dispatch executes at most one handler class per (message type, endpoint), so the append
+/// is now a plain function (deliberately not named <c>Handle</c>) invoked from
+/// <see cref="LotBoardAuctionsHandler"/>'s discovered <c>BidPlaced</c> handler — same session,
+/// one commit, same idempotent append semantics.</para>
 /// </summary>
 public static class BidActivityHandler
 {
-    public static async Task Handle(
+    public static async Task AppendActivityAsync(
         BidPlaced message,
         IDocumentSession session,
         CancellationToken cancellationToken)
