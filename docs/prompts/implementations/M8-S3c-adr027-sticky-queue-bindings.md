@@ -1,6 +1,6 @@
 # M8-S3c — ADR 027: Per-BC Sticky Queue Bindings
 
-**Status:** Ready to run
+**Status:** ✅ Executed (2026-06-09) — retro: `docs/retrospectives/M8-S3c-adr027-sticky-queue-bindings-retrospective.md`
 **Milestone:** M8 ([React Frontend SPAs](../../milestones/M8-frontend-spas.md)) — backend-housekeeping slice inserted after S3b; this prompt's first deliverable amends the milestone §7 slice ladder to add the S3c row (precedent: the v0.2 amendment that split S3 into S3a/S3b)
 **Slice:** S3c of M8 — implements [ADR 027](../../decisions/027-per-bc-sticky-queue-bindings.md), accepted 2026-06-09 at the Bug #2 follow-ups session
 **Narrative:** none (infrastructure truth-restoration slice; no journey change — every observable journey behavior must be byte-identical except duplicate-delivery side effects disappearing)
