@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Participants;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -17,6 +18,7 @@ namespace CritterBids.Operations;
 /// rewrites identical data — no status guard is needed (single event, no lifecycle axis). The MVP
 /// carries <c>StartedAt</c> only; there is no participant session-close event in the contract set.</para>
 /// </summary>
+[StickyHandler("operations-participants-events")]
 public static class ParticipantActivityHandler
 {
     public static async Task Handle(

@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Listings;
 
@@ -30,6 +31,7 @@ namespace CritterBids.Listings;
 /// is amended at M4-S6 to also preserve <c>SessionId</c> and <c>SessionStartedAt</c> so
 /// later <c>ListingPublished</c> delivery does not regress them.
 /// </summary>
+[StickyHandler("listings-auctions-events")]
 public static class AuctionsSessionHandler
 {
     public static async Task Handle(

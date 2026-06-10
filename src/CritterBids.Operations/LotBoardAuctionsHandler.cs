@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -24,7 +25,15 @@ namespace CritterBids.Operations;
 /// <see cref="LotBoardView.BidCount"/> only when the row is non-terminal and the incoming
 /// <c>BidCount</c> is not stale (monotone), so an out-of-order older bid never rewinds the figures
 /// and a late bid after close never disturbs the final ones.</para>
+///
+/// <para><b>Single discovered <c>BidPlaced</c> handler for the BC (ADR 027, M8-S3c).</b> Sticky
+/// dispatch executes at most one handler class per (message type, endpoint), so the BC's two
+/// <c>BidPlaced</c> jobs — this lot-board figure upsert and the W006 §3 bid-activity feed append —
+/// run from this one discovered handler, sticky to <c>operations-auctions-events</c>. The append
+/// logic stays in <see cref="BidActivityHandler.AppendActivityAsync"/> (same class and behavior,
+/// no longer separately discovered). Same Marten session, one commit.</para>
 /// </summary>
+[StickyHandler("operations-auctions-events")]
 public static class LotBoardAuctionsHandler
 {
     public static async Task Handle(
@@ -49,6 +58,9 @@ public static class LotBoardAuctionsHandler
         IDocumentSession session,
         CancellationToken cancellationToken)
     {
+        // ADR 027 consolidation: the bid-activity feed append rides the same delivery.
+        await BidActivityHandler.AppendActivityAsync(message, session, cancellationToken);
+
         var view = await LoadOrCreate(session, message.ListingId, cancellationToken);
 
         // Bid-figure regression guard: only advance CurrentBid/BidCount when the row is not yet

@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Settlement;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Listings;
 
@@ -26,6 +27,7 @@ namespace CritterBids.Listings;
 /// <see cref="ListingPublishedHandler"/> ensures that the row's Settled state is preserved
 /// when ListingPublished later arrives and fills in the M2 fields.
 /// </summary>
+[StickyHandler("listings-settlement-events")]
 public static class SettlementStatusHandler
 {
     public static async Task Handle(

@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Participants;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Auctions;
 
@@ -26,6 +27,7 @@ namespace CritterBids.Auctions;
 /// <see cref="StartProxyBidManagerSagaHandler"/> reads the cached row instead of crossing
 /// the BC boundary to the Participants aggregate.</para>
 /// </summary>
+[StickyHandler("auctions-participants-events")]
 public static class ParticipantCreditCeilingHandler
 {
     public static async Task Handle(

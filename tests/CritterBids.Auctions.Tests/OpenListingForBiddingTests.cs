@@ -56,7 +56,7 @@ public class OpenListingForBiddingTests : IAsyncLifetime
 
         await using (var session = _fixture.GetDocumentSession())
         {
-            await ListingPublishedHandler.Handle(TimedListing(listingId, sellerId), session);
+            await ListingPublishedHandler.Handle(TimedListing(listingId, sellerId), session, CancellationToken.None);
             await session.SaveChangesAsync();
         }
 
@@ -96,7 +96,7 @@ public class OpenListingForBiddingTests : IAsyncLifetime
 
         await using (var session = _fixture.GetDocumentSession())
         {
-            await ListingPublishedHandler.Handle(TimedListing(listingId, sellerId), session);
+            await ListingPublishedHandler.Handle(TimedListing(listingId, sellerId), session, CancellationToken.None);
             await session.SaveChangesAsync();
         }
 

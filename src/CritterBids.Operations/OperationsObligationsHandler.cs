@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Obligations;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -36,6 +37,7 @@ namespace CritterBids.Operations;
 /// <see cref="OperationsObligationsView.ListingId"/> is set-once via the
 /// <see cref="System.Guid.Empty"/> sentinel.</para>
 /// </summary>
+[StickyHandler("operations-obligations-events")]
 public static class OperationsObligationsHandler
 {
     public static async Task Handle(

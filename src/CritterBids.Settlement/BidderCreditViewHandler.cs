@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Participants;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Settlement;
 
@@ -28,9 +29,17 @@ namespace CritterBids.Settlement;
 /// preserved — re-seeding would regress the bidder's balance. On <c>WinnerCharged</c>
 /// re-delivery (same <c>SettlementId</c>), the handler returns without mutation — the row
 /// has already absorbed the debit.</para>
+///
+/// <para><b>METHOD-level sticky binding (ADR 027, M8-S3c).</b> Only the broker-fed
+/// <c>ParticipantSessionStarted</c> method is bound to <c>settlement-participants-events</c>.
+/// <c>WinnerCharged</c> is Settlement-internal — fast event forwarding delivers it on the
+/// handler's default local queue (single-handler chain) — and a CLASS-level binding would have
+/// dragged that chain onto the participants queue. The method split is the reason the attribute
+/// form was chosen over the type-level fluent <c>AddStickyHandler</c>.</para>
 /// </summary>
 public static class BidderCreditViewHandler
 {
+    [StickyHandler("settlement-participants-events")]
     public static async Task Handle(
         ParticipantSessionStarted message,
         IDocumentSession session,

@@ -2,35 +2,17 @@ using CritterBids.Contracts.Auctions;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+// M8-S3c (ADR 027): the BidPlaced / ListingSold OperationsHub pushes moved into
+// BidPlacedHandler / ListingSoldHandler — sticky dispatch executes at most one handler class per
+// (message type, endpoint), and those types' relay-auctions-events slots belong to the
+// BiddingHub-push classes. This class keeps the session trio, which only it consumes.
+[StickyHandler("relay-auctions-events")]
 public static class AuctionsOperationsHandler
 {
-    public static Task Handle(BidPlaced message, IHubContext<OperationsHub> hub, CancellationToken cancellationToken) =>
-        hub.Clients
-            .All
-            .SendAsync(
-                RelayHubMethods.ReceiveMessage,
-                new OperationsFeedNotification(
-                    message.ListingId,
-                    "BidPlacedOperations",
-                    $"Bid placed at {message.Amount}.",
-                    message.PlacedAt),
-                cancellationToken);
-
-    public static Task Handle(ListingSold message, IHubContext<OperationsHub> hub, CancellationToken cancellationToken) =>
-        hub.Clients
-            .All
-            .SendAsync(
-                RelayHubMethods.ReceiveMessage,
-                new OperationsFeedNotification(
-                    message.ListingId,
-                    "ListingSoldOperations",
-                    $"Listing sold at {message.HammerPrice}.",
-                    message.SoldAt),
-                cancellationToken);
-
     public static Task Handle(SessionCreated message, IHubContext<OperationsHub> hub, CancellationToken cancellationToken) =>
         hub.Clients
             .All

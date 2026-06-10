@@ -55,7 +55,7 @@ public class BiddingOpenedConsumerTests : IAsyncLifetime
 
         await using (var session = _fixture.GetDocumentSession())
         {
-            await ListingPublishedHandler.Handle(message, session);
+            await ListingPublishedHandler.Handle(message, session, CancellationToken.None);
             await session.SaveChangesAsync();
         }
 
@@ -106,7 +106,7 @@ public class BiddingOpenedConsumerTests : IAsyncLifetime
         // First delivery — produces the BiddingOpened and starts the Listing stream.
         await using (var firstSession = _fixture.GetDocumentSession())
         {
-            await ListingPublishedHandler.Handle(message, firstSession);
+            await ListingPublishedHandler.Handle(message, firstSession, CancellationToken.None);
             await firstSession.SaveChangesAsync();
         }
 
@@ -116,7 +116,7 @@ public class BiddingOpenedConsumerTests : IAsyncLifetime
         // mirror what a re-delivery from RabbitMQ would look like in production.
         await using (var secondSession = _fixture.GetDocumentSession())
         {
-            await ListingPublishedHandler.Handle(message, secondSession);
+            await ListingPublishedHandler.Handle(message, secondSession, CancellationToken.None);
             await secondSession.SaveChangesAsync();
         }
 

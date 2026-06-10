@@ -1,6 +1,7 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace CritterBids.Settlement;
 
@@ -36,6 +37,7 @@ namespace CritterBids.Settlement;
 /// removes after first bid" per M3 lived ground, so the deterministic <c>SettlementId</c>
 /// derivation collides only on re-delivery, never across sources.</para>
 /// </summary>
+[StickyHandler("settlement-auctions-events")]
 public static class StartSettlementSagaHandler
 {
     public static async Task<(SettlementSaga?, OutgoingMessages)> Handle(

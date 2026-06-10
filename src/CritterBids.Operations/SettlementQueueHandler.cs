@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Settlement;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Operations;
 
@@ -29,6 +30,7 @@ namespace CritterBids.Operations;
 /// latest-wins (max of the existing stamp and the incoming event time), so a re-delivered older
 /// event never rewinds it.</para>
 /// </summary>
+[StickyHandler("operations-settlement-events")]
 public static class SettlementQueueHandler
 {
     public static async Task Handle(

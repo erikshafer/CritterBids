@@ -3,6 +3,7 @@ using CritterBids.Relay.History;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
@@ -14,6 +15,7 @@ namespace CritterBids.Relay.Handlers;
 /// Pure consumer (ADR 023 path (b)): returns <see cref="Task"/>, injects
 /// <c>IHubContext&lt;BiddingHub&gt;</c>, targets the winner group explicitly, and never publishes.
 /// </summary>
+[StickyHandler("relay-settlement-events")]
 public static class SettlementCompletedHandler
 {
     public static async Task Handle(

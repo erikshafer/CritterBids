@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Selling;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Listings;
 
@@ -29,6 +30,7 @@ namespace CritterBids.Listings;
 /// has touched the row would silently null the session-membership fields and regress the
 /// Withdrawn terminal back to "Published".
 /// </summary>
+[StickyHandler("listings-selling-events")]
 public static class ListingPublishedHandler
 {
     public static async Task Handle(

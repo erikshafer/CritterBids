@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Selling;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Listings;
 
@@ -32,6 +33,7 @@ namespace CritterBids.Listings;
 /// field-preservation block is amended at M4-S6 so later <c>ListingPublished</c> delivery
 /// preserves the Withdrawn terminal.
 /// </summary>
+[StickyHandler("listings-selling-events")]
 public static class SellingListingWithdrawnHandler
 {
     public static async Task Handle(

@@ -2,6 +2,7 @@ using CritterBids.Contracts.Settlement;
 using Marten;
 using Microsoft.Extensions.Options;
 using Wolverine;
+using Wolverine.Attributes;
 
 namespace CritterBids.Obligations;
 
@@ -33,6 +34,7 @@ namespace CritterBids.Obligations;
 /// <c>bus.ScheduleAsync()</c> is the only justified <c>IMessageBus</c> use in a handler per the
 /// project conventions.</para>
 /// </summary>
+[StickyHandler("obligations-settlement-events")]
 public static class SettlementCompletedHandler
 {
     public static async Task<(PostSaleCoordinationSaga?, OutgoingMessages)> Handle(

@@ -1,5 +1,6 @@
 using CritterBids.Contracts.Auctions;
 using Marten;
+using Wolverine.Attributes;
 
 namespace CritterBids.Listings;
 
@@ -31,6 +32,7 @@ namespace CritterBids.Listings;
 /// M4-S6 retrospective. The other five Handle methods on this class do NOT carry the
 /// guard — only <c>BiddingOpened</c> is on the fan-out's emission path.
 /// </summary>
+[StickyHandler("listings-auctions-events")]
 public static class AuctionStatusHandler
 {
     public static async Task Handle(

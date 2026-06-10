@@ -4,9 +4,11 @@ using CritterBids.Relay.History;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+[StickyHandler("relay-auctions-events")]
 public static class AuctionsBiddingHandler
 {
     public static Task Handle(BiddingOpened message, IHubContext<BiddingHub> hub, CancellationToken cancellationToken) =>

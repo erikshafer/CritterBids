@@ -3,9 +3,11 @@ using CritterBids.Relay.History;
 using CritterBids.Relay.Hubs;
 using CritterBids.Relay.Notifications;
 using Microsoft.AspNetCore.SignalR;
+using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+[StickyHandler("relay-obligations-events")]
 public static class ObligationsRelayHandler
 {
     public static async Task Handle(
