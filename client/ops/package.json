@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "CritterBids staff operations dashboard SPA (ADR 004/012/013/024/025). M8-S5 scaffolds the shell, the StaffToken auth gate, and the OperationsHub connection; M8-S6 fills the six dashboard views.",
+  "description": "CritterBids staff operations dashboard SPA (ADR 004/012/013/024/025). M8-S5 scaffolded the shell, the StaffToken auth gate, and the OperationsHub connection; M8-S6 fills the six dashboard views over /api/operations/* with the ADR 026 cache bridge.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -18,7 +18,8 @@
     "clsx": "^2.1.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "tailwind-merge": "^3.6.0"
+    "tailwind-merge": "^3.6.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.0",

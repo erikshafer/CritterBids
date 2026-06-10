@@ -1,19 +1,47 @@
 import { describe, expect, it, vi } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   HttpTransportType,
   HubConnectionState,
   type HubConnection,
   type IHttpConnectionOptions,
 } from "@microsoft/signalr";
+import type { ReactNode } from "react";
 
 import { StaffAuthProvider } from "@/auth/StaffAuthContext";
 import { AuthGate } from "@/auth/AuthGate";
 import { OperationsSignalRProvider } from "@/signalr/SignalRProvider";
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { RECEIVE_MESSAGE } from "@/signalr/hub";
+import { useListen } from "@/signalr/hooks";
+import type { OperationsFeedMessage } from "@/signalr/messages";
 
 const STORAGE_KEY = "critterbids.staffToken";
+
+// The provider runs the ADR 026 cache bridge (M8-S6), so it lives under a QueryClientProvider.
+function Providers({
+  children,
+  queryClient = new QueryClient(),
+}: {
+  children: ReactNode;
+  queryClient?: QueryClient;
+}) {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <StaffAuthProvider>{children}</StaffAuthProvider>
+    </QueryClientProvider>
+  );
+}
+
+function Listener({
+  onMessage,
+}: {
+  onMessage: (message: OperationsFeedMessage) => void;
+}) {
+  useListen(onMessage);
+  return null;
+}
 
 // Captures what the PRODUCTION connection factory hands to HubConnectionBuilder.withUrl — the
 // accessTokenFactory/skipNegotiation/transport assertions run against the real code path, not a
@@ -82,11 +110,11 @@ describe("OperationsSignalRProvider", () => {
     sessionStorage.setItem(STORAGE_KEY, "s3cret-staff-token");
 
     render(
-      <StaffAuthProvider>
+      <Providers>
         <OperationsSignalRProvider>
           <ConnectionIndicator />
         </OperationsSignalRProvider>
-      </StaffAuthProvider>,
+      </Providers>,
     );
 
     await waitFor(() => expect(hoisted.captured.url).toBe("/hub/operations"));
@@ -108,16 +136,74 @@ describe("OperationsSignalRProvider", () => {
     sessionStorage.setItem(STORAGE_KEY, "s3cret-staff-token");
 
     render(
-      <StaffAuthProvider>
+      <Providers>
         <OperationsSignalRProvider>
           <ConnectionIndicator />
         </OperationsSignalRProvider>
-      </StaffAuthProvider>,
+      </Providers>,
     );
 
     await screen.findByText("Connected");
     const connection = hoisted.built.at(-1)!;
     expect(connection.handlers.has(RECEIVE_MESSAGE)).toBe(true);
+  });
+
+  it("parses a push, runs the cache bridge BEFORE the useListen fan-out, and ignores junk (ADR 026)", async () => {
+    sessionStorage.setItem(STORAGE_KEY, "s3cret-staff-token");
+
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    const received: OperationsFeedMessage[] = [];
+    let invalidationsWhenListenerRan = -1;
+
+    render(
+      <Providers queryClient={queryClient}>
+        <OperationsSignalRProvider>
+          <ConnectionIndicator />
+          <Listener
+            onMessage={(message) => {
+              received.push(message);
+              invalidationsWhenListenerRan = invalidateSpy.mock.calls.length;
+            }}
+          />
+        </OperationsSignalRProvider>
+      </Providers>,
+    );
+
+    await screen.findByText("Connected");
+    const connection = hoisted.built.at(-1)!;
+    const handler = connection.handlers.get(RECEIVE_MESSAGE)!;
+
+    act(() => {
+      handler({
+        listingId: "11111111-0000-0000-0000-000000000001",
+        eventType: "BidPlacedOperations",
+        payload: "Bid placed: $42.00",
+        occurredAt: "2026-06-10T15:04:05Z",
+      });
+    });
+
+    expect(received).toHaveLength(1);
+    expect(received[0]!.eventType).toBe("BidPlacedOperations");
+    // The bridge ran first: the re-query was in flight before the listener saw the message.
+    expect(invalidationsWhenListenerRan).toBeGreaterThan(0);
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["operations", "lot-board"],
+    });
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: ["operations", "bid-activity"],
+    });
+
+    // An unrecognized wire shape is logged-and-ignored: no listener call, no invalidation.
+    const invalidationsBeforeJunk = invalidateSpy.mock.calls.length;
+    act(() => {
+      handler({ totally: "unrelated" });
+    });
+    expect(received).toHaveLength(1);
+    expect(invalidateSpy.mock.calls.length).toBe(invalidationsBeforeJunk);
   });
 
   it("clears the token and re-shows the gate when the hub start fails with a visible 401", async () => {
@@ -136,7 +222,7 @@ describe("OperationsSignalRProvider", () => {
     };
 
     render(
-      <StaffAuthProvider>
+      <Providers>
         <AuthGate>
           <OperationsSignalRProvider
             createConnection={() => rejecting as unknown as HubConnection}
@@ -144,7 +230,7 @@ describe("OperationsSignalRProvider", () => {
             <div data-testid="dashboard" />
           </OperationsSignalRProvider>
         </AuthGate>
-      </StaffAuthProvider>,
+      </Providers>,
     );
 
     await waitFor(() => expect(sessionStorage.getItem(STORAGE_KEY)).toBeNull());
