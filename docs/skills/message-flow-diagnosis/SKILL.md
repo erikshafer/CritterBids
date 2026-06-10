@@ -84,8 +84,9 @@ the `IEvent` wrapper pre-commit; Wolverine's `MartenEventRouter` unwraps it onto
 subscriptions). Extend the probe's dictionary when investigating a new type.
 
 Why not `wolverine-diagnostics describe-routing <type> --explain`? It runs in description mode and, as
-of Wolverine 6.5.1, NREs at `MessageRoute.Describe()` when a route's `Sender` is null — and it cannot
-reach the `Event<T>` wrapper types at all. The live probe has neither limitation.
+of Wolverine 6.5.1, NREs at `MessageRoute.Describe()` on description-mode routes (their members are
+assigned null-tolerantly; the dereference that actually throws is the route's `Serializer`) — and it
+cannot reach the `Event<T>` wrapper types at all. The live probe has neither limitation.
 
 ## Envelope-table semantics (the interpretation trap)
 

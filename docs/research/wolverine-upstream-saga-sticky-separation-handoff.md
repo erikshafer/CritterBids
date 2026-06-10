@@ -25,9 +25,10 @@ external broker, Wolverine auto-fans it out to all matching handler-specific que
 routing needed."* With **two or more** saga types, or with **zero** saga types, fan-out works
 correctly — only the single-saga-plus-others shape is broken.
 
-Verified on Wolverine **6.5.1** (tag `V6.5.1`, commit `d0b5d4038`). Confirm the relevant code is
-unchanged on current `upstream/main` before patching (it was as of 2026-06-09; the files below had
-no post-6.5.1 commits).
+Verified on Wolverine **6.5.1** (tag `V6.5.1`, commit `d0b5d4038`). Independently re-verified
+2026-06-09 against `upstream/main` (`f1c68d960`): all relevant files unchanged — and note main is
+already version-bumped to **6.6.0**, so without this fix the defect ships there too. Re-confirm
+before patching.
 
 ## 2. Root cause (read these in order)
 
@@ -83,6 +84,24 @@ The `FanoutMessageHandler` relay — the only mechanism by which sticky-local ha
 externally-delivered messages — is gated on the chain having **no** default handlers. The lone
 saga keeps `HasDefaultNonStickyHandlers()` true, so the gate never opens, and the
 `return HandlerFor(messageType)` executes the saga alone.
+
+### 2b-bis. Prior art — CITE THESE in the PR (found by independent review, 2026-06-09)
+
+- **Issue #3041** ("only Saga handler receives messages when a Saga and a regular handler are both
+  registered", reported on 6.4.3, closed 2026-06-05) — the **same symptom**, fixed by **PR #3042**,
+  which is already inside V6.5.1 but only touched `MessageRoutingConvention.cs` (listener creation
+  under `UseConventionalRouting(NamingSource.FromHandlerType)`). It does NOT fix the
+  `HandlerGraph.HandlerFor(Type, Endpoint)` dispatch gate, which is why applications using
+  **explicit** `PublishMessage/ListenToRabbitQueue` routing (like CritterBids) still hit the bug on
+  6.5.1. Frame this PR as completing #3041 at the dispatch layer; that context will make the review
+  much faster.
+- **Issue #2198** — the original `FanoutMessageHandler` feature whose gate
+  (`HasDefaultNonStickyHandlers()`) this defect bypasses.
+- **Issue #2289** — codegen picks up only the saga in Separated mode (adjacent symptom family;
+  also #2004/#2005/#2056/#2057/#2058).
+
+No existing upstream issue describes the single-saga `HasDefaultNonStickyHandlers` starvation
+itself; file one (or open the PR directly) referencing #3041 as the symptom twin.
 
 ### 2c. Why nobody noticed
 

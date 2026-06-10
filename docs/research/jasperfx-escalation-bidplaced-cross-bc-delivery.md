@@ -186,7 +186,8 @@ CritterBids in-repo repro: run the Aspire stack, `POST /api/dev/seed-flash`, pla
 
 `dotnet run -- wolverine-diagnostics describe-routing <MessageType> --explain` throws
 `NullReferenceException` at `MessageRoute.Describe()` (MessageRoute.cs:204) in this app —
-a null-`Sender` route reached the explanation's `FinalRoutes` mapping (likely the GH-2897
+a description-mode route (null-tolerant member assignment; the throwing dereference is the
+route's `Serializer`) reached the explanation's `FinalRoutes` mapping (adjacent to the GH-2897
 description-mode null-Sender case leaking into `Describe()`). The live `PreviewSubscriptions`
 probe was the workaround.
 
