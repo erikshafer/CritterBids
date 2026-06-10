@@ -1,6 +1,7 @@
 import {
   createContext,
   use,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -14,18 +15,26 @@ import {
   LogLevel,
   type HubConnection,
 } from "@microsoft/signalr";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { useStaffAuth } from "@/auth/StaffAuthContext";
+import { applyOperationsFeedMessage } from "@/signalr/cacheBridge";
 import { OPERATIONS_HUB_URL, RECEIVE_MESSAGE } from "@/signalr/hub";
+import {
+  parseOperationsFeedMessage,
+  type OperationsFeedMessage,
+} from "@/signalr/messages";
 
 // ADR 026 replicated for the OperationsHub (M8-S5): one Provider Context owns the single staff
 // HubConnection for the whole ops app, with the ADR 024 credential dance added. The provider
 // mounts INSIDE the AuthGate, so it exists only while a staff token is held — clearing the token
 // unmounts it and stops the connection.
 //
-// S5 is plumbing only: ReceiveMessage is registered and logged, per the slice scope. The
-// OperationsFeedNotification parse surface, the useListen fan-out, and the TanStack Query cache
-// bridge land in M8-S6 alongside the views they invalidate.
+// M8-S6 completes the pattern: every ReceiveMessage payload is parsed at the wire boundary
+// (messages.ts), runs the TanStack Query cache bridge FIRST (the re-query is in flight before
+// any listener sees the message), then fans out to useListen subscribers. An unparseable payload
+// is logged-and-ignored, never thrown — a future notification shape cannot tear down the
+// connection.
 //
 // ── The credential transport (ADR 024), and why the connection skips negotiate ──
 // The StaffToken scheme reads the hub credential ONLY from the `access_token` query string on the
@@ -41,6 +50,15 @@ import { OPERATIONS_HUB_URL, RECEIVE_MESSAGE } from "@/signalr/hub";
 export interface OperationsSignalRContextValue {
   status: HubConnectionState;
   lastError: string | null;
+  /**
+   * Subscribe to parsed OperationsHub messages; returns the unsubscribe. By the time a
+   * subscriber runs, the cache bridge has already invalidated the affected boards — listeners
+   * are for TRANSIENT affordances (a feed line, a toast), never for rendering payload fields
+   * as authoritative state (ADR 026).
+   */
+  subscribe: (
+    listener: (message: OperationsFeedMessage) => void,
+  ) => () => void;
 }
 
 const OperationsSignalRContext =
@@ -71,11 +89,30 @@ export function OperationsSignalRProvider({
   createConnection = defaultCreateConnection,
 }: OperationsSignalRProviderProps) {
   const { token, clearToken } = useStaffAuth();
+  const queryClient = useQueryClient();
 
   const [status, setStatus] = useState<HubConnectionState>(
     HubConnectionState.Disconnected,
   );
   const [lastError, setLastError] = useState<string | null>(null);
+
+  // Listener fan-out for useListen. A ref'd Set keeps subscribe's identity stable and lets the
+  // connection effect read the current subscribers without re-running.
+  const listenersRef = useRef(
+    new Set<(message: OperationsFeedMessage) => void>(),
+  );
+  const subscribe = useCallback(
+    (listener: (message: OperationsFeedMessage) => void) => {
+      listenersRef.current.add(listener);
+      return () => {
+        listenersRef.current.delete(listener);
+      };
+    },
+    [],
+  );
+
+  const queryClientRef = useRef(queryClient);
+  queryClientRef.current = queryClient;
 
   // The factory + token are read through refs so the connection effect runs exactly once per
   // provider mount (the provider lives inside the AuthGate, so a token change = a remount).
@@ -90,9 +127,18 @@ export function OperationsSignalRProvider({
 
     const syncStatus = () => setStatus(connection.state);
 
-    // S5 scope: register + log. The S6 cache bridge replaces this body.
+    // ADR 026: parse → cache bridge → fan out, in that order.
     connection.on(RECEIVE_MESSAGE, (payload: unknown) => {
-      console.debug("[OperationsHub] ReceiveMessage", payload);
+      const message = parseOperationsFeedMessage(payload);
+      if (message === null) {
+        // Forward-compatible: an unknown wire shape is ignored, not fatal.
+        console.debug("[OperationsHub] unrecognized payload ignored", payload);
+        return;
+      }
+      applyOperationsFeedMessage(queryClientRef.current, message);
+      for (const listener of listenersRef.current) {
+        listener(message);
+      }
     });
 
     connection.onreconnecting((error) => {
@@ -140,8 +186,8 @@ export function OperationsSignalRProvider({
   }, []);
 
   const value = useMemo<OperationsSignalRContextValue>(
-    () => ({ status, lastError }),
-    [status, lastError],
+    () => ({ status, lastError, subscribe }),
+    [status, lastError, subscribe],
   );
 
   return (
