@@ -5,11 +5,12 @@ import { z } from "zod";
 // `ReceiveMessage` client method (ADR 023) is parsed here before the app trusts it.
 //
 // The lived Relay contract is HETEROGENEOUS — there is no uniform `type` discriminator on the wire
-// (a finding of this slice). Four notification records reach a bidder client
+// (a finding of M8-S3b). Five notification records reach a bidder client
 // (src/CritterBids.Relay/Notifications/):
 //
 //   • BidPlacedNotification    { listingId, bidId, bidderId, amount, bidCount, occurredAt }
 //   • ListingSoldNotification  { listingId, winnerId, hammerPrice, bidCount, soldAt }
+//   • SettlementCompletedNotification { settlementId, listingId, winnerId, hammerPrice, completedAt }
 //   • ListingGroupNotification { listingId, eventType, payload, occurredAt }   ← eventType-tagged
 //   • BidderGroupNotification  { bidderId, listingId?, eventType, payload, occurredAt }
 //
@@ -45,6 +46,14 @@ const bidderGroupSchema = z.object({
   eventType: z.string(),
   payload: z.string(),
   occurredAt: z.string(),
+});
+
+const settlementCompletedSchema = z.object({
+  settlementId: z.string(),
+  listingId: z.string(),
+  winnerId: z.string(),
+  hammerPrice: z.number(),
+  completedAt: z.string(),
 });
 
 const listingGroupSchema = z.object({
@@ -83,6 +92,14 @@ export type HubMessage =
       occurredAt: string;
     }
   | {
+      kind: "settlementCompleted";
+      settlementId: string;
+      listingId: string;
+      winnerId: string;
+      hammerPrice: number;
+      completedAt: string;
+    }
+  | {
       kind: "listingEvent";
       listingId: string;
       eventType: string;
@@ -92,10 +109,11 @@ export type HubMessage =
 
 /**
  * Parse a raw `ReceiveMessage` payload into a normalized {@link HubMessage}, or `null` if it matches
- * no known shape. Tried most-specific-first: `bidId` ⇒ bidPlaced, `winnerId`+`hammerPrice` ⇒
- * listingSold, `bidderId`+`eventType` ⇒ bidderEvent, `eventType` ⇒ listingEvent. The required-field
- * sets are disjoint, so order only matters for the two eventType-tagged shapes (bidder before
- * listing, because a bidder notification also satisfies the listing schema's looser requirements).
+ * no known shape. Tried most-specific-first: `bidId` ⇒ bidPlaced, `winnerId`+`bidCount`+`soldAt` ⇒
+ * listingSold, `settlementId`+`completedAt` ⇒ settlementCompleted, `bidderId`+`eventType` ⇒
+ * bidderEvent, `eventType` ⇒ listingEvent. The required-field sets are disjoint, so order only
+ * matters for the two eventType-tagged shapes (bidder before listing, because a bidder notification
+ * also satisfies the listing schema's looser requirements).
  *
  * Returning `null` rather than throwing keeps an unrecognized push from tearing down the connection:
  * a forward-compatible new notification type is logged-and-ignored, not fatal.
@@ -109,6 +127,11 @@ export function parseHubMessage(payload: unknown): HubMessage | null {
   const listingSold = listingSoldSchema.safeParse(payload);
   if (listingSold.success) {
     return { kind: "listingSold", ...listingSold.data };
+  }
+
+  const settlement = settlementCompletedSchema.safeParse(payload);
+  if (settlement.success) {
+    return { kind: "settlementCompleted", ...settlement.data };
   }
 
   const bidderEvent = bidderGroupSchema.safeParse(payload);

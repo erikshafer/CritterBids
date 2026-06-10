@@ -5,7 +5,7 @@ import { parseHubMessage } from "@/signalr/messages";
 const listingId = "0192f1a0-1111-7000-8000-000000000001";
 const bidderId = "0192f1a0-2222-7000-8000-000000000002";
 
-// The four heterogeneous wire shapes Relay delivers (camelCase, no uniform discriminator).
+// The five heterogeneous wire shapes Relay delivers (camelCase, no uniform discriminator).
 describe("parseHubMessage", () => {
   it("normalizes a BidPlacedNotification (no eventType, has bidId)", () => {
     const message = parseHubMessage({
@@ -28,6 +28,21 @@ describe("parseHubMessage", () => {
       soldAt: "2026-06-08T12:05:00+00:00",
     });
     expect(message).toMatchObject({ kind: "listingSold", hammerPrice: 55 });
+  });
+
+  it("normalizes a SettlementCompletedNotification (settlementId + completedAt)", () => {
+    const message = parseHubMessage({
+      settlementId: "0192f1a0-4444-7000-8000-000000000004",
+      listingId,
+      winnerId: bidderId,
+      hammerPrice: 55,
+      completedAt: "2026-06-08T12:06:00+00:00",
+    });
+    expect(message).toMatchObject({
+      kind: "settlementCompleted",
+      hammerPrice: 55,
+      winnerId: bidderId,
+    });
   });
 
   it("normalizes an eventType-tagged listing notification (ExtendedBiddingTriggered)", () => {
