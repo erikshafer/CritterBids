@@ -159,7 +159,9 @@ keep the two in sync.
 OperationsHub is gated by `[Authorize(Policy = "StaffOnly")]` (ADR-024). The StaffToken authentication handler reads the credential from:
 
 1. `X-Staff-Token` header — for regular HTTP endpoints.
-2. `access_token` query string — for the OperationsHub WebSocket negotiate request only (SignalR clients cannot set custom headers on the negotiate POST).
+2. `access_token` query string — for the `/hub/operations` path only. The transport constraint is the **browser WebSocket upgrade**, which cannot carry headers — *not* the negotiate POST, which is a plain fetch that can (and does) carry headers.
+
+**Client consequence (M8-S5 finding):** since SignalR 7, clients deliver `accessTokenFactory` tokens to the connection's HTTP requests — *including the negotiate POST* — as an `Authorization: Bearer` header, which this scheme deliberately does not read; the `access_token` query parameter is appended only to the browser WS upgrade. A default negotiate-first browser connection therefore 401s before any socket opens. Browser clients must connect with `skipNegotiation: true` + the WebSockets transport (the lived ops-app shape — see the client skill), or the scheme must learn the Bearer-header read (the ADR-024 recorded JWT migration path; a backend change, escalated not improvised).
 
 BiddingHub remains anonymous (`[AllowAnonymous]` is implicit — no attribute required since the default challenge scheme falls through for unauthenticated connections).
 
@@ -203,6 +205,8 @@ CritterBids does not use this today. Current group membership is assigned at con
 ## Testing posture
 
 The upstream SignalR skill covers the client transport mechanics. CritterBids-specific reminder: do not use `WebApplicationFactory` for SignalR handshake tests. Use real Kestrel on a dynamic port and track both the server host and Wolverine client host.
+
+When a hub is credential-gated, **exercise the client's default credential transport, not a hand-built URL**. The M7-S6 fixtures appended `?access_token=` manually to the connection URL — which authenticated fine but never exercised how a real client delivers an `accessTokenFactory` token, masking the Bearer-on-negotiate mismatch until the first browser client connected (M8-S5). At least one test per gated hub should present the credential the way production clients do.
 
 ## Common pitfalls
 

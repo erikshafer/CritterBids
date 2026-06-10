@@ -103,6 +103,22 @@ if (!string.IsNullOrEmpty(rabbitMqUri))
 
 Do not use `?? throw` on Aspire-provided connection strings in `Program.cs`; test hosts and diagnostic code paths can start without AppHost injection.
 
+## Dev-only secrets via inherited environment
+
+Child project processes **inherit the AppHost's OS process environment** (observed live, M8-S5):
+an environment variable set in the launching shell reaches the API with no `WithEnvironment` call.
+This is the no-repo-change way to feed a dev-only secret — e.g. the ADR-024 staff token, which has
+no appsettings entry and no `UserSecretsId` on the Api project:
+
+```powershell
+$env:OperationsAuth__StaffToken = "<dev-token>"
+dotnet run --project src\CritterBids.AppHost --launch-profile http
+```
+
+Inheritance complements — does not replace — explicit `WithEnvironment(...)`, which remains the
+pinned pattern for values the AppHost must compute or that must be visible in the resource wiring
+(`ASPNETCORE_ENVIRONMENT` above).
+
 ## Docker grouping
 
 All infrastructure containers carry:
