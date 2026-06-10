@@ -17,9 +17,15 @@ interface ActivityEntry {
 
 const MAX_ENTRIES = 8;
 
-// The wire uses different timestamp field names per shape (occurredAt vs soldAt).
 function timeOf(message: HubMessage): string {
-  return message.kind === "listingSold" ? message.soldAt : message.occurredAt;
+  switch (message.kind) {
+    case "listingSold":
+      return message.soldAt;
+    case "settlementCompleted":
+      return message.completedAt;
+    default:
+      return message.occurredAt;
+  }
 }
 
 function describe(message: HubMessage): string | null {

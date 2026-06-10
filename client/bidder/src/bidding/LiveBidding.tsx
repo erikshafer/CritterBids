@@ -143,6 +143,21 @@ function TerminalOutcome({
   listing: CatalogListing;
   amWinner: boolean;
 }) {
+  if (listing.status === "Settled" && amWinner) {
+    const hammer = listing.hammerPrice ?? listing.currentHighBid;
+    return (
+      <div
+        className="rounded-md bg-green-100 px-3 py-3 text-center text-green-900"
+        role="status"
+      >
+        <p className="text-sm font-semibold">
+          Charged {hammer != null ? formatUsd(hammer) : ""}
+        </p>
+        <p className="mt-1 text-xs">It's yours!</p>
+      </div>
+    );
+  }
+
   if (listing.status === "Sold" || listing.status === "Settled") {
     const hammer = listing.hammerPrice ?? listing.currentHighBid;
     return (
@@ -156,7 +171,7 @@ function TerminalOutcome({
         </p>
         {amWinner && (
           <p className="mt-1 text-xs">
-            The gavel fell in your favor. Settlement confirmation arrives next.
+            Settlement confirmation arrives next.
           </p>
         )}
       </div>
