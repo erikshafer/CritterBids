@@ -1,0 +1,39 @@
+{
+  "name": "@critterbids/ops",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "CritterBids staff operations dashboard SPA (ADR 004/012/013/024/025). M8-S5 scaffolds the shell, the StaffToken auth gate, and the OperationsHub connection; M8-S6 fills the six dashboard views.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@microsoft/signalr": "^10.0.0",
+    "@tanstack/react-query": "^5.101.0",
+    "@tanstack/react-router": "^1.170.15",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.6.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.3.0",
+    "@testing-library/dom": "^10.4.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.0",
+    "jsdom": "^29.1.1",
+    "tailwindcss": "^4.3.0",
+    "typescript": "^6.0.0",
+    "vite": "^8.0.0",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^4.1.8"
+  }
+}
