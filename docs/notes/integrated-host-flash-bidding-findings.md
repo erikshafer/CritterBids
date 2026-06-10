@@ -75,7 +75,17 @@ did not bite).
 
 ---
 
-## Bug #2 — HTTP-placed bids don't forward to consumers (OPEN — needs dedicated work)
+## Bug #2 — HTTP-placed bids don't forward to consumers (✅ FIXED — PR #90)
+
+> **RESOLVED (2026-06-09, PR #90).** The root cause was never the publish side: it is a
+> Wolverine ≤6.5.x consume-side dispatch defect (`Separated` mode keeps a single saga type as a
+> contract-event chain's default handler, which suppresses the sticky-handler fan-out for broker
+> deliveries — the saga consumed every delivery while Listings/Relay/Operations starved). Fixed by
+> the `AuctionClosingDispatchHandler` dispatcher bridge; live-verified end-to-end in a browser.
+> Authoritative report: `docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md`. The
+> "root cause (diagnosed)" paragraph below and the recommended directions are the pre-resolution
+> reading, preserved as the record — direction (b)'s framing was wrong, and none of (a)/(b)/(c)
+> would have fixed it.
 
 **Symptom.** An accepted `bid_placed` persists, but the Listings read model
 (`CatalogListingView.CurrentHighBid`) and the Relay `BiddingHub` never update — there are **zero**
@@ -122,7 +132,13 @@ All current experiments were reverted; the bid endpoint + `PlaceBidHandler` are 
 
 ---
 
-## Bug #3 — `AuctionClosingSaga` start not idempotent under redelivery (MINOR — noted)
+## Bug #3 — `AuctionClosingSaga` start not idempotent under redelivery (EXPLAINED — fix scheduled via ADR 027)
+
+> **EXPLAINED (2026-06-09).** The redeliveries are the Separated fan-out delivering one copy per
+> consuming RabbitMQ queue (3× for `BiddingOpened`) — the saga-start races its own duplicates. The
+> same class of noise appears on `ListingSold` (Settlement saga start) and `SettlementCompleted`
+> (PostSaleCoordination start) now that those flows run end-to-end. ADR 027 (per-BC sticky queue
+> bindings) eliminates the duplicate copies at the source; implementation is the M8-S3c session.
 
 `BiddingOpened` dead-letters twice with `JasperFx.DocumentAlreadyExistsException: AuctionClosingSaga
 <listingId>` — the saga-start handler creates the saga on first delivery, then a redelivery re-attempts

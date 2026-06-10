@@ -120,12 +120,14 @@ public static class PlaceBidEndpoint
         // boundary.AppendOne. The boundary's queued DCB consistency assertion fires on the generated
         // SaveChanges; the decision + audit + outcome shaping live in the shared DecideAndWrite.
         //
-        // NOTE (M8-S3b Bug #2): accepted events reach the LOCAL AuctionClosingSaga (UseFastEvent
-        // forwarding, in-process) but NOT the external RabbitMQ consumers (Listings / Relay /
-        // Operations) — HTTP-endpoint-origin events do not get sent through Wolverine's outbox to
-        // external transports in this app (six fixes attempted, all failed; see
-        // docs/research/dcb-marten-blog-series-research.md §5.0/§5.1). Pending JasperFx escalation /
-        // async-202; the read model + BiddingHub live-update remain affected.
+        // Bug #2 is FIXED: accepted events now reach Listings / Relay / Operations — the defect was
+        // consume-side (Wolverine Separated single-saga dispatch), resolved by the
+        // AuctionClosingDispatchHandler bridge; see
+        // docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md. A commit-time
+        // DcbConcurrencyException (simultaneous bids racing the same boundary) propagates out of the
+        // generated SaveChanges and is mapped to a graceful 409 by ConcurrencyConflictMiddleware in
+        // the Api host — HTTP chains do not consume Wolverine failure rules at 6.5.1, so there is no
+        // endpoint-level retry; the M8-S3b reconcile model treats the 409 as refetch-and-re-decide.
         var state = boundary.Aggregate ?? new BidConsistencyState();
         var outcome = await PlaceBidHandler.DecideAndWrite(
             command, state, session,

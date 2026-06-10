@@ -125,9 +125,13 @@ public static class AuctionsModule
             opts.Projections.LiveStreamAggregation<Session>();
         });
 
-        // DCB concurrency retry policies. DcbConcurrencyException (JasperFx.Events,
-        // subclass of MartenException) and ConcurrencyException (JasperFx) are siblings,
-        // not parent/child — each needs its own OnException entry.
+        // DCB concurrency retry policies for the MESSAGE-BUS path. As of JasperFx.Events 2.8.2,
+        // DcbConcurrencyException DERIVES FROM JasperFx.ConcurrencyException (verified by
+        // reflection at the M8 Bug #2 follow-ups session — the original "siblings, not
+        // parent/child" comment described an older package), so the second OnException entry
+        // below is redundant-but-harmless and kept for explicitness. These rules do NOT reach
+        // Wolverine.HTTP chains (no failure-rule wiring in Wolverine.Http at 6.5.1) — the HTTP
+        // path maps commit-time conflicts to 409 via ConcurrencyConflictMiddleware in the Api host.
         services.AddSingleton<IWolverineExtension, AuctionsConcurrencyRetryPolicies>();
 
         return services;
