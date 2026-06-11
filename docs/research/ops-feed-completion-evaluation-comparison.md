@@ -109,3 +109,13 @@ The evaluations reinforce each other on the **what** (sanction it) and **why** (
 - **Evaluation B's precise 10-event gap count** informs the slice's scope inventory.
 
 The slice prompt should be authored next session. S7 then lands against the finished posture — its e2e test validates the complete feed, and its doc refresh documents the final state once.
+
+---
+
+## Addendum — Decision 2 folded in (Erik, 2026-06-11)
+
+The companion open decision from M8-S6 close — **dispute-resolution controls on the ops dashboard** (narrative 008 Moment 2: does Morgan get to act, or is M8 view-only?) — is **also sanctioned**. It is recorded here rather than in a separate evaluation because no evaluation pass was needed: the backend is already fully proven (`POST /api/obligations/disputes/resolve` exists, is `StaffOnly`-gated, returns 202 Accepted, and the resulting `DisputeResolved` push already drives both obligations queues through the S6 cache bridge), so the slice is frontend-only and smaller than the feed completion sanctioned above.
+
+**Scope:** a "Resolve with extension" control on the dispute card, posting `ResolveDispute { ObligationId, DisputeId, ResolutionType: "Extension" }` through `staffFetch`. `Refund`/`Closed` resolutions stay un-surfaced: refund compensation mechanics are a recorded M6/M7 non-goal, and the narrative's signature beat is the Extension path — the single non-terminal resolution.
+
+**Sequencing:** rather than running as its own M8-S6c, the control **folds into M8-S6b** — one combined pre-S7 slice, one PR, one retro. Rationale: S6b already has a frontend half (cache-bridge mappings, stopgap retirement, `onreconnected` reconciliation), the control is small, and both exist for the same reason — landing the finished posture before S7's e2e validates and its doc refresh documents it once.
