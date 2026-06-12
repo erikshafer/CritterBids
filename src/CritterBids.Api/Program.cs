@@ -261,11 +261,14 @@ builder.UseWolverine(opts =>
         // M6-S4: Obligations → Relay publish routes for the failure-path integration events.
         // DisputeOpened / DisputeResolved were frozen at M6-S1; both are append+emit on the
         // post-sale saga and gained their Relay consumers (ObligationsRelayHandler) at M6-S5–S7.
-        // M8-S3c: the DeadlineEscalated → relay-obligations-events route was REMOVED — the planned
-        // Relay consumer never shipped, and the consumer-less copy made the Operations handler
-        // execute twice per escalation via the Separated default chain (DeadlineEscalated rides
-        // operations-obligations-events below, its only consuming queue). Truthful topology: no
-        // consumer, no route. Restore the route together with the Relay handler if it ships.
+        // M8-S3c removed the DeadlineEscalated → relay-obligations-events route as consumer-less
+        // ("restore the route together with the Relay handler if it ships"); M8-S6b ships that
+        // handler — ObligationsRelayHandler now pushes DeadlineEscalated to the ops feed (the
+        // escalation-arrival gap behind the dashboard's polling stopgap) — so the route is
+        // restored. The S3c double-execution hazard does not return: the Relay handler is sticky
+        // to this queue, and the Operations handler is sticky to operations-obligations-events.
+        opts.PublishMessage<CritterBids.Contracts.Obligations.DeadlineEscalated>()
+            .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeOpened>()
             .ToRabbitQueue("relay-obligations-events");
         opts.PublishMessage<CritterBids.Contracts.Obligations.DisputeResolved>()
@@ -344,7 +347,12 @@ builder.UseWolverine(opts =>
         // the ListenTo. Relay handles SettlementCompleted this slice; the SellerPayoutIssued push
         // handler lands in M6-S6 — until then SellerPayoutIssued arrives on this queue with no Relay
         // handler (a known, accepted deferral; harmless in the test suite, which disables transports).
+        // M8-S6b adds the PaymentFailed route together with its first Relay consumer
+        // (SettlementOperationsHandler → ops feed): the settlement queue's staff-attention state
+        // must reach the dashboard live, completing the ops-feed coverage of the settlement family.
         opts.PublishMessage<CritterBids.Contracts.Settlement.SettlementCompleted>()
+            .ToRabbitQueue("relay-settlement-events");
+        opts.PublishMessage<CritterBids.Contracts.Settlement.PaymentFailed>()
             .ToRabbitQueue("relay-settlement-events");
         opts.ListenToRabbitQueue("relay-settlement-events");
 
@@ -461,6 +469,17 @@ builder.Services.AddRelayModule();
 
 // ── ASP.NET / Wolverine HTTP ──────────────────────────────────────────────────
 builder.Services.AddWolverineHttp();
+
+// M8-S6b live-smoke finding: C# enums on the read-model wire (LotBoardStatus,
+// SettlementQueueStatus, QueueState, SessionActivityStatus) serialized as STJ-default NUMBERS,
+// while the documented wire contract (docs/skills/wolverine-http-frontend-contract §3) and the
+// ops SPA's Zod schemas + status switches expect the string names. Invisible until the first
+// real row reached a staff board — M8-S6's smoke saw only empty boards, and [] parses the same
+// either way. Enum names on the wire restore the documented contract for every HTTP endpoint
+// (Wolverine HTTP shares the Minimal-API JsonOptions this configures).
+builder.Services.ConfigureSystemTextJsonForWolverineOrMinimalApi(options =>
+    options.SerializerOptions.Converters.Add(
+        new System.Text.Json.Serialization.JsonStringEnumConverter()));
 
 // ── Staff authentication (ADR-024) ────────────────────────────────────────────
 // The StaffToken scheme is the DEFAULT authenticate + challenge scheme — the fix for the

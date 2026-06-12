@@ -9,23 +9,27 @@ import type { OperationsFeedMessage } from "@/signalr/messages";
 // re-fetch the authoritative /api/operations/* read models. No push field is ever written into
 // the cache as truth.
 //
-// The eventType → board mapping below covers the lived 14-value ops-feed vocabulary (see
-// messages.ts). An eventType OUTSIDE that vocabulary still parsed (the shape is the contract),
-// so it invalidates the whole ["operations"] family — the forward-compatible safe default: a
-// new server eventType refreshes every board rather than silently refreshing none.
+// The eventType → board mapping below covers the lived 22-value ops-feed vocabulary (see
+// messages.ts) — complete as of M8-S6b: every integration event an Operations BC handler
+// consumes has an ops push (the backend topology test, OperationsFeedTopologyTests, enforces
+// this), so no board depends on polling. An eventType OUTSIDE that vocabulary still parsed
+// (the shape is the contract), so it invalidates the whole ["operations"] family — the
+// forward-compatible safe default: a new server eventType refreshes every board rather than
+// silently refreshing none.
 //
 // Pure function over (queryClient, message) so it is directly unit-testable without a live hub.
 
 const EVENT_TARGETS: Record<string, ReadonlyArray<readonly string[]>> = {
+  // ── Lot board lifecycle ──
   // A bid advances the lot board row and prepends a bid-activity entry.
   BidPlacedOperations: [operationsKeys.lotBoard, operationsKeys.bidActivity],
-  // A sale closes the lot board row and (via the Settlement saga it starts) seeds a settlement
-  // queue row; invalidating the queue here is a cheap proxy signal for that eventually-consistent
-  // row — the ops feed carries no settlement events of its own (M8-S6 prompt finding 2).
-  ListingSoldOperations: [
-    operationsKeys.lotBoard,
-    operationsKeys.settlementQueue,
-  ],
+  // A sale closes the lot board row. (Until M8-S6b this entry also invalidated the settlement
+  // queue as a cheap proxy for the settlement row the sale eventually seeds; the direct
+  // SettlementCompleted/PaymentFailed/SellerPayoutIssued pushes below superseded that.)
+  ListingSoldOperations: [operationsKeys.lotBoard],
+  BiddingOpened: [operationsKeys.lotBoard],
+  ListingPassed: [operationsKeys.lotBoard],
+  ListingWithdrawn: [operationsKeys.lotBoard],
   ListingPublished: [operationsKeys.lotBoard],
   // The one title-bearing change: refresh the title-join entry alongside the board (handled
   // below, where the listingId is in hand).
@@ -36,11 +40,21 @@ const EVENT_TARGETS: Record<string, ReadonlyArray<readonly string[]>> = {
   // watches concern, so keep it fresh and move on.
   LotWatchAdded: [operationsKeys.lotBoard],
   LotWatchRemoved: [operationsKeys.lotBoard],
-  // A dispute moves a card BETWEEN the two obligations queues (Escalated → Disputed), and a
-  // resolution moves it out of Disputed (Extension → back to active, outside both queues) —
-  // both queues re-query on either event.
+  // ── Settlement queue (M8-S6b — the demo's gavel→charged beat moves live) ──
+  SettlementCompleted: [operationsKeys.settlementQueue],
+  PaymentFailed: [operationsKeys.settlementQueue],
+  SellerPayoutIssued: [operationsKeys.settlementQueue],
+  // ── Obligations queues ──
+  // An escalation ARRIVES on the escalation queue (M8-S6b — the gap that kept that board on
+  // the polling stopgap); a dispute moves a card BETWEEN the two queues (Escalated → Disputed);
+  // a resolution moves it out of Disputed (Extension → back to active, outside both queues);
+  // fulfilment is terminal and drops the obligation from whichever queue still holds it —
+  // the queue-family pair re-queries on each.
+  DeadlineEscalated: [operationsKeys.escalations],
   DisputeOpened: [operationsKeys.escalations, operationsKeys.disputes],
   DisputeResolved: [operationsKeys.escalations, operationsKeys.disputes],
+  ObligationFulfilled: [operationsKeys.escalations, operationsKeys.disputes],
+  // ── Sessions + participants ──
   SessionCreated: [operationsKeys.sessions],
   SessionStarted: [operationsKeys.sessions],
   ParticipantSessionStarted: [operationsKeys.participants],
