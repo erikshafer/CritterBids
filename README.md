@@ -74,9 +74,9 @@ All eight BC modules are active: Auctions, Selling, Listings, Participants, Sett
 | Event sourcing (PostgreSQL) | [Marten 9+](https://martendb.io/) |
 | Async messaging | RabbitMQ (AMQP) |
 | Real-time push | SignalR |
-| Testing | xUnit + Shouldly + Testcontainers + Alba |
-| Frontend | React + TypeScript |
-| Local orchestration | .NET Aspire 13.2+ |
+| Testing | xUnit + Shouldly + Testcontainers + Alba (backend) · Vitest + Playwright (frontend) |
+| Frontend | React + TypeScript — two static Vite SPAs (bidder + ops dashboard) |
+| Local orchestration | .NET Aspire 13.4+ |
 | Deployment | Hetzner VPS |
 
 ---
@@ -111,7 +111,7 @@ This scenario directly shapes architectural decisions. Anonymous frictionless on
 
 ## Getting Started
 
-> **Note:** CritterBids is in active early development. The `src/` projects are being built out milestone by milestone. The instructions below reflect the intended local development workflow.
+> **Note:** CritterBids is in active development, built out milestone by milestone. The MVP arc — all eight backend BCs plus both frontend SPAs — is complete; see [`docs/STATUS.md`](docs/STATUS.md) for the current snapshot.
 
 ### Prerequisites
 
@@ -121,13 +121,13 @@ This scenario directly shapes architectural decisions. Anonymous frictionless on
 
 ### Run Locally
 
-CritterBids uses [.NET Aspire](https://learn.microsoft.com/en-us/dotnet/aspire/get-started/aspire-overview) for local orchestration. A single command starts PostgreSQL, RabbitMQ, and the API host — no separate `docker compose up` needed.
+CritterBids uses [.NET Aspire](https://learn.microsoft.com/en-us/dotnet/aspire/get-started/aspire-overview) for local orchestration. A single command starts PostgreSQL, RabbitMQ, the API host, and both SPA dev servers — no separate `docker compose up`, no separate `npm run dev`. (Run `npm install` once in `client/` first.)
 
 ```bash
 dotnet run --project src/CritterBids.AppHost --launch-profile http
 ```
 
-The Aspire dashboard opens at `http://localhost:15237`. It shows live service health, structured logs, and distributed traces for all running resources. In Docker Desktop, the two infrastructure containers (PostgreSQL, RabbitMQ) appear grouped under **critterbids** in the Containers view.
+The Aspire dashboard opens at `http://localhost:15237`. It shows live service health, structured logs, and distributed traces for all running resources. The bidder-facing app serves at `http://localhost:5173` and the staff ops dashboard at `http://localhost:5174` (both proxy `/api` and `/hub` to the API host — no CORS, see ADR 025). In Docker Desktop, the two infrastructure containers (PostgreSQL, RabbitMQ) appear grouped under **critterbids** in the Containers view.
 
 #### HTTPS dashboard (optional)
 
@@ -145,7 +145,7 @@ dotnet run --project src/CritterBids.AppHost --launch-profile https
 
 The dashboard will be at `https://localhost:17019`.
 
-The participant frontend and ops dashboard are planned React apps tracked in the milestone docs and may not be present in every branch/worktree.
+Both React SPAs shipped in M8 and live in `client/` (an npm-workspaces monorepo, ADR 025): the public **bidder-facing app** (`client/bidder/`, anonymous, live bidding over `BiddingHub`) and the staff **operations dashboard** (`client/ops/`, `StaffToken`-gated, live operator boards over `OperationsHub`). A third workspace member, `client/e2e/`, holds the Playwright end-to-end tests — including the two-bidder bid-war test — run locally against the live Aspire stack (`npm run e2e` from `client/`; see [`client/e2e/README.md`](client/e2e/README.md)).
 
 ---
 
@@ -167,11 +167,16 @@ CritterBids/
 │   └── CritterBids.Operations/  # Operations BC (cross-BC read-model projections, ops dashboard)
 ├── tests/
 │   └── [BC integration and unit test projects]
+├── client/                       # Frontend npm-workspaces monorepo (ADR 025)
+│   ├── bidder/                   # Public bidder-facing SPA (Vite + React + TS)
+│   ├── ops/                      # Staff operations dashboard SPA
+│   └── e2e/                      # Playwright end-to-end tests (run against the live stack)
 └── docs/
     ├── vision/       # Overview, BC map, domain event vocabulary
     ├── skills/       # Implementation pattern guides (load before implementing)
     ├── decisions/    # Architecture Decision Records (ADRs)
     ├── milestones/   # Scoped milestone definitions
+    ├── narratives/   # Journey narratives (the specs slices anchor to)
     └── personas/     # Agent personas for Event Modeling workshops
 ```
 
@@ -181,6 +186,7 @@ CritterBids/
 
 | Document | Purpose |
 |---|---|
+| [`docs/STATUS.md`](docs/STATUS.md) | Derived project-status snapshot — where we are, what's next, deferred items, risks |
 | [`docs/vision/README.md`](docs/vision/README.md) | Vision index — project overview, BC map, domain event vocabulary, reactive architecture notes |
 | [`docs/skills/README.md`](docs/skills/README.md) | Skills index — load before implementing any feature |
 | [`docs/decisions/`](docs/decisions/) | Architecture Decision Records |
@@ -197,6 +203,7 @@ If you are contributing or exploring the codebase with an AI assistant, start wi
 
 **Post-MVP milestones (planned):**
 
+- Seller console (working name M9) — the seller-perspective SPA surfaces narratives 004/005/006 describe: publish, watch-close, fulfill-obligation
 - `M-transport-swap` — Live swap from RabbitMQ to Azure Service Bus (configuration-only change, demonstrable during a conference talk)
 - `M-storage-swap` — Migrate a BC's event store between Marten/PostgreSQL and Polecat/SQL Server, demonstrating the Critter Stack's storage-agnostic programming model
 - Real payment processor integration (same saga shape, real Stripe wiring)
@@ -212,6 +219,7 @@ GitHub Actions CI lives in [`.github/workflows/ci.yml`](.github/workflows/ci.yml
 - A `changes` job (via `dorny/paths-filter`) skips build/test execution for doc-only changes.
 - The branch-protection-friendly required check is the final `CI` aggregator job.
 - Code-path changes run restore/build, publish the API artifact, targeted unit tests (Contracts + selected Selling/Participants suites), and an integration matrix (Api, Participants, Selling, Auctions, Listings, Settlement, Obligations, Relay, Operations).
+- `client/**` changes run a `frontend` job: build + Vitest for both SPAs, plus a type-check of the e2e workspace member. The Playwright e2e itself runs locally, not in CI (it needs the full Aspire stack — a recorded M8-S7 deferral).
 
 ---
 
