@@ -203,7 +203,7 @@ Draft → Submitted → Approved → Published
 
 - The Operations dashboard is the "look at the engine running" moment in a conference demo. It should be legible from a projector — real-time, high-contrast, showing saga state and message activity alongside business state.
 - The demo reset mechanism lives here. In MVP, resetting between conference sessions is handled by Docker volume removal. A more graceful `DemoResetInitiated` command that cascades through BCs is a post-MVP milestone.
-- The ops dashboard and participant-facing app are separate React SPAs pointing at the same API host. Two browser windows on the same projector tells the audience the story without narration.
+- The ops dashboard and participant-facing app are separate React SPAs pointing at the same API host — lived since M8: `client/bidder/` (public, anonymous, `BiddingHub`) and `client/ops/` (staff-gated, `OperationsHub`), an npm-workspaces monorepo per ADR 025, both launched as Aspire children in dev. Two browser windows on the same projector tells the audience the story without narration.
 
 **Storage:** PostgreSQL via Marten (ADR 011 — All-Marten Pivot). Originally designed for SQL Server / Polecat for BI tooling and live reporting; the BI rationale is preserved as a stretch goal in ADR 003.
 

@@ -1,7 +1,7 @@
 # CritterBids — Project Status Snapshot
 
-**As of:** 2026-06-10 · `main` @ `223f27b` (M8-S4 merged; M8 in progress)
-**Derived from:** [`retrospectives/M8-S4-bidder-settlement-outcome-retrospective.md`](./retrospectives/M8-S4-bidder-settlement-outcome-retrospective.md) (latest session retro), [`milestones/M8-frontend-spas.md`](./milestones/M8-frontend-spas.md) (v0.4), [`decisions/README.md`](./decisions/README.md), [`research/README.md`](./research/README.md), `.github/workflows/ci.yml`
+**As of:** 2026-06-12 · `main` @ `7b31147` + the M8-S7 close PR (regenerated inside that PR; **M8 complete**)
+**Derived from:** [`retrospectives/M8-S7-end-to-end-housekeeping-retrospective.md`](./retrospectives/M8-S7-end-to-end-housekeeping-retrospective.md) + the M8 milestone retrospective (latest session close), [`milestones/M8-frontend-spas.md`](./milestones/M8-frontend-spas.md) (v0.6, ✅ Complete), [`decisions/README.md`](./decisions/README.md), [`research/README.md`](./research/README.md), `.github/workflows/ci.yml`
 
 > **This document is a derived snapshot, not a source of truth.** The canonical session-close
 > state is always the **most recent retrospective** in `docs/retrospectives/`. If this snapshot
@@ -17,28 +17,33 @@
 
 ## 1. Where Are We?
 
-CritterBids is mid-**M8 (React frontend SPAs)**. The backend MVP (M1–M7, all 8 BCs) is complete;
-M8 slices S1–S4 have shipped. **The bidder app's narrative arc is complete** — the full journey
-from anonymous session start through catalog → bid → outbid → extended bidding → gavel →
-settlement confirmation runs in the SPA. M8-S4 (PR #94) closed the final bidder-visible beat:
-the `SettlementCompletedNotification` hub push is recognized, the cache bridge invalidates, and
-the `TerminalOutcome` component renders a confirmed charge ("Charged $55.00 — It's yours!") when
-the re-queried `CatalogListingView` reaches `Status: "Settled"`. The remaining M8 work is the
-**ops dashboard** (S5–S6) and **e2e housekeeping** (S7).
+**M8 (React frontend SPAs) is complete** — and with it the full MVP arc: the backend (M1–M7,
+all 8 BCs) plus both frontend SPAs and the end-to-end proof. The bidder app renders narrative
+001's full journey (anonymous session → catalog → live bid war → extended bidding → gavel →
+settlement confirmation); the ops dashboard renders the six operator boards over a **complete,
+push-only** ops feed (the S6b 22-value vocabulary, polling stopgap deleted, topology invariant
+in CI); and M8-S7 closed the milestone with the **Playwright two-bidder bid-war e2e**
+(`client/e2e/`, two isolated browser contexts against the live Aspire stack — the ADR 013
+multi-context use case), the CI frontend job extended to the whole workspace, and the doc
+surface refreshed to shipped reality.
 
-- **Build state at last close:** 0 errors / 0 warnings; **298 backend tests, all green** (full
-  `dotnet test CritterBids.slnx`); **25 frontend tests** (Vitest) in `client/bidder/` across 8
-  files.
-- **Engine baseline:** Wolverine **6.5.1** / Marten **9.6.0** / JasperFx.Events **2.8.2** /
-  .NET 10 / Aspire 13.2+ (upgraded across M8; STATUS v0.2's 6.2.2 line is historical).
-- **Frontend:** `client/bidder/` (Vite + React SPA, ADR 012/013/025) is live against the API with
-  the ADR 026 SignalR cache-bridge pattern; the bidder journey is feature-complete. `client/ops/`
-  is planned (M8-S5/S6).
-- **Bug #2 outcome:** the defect was a Wolverine ≤6.5.x consume-side dispatch gap
-  (Separated-mode single-saga chains suppress the sticky-handler fan-out). Fixed app-side with
-  the `AuctionClosingDispatchHandler` dispatcher bridge (PR #90); lessons codified as skills
-  (PR #91, incl. the new `message-flow-diagnosis` skill); upstream Wolverine fix hand-off
-  authored; ai-skills corrections PR'd (private repo, JasperFx/ai-skills#71).
+- **Build state at close:** 0 errors / 0 warnings; **307 backend tests green** (full
+  `dotnet test CritterBids.slnx`); **72 frontend Vitest** (`@critterbids/ops` 47,
+  `@critterbids/bidder` 25); **1 Playwright e2e** (local-only, two consecutive green runs
+  recorded in the S7 retro).
+- **Engine baseline:** Wolverine **6.8.0** (Marten via `WolverineFx.Marten`) / .NET 10 /
+  ASP.NET Core 10.0.9 / Aspire **13.4.3**. A single `dotnet run --project
+  src/CritterBids.AppHost` starts Postgres, RabbitMQ, the API host, and **both SPA dev servers**
+  (bidder `:5173`, ops `:5174`) as Aspire children (commit `7b31147`).
+- **Frontend:** `client/` is a three-member npm-workspaces monorepo (ADR 025): `bidder/`,
+  `ops/`, and `e2e/` (the M8-S7 Playwright harness). `shared/` stays a planned member —
+  extraction **deferred to M9** (S7 decision: the apps duplicate the pattern, not the bytes;
+  the seller console is the third consumer that reveals the real shared subset).
+- **Notable S7 finding (escalated, not fixed):** the bidder app's extended-bidding *banner* is
+  structurally unreachable — the Listings BC has no `ExtendedBiddingTriggered` handler, so
+  `CatalogListingView.ScheduledCloseAt` never advances after `BiddingOpened`. The saga-side
+  extension itself works (e2e-proven: the listing outlives its original close). Backend
+  carry-forward; M8 had no sanctioned exception left.
 
 ### Milestone ladder
 
@@ -52,50 +57,46 @@ the re-queried `CatalogListingView` reaches `Status: "Settled"`. The remaining M
 | M5 | Settlement BC (payment saga, financial event stream) | ✅ Complete |
 | M6 | Obligations BC (post-sale saga) + Relay BC (SignalR push) | ✅ Complete |
 | M7 | Operations BC (operator read models + staff auth) | ✅ Complete (281 tests at close) |
-| **M8** | **React frontend SPAs (bidder + ops dashboard)** | ⏳ **In progress** (S1–S4 done; bidder app complete; S5–S7 remaining) |
+| **M8** | **React frontend SPAs (bidder + ops dashboard) + e2e** | ✅ **Complete** (307 backend / 72 Vitest / 1 e2e at close) |
+| M9 | Seller console (working name) | 🔭 Next — **not yet scoped**; needs its milestone-scoping session first |
 
-### M8 slice progress
+### M8 slice ledger (final)
 
 | Slice | Scope | Status |
 |---|---|---|
 | M8-S1 | Foundation: ADR 013 accepted, ADR 025 (monorepo layout), `client/bidder/` BiddingHub proof | ✅ Done |
 | M8-S2 | Bidder SPA shell + catalog + anonymous session | ✅ Done (PR #80) |
-| M8-S3a | Backend precursor: `POST /api/auctions/bids` over the existing PlaceBid DCB command | ✅ Done |
+| M8-S3a | Backend precursor: `POST /api/auctions/bids` over the existing PlaceBid DCB command | ✅ Done (PR #84) |
 | M8-S3b | Bidder live bidding + ADR 026 (SignalR integration pattern) | ✅ Done (PR #86) |
-| *(interlude)* | **Bug #2 root cause + fix** (dispatcher bridge, SPA session/feed fixes, skills, ADR 027 authored, 409 concurrency middleware, doc consolidation) | ✅ Done (PRs #88–#91 + follow-ups branch) |
-| M8-S3c | **ADR 027 implementation**: per-BC sticky queue bindings + `auctions-auctions-events` **and** `settlement-settlement-events`; killed the N-copies fan-out + Bug #3 dead letters; first live BIN/withdrawal verification; fixed two masked races (saga `IRevisioned`, order-tolerant catalog settle) | ✅ Done (PR #93) |
-| M8-S4 | Bidder settlement outcome — `SettlementCompletedNotification` parse + confirmed-charge view; closes the bidder app's narrative arc | ✅ Done (PR #94) |
-| M8-S5 | Ops SPA shell + staff auth + `OperationsHub` credential dance | ⏳ **Next** |
-| M8-S6 | Ops dashboard views (lot board, bid activity, settlement queue, obligations, sessions) | ⏳ Planned |
-| M8-S7 | End-to-end Playwright + CI frontend job + housekeeping | ⏳ Planned |
+| *(interlude)* | Bug #2 root cause + fix (dispatcher bridge, ADR 027 authored, 409 middleware, skills) | ✅ Done (PRs #88–#92) |
+| M8-S3c | ADR 027 implementation: per-BC sticky queue bindings, exactly-once consumption | ✅ Done (PR #93) |
+| M8-S4 | Bidder settlement outcome (confirmed-charge view) | ✅ Done (PR #94) |
+| M8-S5 | Ops SPA shell + staff auth gate + `OperationsHub` credential dance | ✅ Done (PR #95) |
+| M8-S6 | Ops dashboard views (six boards, ADR 026 cache bridge, Title join) | ✅ Done (PR #98) |
+| M8-S6b | Relay ops-feed completion (8 events, topology invariant, stopgap deleted) + dispute-resolution control | ✅ Done (PR #100) |
+| M8-S7 | Playwright two-bidder bid-war e2e + full-workspace CI frontend job + doc refresh + retros | ✅ Done (this PR) |
 
 ---
 
 ## 2. What's Up Next?
 
-### Immediate: M8-S5 — Ops SPA Shell + Staff Auth + `OperationsHub`
+### Immediate: scope M9 (seller console)
 
-Scaffold `client/ops/` (the second SPA), wire the `StaffToken` credential flow
-(`X-Staff-Token` header for HTTP, `access_token` query string for the `OperationsHub` negotiate
-per ADR 024), establish the staff-gated `OperationsHub` connection, and get a projector-legible
-high-contrast shell rendering. This is the ops-dashboard equivalent of what M8-S1/S2 did for
-the bidder app. Then M8-S6 (dashboard views) → S7 (e2e + housekeeping).
+M8's milestone retrospective defers the seller-perspective journeys (narratives 004/005/006 —
+publish, watch-close, fulfill-obligation) outward to a working-name **M9 seller console**.
+**No `docs/milestones/M9-*.md` exists yet** — per the milestone-doc precondition gate, the next
+step is a milestone-scoping session that authors it; an M9-S1 implementation prompt would
+hard-gate on its absence. Inputs: the M8 milestone retro's "what M8 defers outward", narratives
+004/005/006, and the `client/shared/` extraction decision (M9 is its recorded trigger).
 
 Satellite work running alongside (not session-gated):
 
-- **Wolverine upstream fix** — agent work order ready at
+- **Wolverine upstream fix** — agent work order at
   [`research/wolverine-upstream-saga-sticky-separation-handoff.md`](./research/wolverine-upstream-saga-sticky-separation-handoff.md)
-  (launch in `C:\Code\JasperFx\wolverine`; cites prior art #3041/#3042). Includes the
-  `describe-routing --explain` NRE as a separate small issue. **Extended by M8-S3c:** the
-  `HandlerFor(Type, Endpoint)` sticky resolution is `ByEndpoint.FirstOrDefault` — two handler
-  classes sticky at the same endpoint for the same message type silently starve one, with no
-  startup diagnostic.
-- **ai-skills PR #71** (private repo) — Separated sharp-edge + forwarding-API + diagnostics
-  corrections; with Jeremy for review.
-
-Key M8 concerns carried forward: render-time `Title` join (ops views return `ListingId` only);
-Relay push = re-query signal (now *proven* in the bidder app, to be repeated in the ops app);
-staff auth header/query-string dance for the ops SPA (ADR 024).
+  (launch in `C:\Code\JasperFx\wolverine`); includes the `FirstOrDefault` sticky-sibling
+  starvation finding and the `describe-routing --explain` NRE. Verify against the 6.8.0 line
+  before filing — the handoff predates two engine bumps.
+- **ai-skills PR #71** (private repo) — with Jeremy for review.
 
 ---
 
@@ -105,17 +106,20 @@ staff auth header/query-string dance for the ops SPA (ADR 024).
 
 | Item | Deferred at | Target |
 |---|---|---|
-| ~~`BuyItNowPurchased` / `ListingWithdrawn` cross-BC delivery live-verification~~ | Bug #2 verification pass | ✅ **Done at M8-S3c** (first live BIN + withdrawal journeys, fresh containers) |
-| ~~Bug #3-class saga-start dead-letter noise~~ | M8-S3b findings note | ✅ **Eliminated at M8-S3c** (`wolverine_dead_letters` stays 0 across the full journey) |
-| `IRevisioned` + `ConcurrencyException` retry policies for `SettlementSaga` / `PostSaleCoordinationSaga` (same schema-half-only gap as the fixed Auctions sagas; sequential inputs today, so enforcement must ship WITH the retry policies) | M8-S3c retro | Follow-up slice/chore |
-| `SettlementCompleted`/`PaymentFailed` double-publish (saga appends to the financial stream AND returns via `OutgoingMessages`; forwarding publishes both → 2 envelopes per queue) | M8-S3c retro | Follow-up — pick one canonical publish path |
-| Deterministic regression test for the saga lost-update race (concurrent same-saga commands on a local queue) | M8-S3c retro | Future testing session |
-| Dev-only StrictMode SignalR console artifact ("connection stopped during negotiation" once per page load; second connection succeeds) | M8-S3c browser smoke | Cosmetic; frontend cleanup whenever convenient |
-| `remainingCredit` display on the bidder settlement-outcome view (narrative 001 Moment 8 names `remainingCredit: 445.00` on the push; the lived notification omits it per M6-S5 docstring) | M8-S4 retro | Requires backend change: new `GET /api/settlement/credit/{bidderId}` endpoint or notification enrichment in Relay |
-| M8-S4 live smoke test against running Aspire host (Sold → Settled banner transition) | M8-S4 retro | Verify at M8-S7 e2e or next live session |
-| `LiveActivity` non-`bidPlaced` dedupe identity is `kind+occurredAt+text` (theoretically lossy, benign for a transient ticker; now redelivery-hygiene only under ADR 027) | Bug #2 verification pass | Revisit if a non-bid feed entry class gains volume |
+| **Listings `ExtendedBiddingTriggered` handler** (CatalogListingView.ScheduledCloseAt never advances → the bidder extended-bidding banner and the "Extended" status are unreachable; narrative 001 Moment 6's Listings-side upsert is still forward-spec) | M8-S7 e2e finding | Backend slice (first M9-adjacent housekeeping candidate) |
+| **`client/shared/` extraction** (Zod wire schemas, SignalR provider pattern) | M8-S7 decision | M9 — the seller console is the third consumer |
+| **Playwright e2e in CI** (needs the full Aspire stack in Actions — its own infrastructure piece) | M8-S7 decision (comment at the `frontend` CI job) | Re-evaluate when CI infra work is on the table |
+| **Push-refetch vs projection race** (a hub push can trigger the re-query before the projection applies; the UI converges only at the next push — observed once in the S7 e2e's first run on the close-move; benign for bids, structural for the last event of a burst) | M8-S7 e2e finding | Frontend hardening candidate (e.g. delayed re-invalidate in the cache bridge) — pairs with the row above |
+| Sold → Settled banner transition distinguished in e2e (the bid-war test accepts either terminal text; the Settled-specific "It's yours!" beat is not separately asserted) | M8-S4 → S7 | Future e2e extension |
+| `IRevisioned` + `ConcurrencyException` retry policies for `SettlementSaga` / `PostSaleCoordinationSaga` | M8-S3c retro | Follow-up slice/chore |
+| `SettlementCompleted`/`PaymentFailed` double-publish (saga appends AND returns via `OutgoingMessages` → 2 envelopes per queue) | M8-S3c retro | Follow-up — pick one canonical publish path |
+| Deterministic regression test for the saga lost-update race | M8-S3c retro | Future testing session |
+| Dev-only StrictMode SignalR console artifact (one benign negotiation-stop log per page load) | M8-S3c browser smoke | Cosmetic; whenever convenient |
+| `remainingCredit` display on the bidder settlement-outcome view (lived notification omits it) | M8-S4 retro | Requires backend change (credit read endpoint or notification enrichment) |
+| Bidder display-name header (no anonymous read endpoint surfaces the generated name) | M8-S2 retro | Backend read path, future slice |
+| `LiveActivity` non-`bidPlaced` dedupe identity is `kind+occurredAt+text` (lossy but benign for a transient ticker) | Bug #2 verification pass | Revisit if a non-bid feed class gains volume |
+| Transient push-fed ops *feed* surface would need bounded seen-set dedupe (at-least-once duplicates observed live) | M8-S6b retro | If/when a ticker-style ops surface ships |
 | `OperationsHub` staff-group targeting (currently `Clients.All`) | M7-S1 fork #4 / ADR-024 item 6 | Post-MVP Relay edit |
-| Render-time `Title` join (lot board / obligations view show `ListingId` only) | M7-S3/S4 | M8-S6 (frontend render concern) |
 | `marten-projections` skill: non-monotone state-machine guard section | M7-S4 | Future skill-update session |
 | `wolverine-http-auth` skill codifying default-scheme trap / hub-path credential patterns | M7-S6 gap | Future skill-authoring session |
 | Marten event-type alias / upgrade pass for prior namespace promotions | M5 | First-real-deploy retrospective |
@@ -124,19 +128,21 @@ staff auth header/query-string dance for the ops SPA (ADR 024).
 
 | Item | Disposition |
 |---|---|
-| Mash-bidding UX (each click places a real +$1 bid via prefill auto-advance) | **Working as intended** (Erik, 2026-06-09) — one click = one bid is correct auction behavior; no debounce/confirm. |
-| M8-S3a "DCB retry policy" deferral | **Resolved differently:** bus path already had `AuctionsConcurrencyRetryPolicies`; HTTP chains don't consume Wolverine failure rules at 6.5.1, so commit-time conflicts map to 409 via `ConcurrencyConflictMiddleware` (this session). Also flagged: the DCB blog's per-endpoint `Configure` retry guidance doesn't apply to HTTP chains at this version — follow up with Babu. |
+| Mash-bidding UX (each click places a real +$1 bid via prefill auto-advance) | **Working as intended** (Erik, 2026-06-09). |
+| M8-S3a "DCB retry policy" deferral | **Resolved differently:** bus path had `AuctionsConcurrencyRetryPolicies`; HTTP commit-time conflicts map to 409 via `ConcurrencyConflictMiddleware`. |
+| Ops-feed completion vs polling stopgap | **Sanctioned and shipped at M8-S6b** (two independent evaluations; `docs/research/ops-feed-completion-evaluation-comparison.md`). |
+| `BidPlacedOperations`/`ListingSoldOperations` suffixed wire values | **Stay as-is** — renaming wire values is churn (S6b). |
 
 ### Post-MVP (explicitly out of scope)
 
 | Item | Source |
 |---|---|
-| `Refund` settlement-reversal / compensation mechanics on `DisputeResolved` | M6/M7 non-goals |
+| `Refund` settlement-reversal / compensation mechanics on `DisputeResolved`; `Refund`/`Closed` dispute controls | M6/M7 non-goals (re-affirmed S6b/S7) |
+| Buyer "report a problem" form; notification-history expansion for ops-feed publications | M8-S6/S6b retros |
 | Real carrier-tracking webhook (`ProvideTracking` is an in-process stub) | M6 non-goals |
 | Email / SMS / push delivery (Relay is SignalR-only; stubs log) | M6 non-goals |
 | Per-user staff identity, roles, external IdP (swap behind unchanged `StaffOnly` policy) | ADR-024 revisit trigger |
 | `DemoResetInitiated` cascade (MVP demo reset = Docker volume removal) | M7 non-goals |
-| Long tail of "all significant events → Operations" beyond the M7-enumerated set | M7 §2 scope ceiling |
 | Operations runbook / SRE docs (P-001) · Demo-script runbook (P-002) | `decisions/PARKED.md` |
 | Transport swap demo (RabbitMQ → Azure Service Bus) | ADR 002 |
 
@@ -146,28 +152,34 @@ staff auth header/query-string dance for the ops SPA (ADR 024).
 
 | # | Risk | Severity | Notes / Mitigation |
 |---|---|---|---|
-| 1 | **Two sagas still have unenforced optimistic concurrency** (`SettlementSaga`, `PostSaleCoordinationSaga` — `UseNumericRevisions` without `IRevisioned`). Sequential input patterns make a live race unlikely today, but the M8-S3c saga lost-update proved the failure mode is real and silent. | Medium | Follow-up ships `IRevisioned` + matching retry policies together (enforcement without retry would dead-letter conflicts). |
-| 2 | **The Wolverine single-saga fan-out defect ships in upstream 6.6.0 unless the fix lands** — CritterBids no longer depends on fan-out either way (ADR 027), but any new saga continue-handler on a shared event would still mis-dispatch. The new `FirstOrDefault` sticky-sibling starvation adds a second silent sharp edge for the same handoff. | Medium | Guard rails: `wolverine-sagas` skill rule + ADR 027 bindings + the audit discipline; upstream handoff ready to execute, now with two findings. |
-| 2b | **New-consumer drift under sticky bindings:** adding a consumer for an already-sticky event without a binding (or routing an event to a queue with no sticky consumer) starves it or throws `NoHandlerForEndpointException`. | Low-Medium | Convention recorded in the S3c retro + handler docstrings: every broker-fed consumer gets a sticky binding; every route needs a consumer. Integration-messaging skill update is a candidate follow-up. |
-| 3 | **Eventual-consistency contract for the ops app** (push = re-query) is proven in the bidder app but not yet exercised against `OperationsHub`. | Low | ADR 026 pattern is reusable as-is; M8-S5 repeats the dance with staff auth. |
-| 4 | **Occasional Testcontainers flakes** in Auctions and Settlement suites (container-startup timing). Pass on rerun. | Low | Inherent to Testcontainers startup variance. |
-| 5 | **Doc nit:** the M7-S4 retro header says `**Date:** 2025-02-14` — wrong year/date (should be ~2026-05-31). | Trivial | Fix in the next docs PR. |
+| 1 | **Two sagas still have unenforced optimistic concurrency** (`SettlementSaga`, `PostSaleCoordinationSaga`). | Medium | Follow-up ships `IRevisioned` + matching retry policies together. |
+| 2 | **Wolverine upstream defects unfixed** (Separated single-saga fan-out suppression; `FirstOrDefault` sticky-sibling starvation) — CritterBids is insulated by ADR 027, but new saga continue-handlers on shared events remain a sharp edge. Engine has since moved 6.5.1 → 6.8.0; the handoff's repro claims need re-verification before filing. | Medium | `wolverine-sagas` skill rule + ADR 027 bindings + audit discipline; upstream handoff ready. |
+| 2b | **New-consumer drift under sticky bindings** (consumer without a binding, or route without a consumer). | Low-Medium | Convention in the S3c retro + handler docstrings; topology test now guards the Relay-ops side (S6b). |
+| 3 | **Push-refetch can lose the race to the projection** for the last event of a burst — the UI shows stale data until the next push (S7 e2e observed it once on the close-move; the boards' re-query idempotency absorbs it everywhere else today). | Low | Recorded with a frontend-hardening candidate (delayed re-invalidate); becomes Medium if a no-further-push surface starts depending on burst-final events. |
+| 4 | **Occasional Testcontainers flakes** in Auctions and Settlement suites. Pass on rerun. | Low | Inherent startup variance. |
+| 5 | **Doc nit:** the M7-S4 retro header says `**Date:** 2025-02-14` (should be ~2026-05-31). | Trivial | Fix in a docs PR. |
 
 ---
 
 ## 5. Key Numbers (at this snapshot)
 
-- **Tests:** 298 backend passing — Auctions 77, Api 46, Operations 38, Selling 36, Relay 36,
-  Settlement 25, Listings 20, Obligations 13, Participants 6, Contracts 1 — plus **25 frontend**
-  (Vitest) in `client/bidder/` across 8 files (+8 tests since S3c: cache bridge, TerminalOutcome
-  rendering, settlement-message recognition)
-- **Sticky bindings (ADR 027):** 38 `[StickyHandler]` attributes (30 class-level, 8 method-level)
-  across 6 BCs; 23 RabbitMQ listeners (+2: `auctions-auctions-events`,
-  `settlement-settlement-events`); 77 publish routes (+11/−2)
-- **ADRs:** 27 authored (next unreserved: **028**); 003/008/010 superseded; 013/025/026/027 accepted in M8; 027 **implemented**
-- **BCs in `src/`:** 8 of 8 MVP backend BCs — all active; `client/bidder/` is the first frontend surface
-- **PRs this M8 stretch:** #80 (S2), #86 (S3b), #88 (seed endpoint + findings), #89 (DCB research + escalation), #90 (**Bug #2 fix**), #91 (skills), #92 (follow-ups), #93 (S3c), #94 (S4) — all merged
-- **Satellite:** JasperFx/ai-skills#71 open (private); Wolverine upstream fix not yet filed (handoff ready, now carrying the S3c `FirstOrDefault` finding too)
+- **Tests:** **307 backend** passing — Auctions 77, Api 46, Relay 45, Operations 38, Selling 36,
+  Settlement 25, Listings 20, Obligations 13, Participants 6, Contracts 1 — plus **72 frontend
+  Vitest** (`@critterbids/ops` 47, `@critterbids/bidder` 25) and **1 Playwright e2e**
+  (local-only by recorded decision)
+- **CI:** backend matrix (8 BC suites + Api) + unit tests + a `frontend` job covering **both**
+  SPA builds + Vitest suites + the e2e type-check; single `CI` aggregator as the required check
+- **Ops feed:** 22 push eventTypes, all cache-bridge-mapped; `OperationsFeedTopologyTests`
+  enforces Operations-consumed ⇒ ops-pushed; polling stopgap deleted (S6b)
+- **Sticky bindings (ADR 027):** per-BC sticky consumption across 6 BCs; 23 RabbitMQ listeners;
+  exactly-once consumption per queue (S3c) — S6b added 2 publish routes to existing queues
+- **ADRs:** 27 authored (next unreserved: **028**); 013/025/026/027 accepted in M8
+- **Workspaces:** 8 backend BCs in `src/`; 3 npm workspace members in `client/`
+  (`bidder`, `ops`, `e2e`); `shared/` planned (M9)
+- **PRs this M8 stretch:** #80, #83–#86, #88–#100 + the Aspire SPA-orchestration commit
+  (`7b31147`) + the S7 close PR — all merged or in flight
+- **Satellite:** JasperFx/ai-skills#71 open (private); Wolverine upstream handoff ready
+  (re-verify against 6.8.0)
 - **OpenSpec adoption:** Obligations ✅ adopted · Relay ❌ declined · Operations ❌ declined
 
 ---
@@ -178,8 +190,9 @@ staff auth header/query-string dance for the ops SPA (ADR 024).
 |---|---|
 | What are the conventions / hard rules? | `CLAUDE.md` (root) |
 | What happened in the last session? | Newest file in `docs/retrospectives/` (canonical state) |
-| What is the current milestone's scope? | `docs/milestones/M8-frontend-spas.md` |
-| What happened with Bug #2? | `docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md` (root cause) + `docs/research/README.md` (index) |
+| What did M8 ship, end to end? | The M8 milestone retrospective in `docs/retrospectives/` |
+| How do I run the e2e? | `client/e2e/README.md` (requires the live Aspire stack) |
+| What happened with Bug #2? | `docs/research/jasperfx-escalation-bidplaced-cross-bc-delivery.md` + `docs/research/README.md` |
 | A message was produced but a consumer never saw it? | `docs/skills/message-flow-diagnosis/SKILL.md` |
 | Why is the architecture this way? | `docs/decisions/README.md` (ADR index) |
 | What was deliberately deferred? | `docs/decisions/PARKED.md` + §3 of this file |
@@ -192,6 +205,15 @@ staff auth header/query-string dance for the ops SPA (ADR 024).
 
 ## Document History
 
+- **v0.6** (2026-06-12): Regenerated at M8 close (M8-S7). M8 flipped to ✅ Complete across the
+  ladder and slice tables (S5 #95, S6 #98, S6b #100, S7 rows added); headline rewritten to the
+  milestone-close posture (both SPAs shipped, ops feed complete and push-only, bid-war e2e green
+  twice, full-workspace frontend CI). Engine baseline 6.8.0 / Aspire 13.4.3 with both SPAs as
+  Aspire children. Deferred ledger re-derived: added the Listings `ExtendedBiddingTriggered`
+  handler gap (S7 e2e finding), the `client/shared/` → M9 decision, the Playwright-in-CI
+  deferral, and the push-refetch race; S4's live-smoke item resolved into the e2e with the
+  Sold-vs-Settled distinction carried. "What's next" pivots to the M9 scoping session
+  (milestone-doc precondition gate). Key numbers: 307 backend / 72 Vitest / 1 e2e.
 - **v0.5** (2026-06-10): Regenerated at M8-S4 merge. Bidder app narrative arc complete (S1–S4
   done); slice table flips S3c and S4 to done, adds the M8-S7 row; "What's next" pivots to
   M8-S5 (ops dashboard shell); deferred ledger gains `remainingCredit` display gap and S4 live

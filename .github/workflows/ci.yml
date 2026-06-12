@@ -261,11 +261,25 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build (tsc strict + vite build)
+      - name: Build bidder (tsc strict + vite build)
         run: npm run build -w @critterbids/bidder
 
-      - name: Test (vitest)
+      - name: Test bidder (vitest)
         run: npm test -w @critterbids/bidder
+
+      - name: Build ops (tsc strict + vite build)
+        run: npm run build -w @critterbids/ops
+
+      - name: Test ops (vitest)
+        run: npm test -w @critterbids/ops
+
+      # The Playwright e2e workspace member (client/e2e) is deliberately NOT run here
+      # (M8-S7 recorded deferral): it needs the full Aspire-orchestrated stack — Postgres,
+      # RabbitMQ, the API host, and the bidder dev server — live, which is its own piece of
+      # CI infrastructure work, not a step addition. It runs locally pre-merge; see
+      # client/e2e/README.md. Its tsconfig still type-checks against the shared strict base.
+      - name: Typecheck e2e (tsc strict, no run)
+        run: npm run typecheck -w @critterbids/e2e
 
   # Aggregator job suitable for use as the single required status check in
   # branch protection. A dependent job result of `success` or `skipped` is
