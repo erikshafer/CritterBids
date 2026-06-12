@@ -18,6 +18,7 @@ import {
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useStaffAuth } from "@/auth/StaffAuthContext";
+import { operationsKeys } from "@/operations/keys";
 import { applyOperationsFeedMessage } from "@/signalr/cacheBridge";
 import { OPERATIONS_HUB_URL, RECEIVE_MESSAGE } from "@/signalr/hub";
 import {
@@ -148,6 +149,13 @@ export function OperationsSignalRProvider({
     connection.onreconnected(() => {
       setLastError(null);
       syncStatus();
+      // M8-S6b reconnection reconciliation: pushes missed while disconnected are recovered by
+      // one one-shot re-query of the whole board family — the same authority rule as a push
+      // (push = "something changed, refetch"; ADR 026). This replaces the accidental recovery
+      // the retired polling stopgap used to provide. No payload is written; the queries re-fetch.
+      void queryClientRef.current.invalidateQueries({
+        queryKey: operationsKeys.all,
+      });
     });
     connection.onclose((error) => {
       setLastError(error?.message ?? null);

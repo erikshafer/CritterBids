@@ -288,6 +288,170 @@ public class OperationsHubPushTests
         pushed.EventType.ShouldBe(nameof(DisputeResolved));
     }
 
+    // ── M8-S6b ops-feed completion: the eight events the topology invariant found missing ──
+
+    [Fact]
+    public async Task SettlementCompleted_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        var listingId = Guid.CreateVersion7();
+        await _fixture.Bus.PublishAsync(new CritterBids.Contracts.Settlement.SettlementCompleted(
+            SettlementId: Guid.CreateVersion7(),
+            ListingId: listingId,
+            WinnerId: Guid.CreateVersion7(),
+            SellerId: Guid.CreateVersion7(),
+            HammerPrice: 300m,
+            FeeAmount: 30m,
+            SellerPayout: 270m,
+            CompletedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe("SettlementCompleted");
+        pushed.ListingId.ShouldBe(listingId);
+    }
+
+    [Fact]
+    public async Task SellerPayoutIssued_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new CritterBids.Contracts.Settlement.SellerPayoutIssued(
+            SettlementId: Guid.CreateVersion7(),
+            SellerId: Guid.CreateVersion7(),
+            PayoutAmount: 270m,
+            FeeDeducted: 30m,
+            IssuedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe("SellerPayoutIssued");
+        pushed.ListingId.ShouldBeNull(); // the contract carries no ListingId
+    }
+
+    [Fact]
+    public async Task PaymentFailed_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new CritterBids.Contracts.Settlement.PaymentFailed(
+            SettlementId: Guid.CreateVersion7(),
+            ListingId: Guid.CreateVersion7(),
+            WinnerId: Guid.CreateVersion7(),
+            Reason: "InsufficientCredit",
+            FailedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe("PaymentFailed");
+        pushed.Payload.ShouldContain("InsufficientCredit");
+    }
+
+    [Fact]
+    public async Task DeadlineEscalated_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new DeadlineEscalated(
+            ObligationId: Guid.CreateVersion7(),
+            ListingId: Guid.CreateVersion7(),
+            EscalatedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe(nameof(DeadlineEscalated));
+    }
+
+    [Fact]
+    public async Task ObligationFulfilled_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new ObligationFulfilled(
+            ObligationId: Guid.CreateVersion7(),
+            ListingId: Guid.CreateVersion7(),
+            WinnerId: Guid.CreateVersion7(),
+            SellerId: Guid.CreateVersion7(),
+            FulfilledAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe(nameof(ObligationFulfilled));
+    }
+
+    [Fact]
+    public async Task BiddingOpened_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new BiddingOpened(
+            ListingId: Guid.CreateVersion7(),
+            SellerId: Guid.CreateVersion7(),
+            StartingBid: 50m,
+            ReserveThreshold: null,
+            BuyItNowPrice: null,
+            ScheduledCloseAt: DateTimeOffset.UtcNow.AddMinutes(30),
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromMinutes(30),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe(nameof(BiddingOpened));
+    }
+
+    [Fact]
+    public async Task ListingPassed_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new ListingPassed(
+            ListingId: Guid.CreateVersion7(),
+            Reason: "NoBids",
+            HighestBid: null,
+            BidCount: 0,
+            PassedAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe(nameof(ListingPassed));
+    }
+
+    [Fact]
+    public async Task ListingWithdrawn_PushesToOperationsHub()
+    {
+        var tcs = NewTcs<OperationsFeedNotification>();
+        await using var connection = BuildOperationsConnection();
+        connection.On<OperationsFeedNotification>("ReceiveMessage", tcs.SetResult);
+        await connection.StartAsync();
+
+        await _fixture.Bus.PublishAsync(new ListingWithdrawn(
+            ListingId: Guid.CreateVersion7(),
+            WithdrawnBy: Guid.CreateVersion7(),
+            Reason: "SellerRequest",
+            WithdrawnAt: DateTimeOffset.UtcNow));
+
+        var pushed = await tcs.Task.WaitAsync(PushTimeout);
+        pushed.EventType.ShouldBe(nameof(ListingWithdrawn));
+    }
+
     private HubConnection BuildOperationsConnection() =>
         new HubConnectionBuilder()
             .WithUrl(_fixture.OperationsHubUrl)

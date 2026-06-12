@@ -11,13 +11,16 @@ import { z } from "zod";
 // bridge switches on the server-named string directly.
 //
 // The lived eventType vocabulary (the Relay handlers targeting IHubContext<OperationsHub>,
-// verified at M8-S6 prompt authoring):
+// completed at M8-S6b — every Operations-consumed integration event now has an ops push,
+// mechanically enforced by the backend topology test, OperationsFeedTopologyTests):
 //
-//   with listingId: BidPlacedOperations, ListingSoldOperations, ListingPublished,
-//                   ListingRevised, ListingEndedEarly, ListingAttachedToSession,
-//                   LotWatchAdded, LotWatchRemoved, DisputeOpened, DisputeResolved
+//   with listingId: BidPlacedOperations, ListingSoldOperations, BiddingOpened, ListingPassed,
+//                   ListingWithdrawn, ListingPublished, ListingRevised, ListingEndedEarly,
+//                   ListingAttachedToSession, LotWatchAdded, LotWatchRemoved, DisputeOpened,
+//                   DisputeResolved, DeadlineEscalated, ObligationFulfilled,
+//                   SettlementCompleted, PaymentFailed
 //   listingId null: SessionCreated, SessionStarted, ParticipantSessionStarted,
-//                   SellerRegistrationCompleted
+//                   SellerRegistrationCompleted, SellerPayoutIssued (carries no ListingId)
 //
 // Guids and DateTimeOffsets arrive as strings (System.Text.Json web defaults, camelCase keys).
 const operationsFeedSchema = z.object({

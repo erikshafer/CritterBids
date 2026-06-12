@@ -10,6 +10,30 @@ namespace CritterBids.Relay.Handlers;
 [StickyHandler("relay-obligations-events")]
 public static class ObligationsRelayHandler
 {
+    /// <summary>
+    /// M8-S6b (ops-feed completion): Relay's first <see cref="DeadlineEscalated"/> consumer — the
+    /// handler whose absence made M8-S3c remove the <c>relay-obligations-events</c> publish route
+    /// ("restore the route together with the Relay handler if it ships"; the route is restored in
+    /// <c>Program.cs</c> alongside this method). Escalation is an operator-only fact: it lands in
+    /// Morgan's escalation queue, so the push targets the ops feed alone — no participant-facing
+    /// BiddingHub notification and no history entry (the seller's own vantage is narrative 007's
+    /// reminder chain, not this alert).
+    /// </summary>
+    public static Task Handle(
+        DeadlineEscalated message,
+        IHubContext<OperationsHub> operationsHub,
+        CancellationToken cancellationToken) =>
+        operationsHub.Clients
+            .All
+            .SendAsync(
+                RelayHubMethods.ReceiveMessage,
+                new OperationsFeedNotification(
+                    message.ListingId,
+                    nameof(DeadlineEscalated),
+                    "Ship-by deadline escalated without tracking.",
+                    message.EscalatedAt),
+                cancellationToken);
+
     public static async Task Handle(
         TrackingInfoProvided message,
         IHubContext<BiddingHub> biddingHub,
@@ -39,6 +63,7 @@ public static class ObligationsRelayHandler
     public static async Task Handle(
         ObligationFulfilled message,
         IHubContext<BiddingHub> biddingHub,
+        IHubContext<OperationsHub> operationsHub,
         INotificationHistoryWriter history,
         CancellationToken cancellationToken)
     {
@@ -55,13 +80,24 @@ public static class ObligationsRelayHandler
             "Obligation fulfilled.",
             message.FulfilledAt);
 
+        // M8-S6b (ops-feed completion): fulfilment is the obligation's true terminal — the
+        // Operations view drops it from every active queue, so the ops feed must say so live.
+        var operationsNotification = new OperationsFeedNotification(
+            message.ListingId,
+            nameof(ObligationFulfilled),
+            "Obligation fulfilled.",
+            message.FulfilledAt);
+
         await Task.WhenAll(
             biddingHub.Clients
                 .Group($"bidder:{message.WinnerId}")
                 .SendAsync(RelayHubMethods.ReceiveMessage, winnerNotification, cancellationToken),
             biddingHub.Clients
                 .Group($"bidder:{message.SellerId}")
-                .SendAsync(RelayHubMethods.ReceiveMessage, sellerNotification, cancellationToken));
+                .SendAsync(RelayHubMethods.ReceiveMessage, sellerNotification, cancellationToken),
+            operationsHub.Clients
+                .All
+                .SendAsync(RelayHubMethods.ReceiveMessage, operationsNotification, cancellationToken));
 
         await Task.WhenAll(
             history.AppendAsync(

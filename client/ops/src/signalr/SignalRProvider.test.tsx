@@ -59,11 +59,14 @@ const hoisted = vi.hoisted(() => {
   class FakeHubConnection {
     state = "Disconnected";
     handlers = new Map<string, (payload: unknown) => void>();
+    reconnectedCallbacks: Array<(connectionId?: string) => void> = [];
     on(method: string, handler: (payload: unknown) => void) {
       this.handlers.set(method, handler);
     }
     onreconnecting() {}
-    onreconnected() {}
+    onreconnected(callback: (connectionId?: string) => void) {
+      this.reconnectedCallbacks.push(callback);
+    }
     onclose() {}
     async start() {
       this.state = "Connected";
@@ -204,6 +207,39 @@ describe("OperationsSignalRProvider", () => {
     });
     expect(received).toHaveLength(1);
     expect(invalidateSpy.mock.calls.length).toBe(invalidationsBeforeJunk);
+  });
+
+  it("reconciles a reconnect with exactly one ['operations']-family invalidation (M8-S6b)", async () => {
+    sessionStorage.setItem(STORAGE_KEY, "s3cret-staff-token");
+
+    const queryClient = new QueryClient();
+    const invalidateSpy = vi
+      .spyOn(queryClient, "invalidateQueries")
+      .mockResolvedValue(undefined);
+
+    render(
+      <Providers queryClient={queryClient}>
+        <OperationsSignalRProvider>
+          <ConnectionIndicator />
+        </OperationsSignalRProvider>
+      </Providers>,
+    );
+
+    await screen.findByText("Connected");
+    const connection = hoisted.built.at(-1)!;
+    expect(connection.reconnectedCallbacks.length).toBeGreaterThan(0);
+
+    // Events missed while disconnected are reconciled by re-query, the same authority rule as
+    // a push (ADR 026) — one blanket family invalidation per reconnect, no payload writes.
+    act(() => {
+      for (const callback of connection.reconnectedCallbacks) callback();
+    });
+
+    const familyInvalidations = invalidateSpy.mock.calls.filter((call) => {
+      const { queryKey } = call[0] as { queryKey: readonly string[] };
+      return queryKey.length === 1 && queryKey[0] === "operations";
+    });
+    expect(familyInvalidations).toHaveLength(1);
   });
 
   it("clears the token and re-shows the gate when the hub start fails with a visible 401", async () => {

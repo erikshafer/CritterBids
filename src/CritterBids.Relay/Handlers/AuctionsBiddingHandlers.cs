@@ -8,20 +8,41 @@ using Wolverine.Attributes;
 
 namespace CritterBids.Relay.Handlers;
 
+// M8-S6b (ops-feed completion): BiddingOpened / ListingPassed / ListingWithdrawn gained their
+// OperationsFeedNotification pushes here — the Operations lot board consumes all three, and the
+// topology invariant (OperationsFeedTopologyTests) requires every Operations-consumed event to
+// reach the ops feed. The ops push rides the same handler as the BiddingHub push because sticky
+// dispatch executes at most one handler class per (message type, endpoint) — the
+// BidPlacedHandler / ListingSoldHandler dual-push template.
 [StickyHandler("relay-auctions-events")]
 public static class AuctionsBiddingHandler
 {
-    public static Task Handle(BiddingOpened message, IHubContext<BiddingHub> hub, CancellationToken cancellationToken) =>
-        hub.Clients
-            .Group($"listing:{message.ListingId}")
-            .SendAsync(
-                RelayHubMethods.ReceiveMessage,
-                new ListingGroupNotification(
-                    message.ListingId,
-                    nameof(BiddingOpened),
-                    $"Bidding opened at starting bid {message.StartingBid}.",
-                    message.OpenedAt),
-                cancellationToken);
+    public static Task Handle(
+        BiddingOpened message,
+        IHubContext<BiddingHub> hub,
+        IHubContext<OperationsHub> operationsHub,
+        CancellationToken cancellationToken) =>
+        Task.WhenAll(
+            hub.Clients
+                .Group($"listing:{message.ListingId}")
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new ListingGroupNotification(
+                        message.ListingId,
+                        nameof(BiddingOpened),
+                        $"Bidding opened at starting bid {message.StartingBid}.",
+                        message.OpenedAt),
+                    cancellationToken),
+            operationsHub.Clients
+                .All
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new OperationsFeedNotification(
+                        message.ListingId,
+                        nameof(BiddingOpened),
+                        $"Bidding opened at starting bid {message.StartingBid}.",
+                        message.OpenedAt),
+                    cancellationToken));
 
     public static async Task Handle(
         BidRejected message,
@@ -75,29 +96,59 @@ public static class AuctionsBiddingHandler
                     message.TriggeredAt),
                 cancellationToken);
 
-    public static Task Handle(ListingPassed message, IHubContext<BiddingHub> hub, CancellationToken cancellationToken) =>
-        hub.Clients
-            .Group($"listing:{message.ListingId}")
-            .SendAsync(
-                RelayHubMethods.ReceiveMessage,
-                new ListingGroupNotification(
-                    message.ListingId,
-                    nameof(ListingPassed),
-                    $"Listing passed ({message.Reason}).",
-                    message.PassedAt),
-                cancellationToken);
+    public static Task Handle(
+        ListingPassed message,
+        IHubContext<BiddingHub> hub,
+        IHubContext<OperationsHub> operationsHub,
+        CancellationToken cancellationToken) =>
+        Task.WhenAll(
+            hub.Clients
+                .Group($"listing:{message.ListingId}")
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new ListingGroupNotification(
+                        message.ListingId,
+                        nameof(ListingPassed),
+                        $"Listing passed ({message.Reason}).",
+                        message.PassedAt),
+                    cancellationToken),
+            operationsHub.Clients
+                .All
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new OperationsFeedNotification(
+                        message.ListingId,
+                        nameof(ListingPassed),
+                        $"Listing passed ({message.Reason}).",
+                        message.PassedAt),
+                    cancellationToken));
 
-    public static Task Handle(ListingWithdrawn message, IHubContext<BiddingHub> hub, CancellationToken cancellationToken) =>
-        hub.Clients
-            .Group($"listing:{message.ListingId}")
-            .SendAsync(
-                RelayHubMethods.ReceiveMessage,
-                new ListingGroupNotification(
-                    message.ListingId,
-                    nameof(ListingWithdrawn),
-                    "Listing withdrawn.",
-                    message.WithdrawnAt),
-                cancellationToken);
+    public static Task Handle(
+        ListingWithdrawn message,
+        IHubContext<BiddingHub> hub,
+        IHubContext<OperationsHub> operationsHub,
+        CancellationToken cancellationToken) =>
+        Task.WhenAll(
+            hub.Clients
+                .Group($"listing:{message.ListingId}")
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new ListingGroupNotification(
+                        message.ListingId,
+                        nameof(ListingWithdrawn),
+                        "Listing withdrawn.",
+                        message.WithdrawnAt),
+                    cancellationToken),
+            operationsHub.Clients
+                .All
+                .SendAsync(
+                    RelayHubMethods.ReceiveMessage,
+                    new OperationsFeedNotification(
+                        message.ListingId,
+                        nameof(ListingWithdrawn),
+                        "Listing withdrawn.",
+                        message.WithdrawnAt),
+                    cancellationToken));
 
     public static async Task Handle(
         ProxyBidExhausted message,

@@ -37,12 +37,10 @@ async function fetchBoard<T>(
   return schema.parse(await response.json());
 }
 
-// The ops feed carries no settlement events and no DeadlineEscalated (M8-S6 prompt finding 2):
-// the settlement queue has zero push coverage and escalation ARRIVALS are not pushed (a card
-// only leaves the escalation queue live, via DisputeOpened). Until the carry-forward backend
-// slice completes the Relay ops feed, these two boards poll modestly as the documented stopgap
-// (prompt open question 1). The re-query path stays authoritative; only the trigger differs.
-const PUSH_GAP_REFETCH_INTERVAL_MS = 20_000;
+// Every board is push-fed (M8-S6b completed the ops feed: each Operations-consumed integration
+// event has an OperationsFeedNotification, enforced by the backend topology test) — no query
+// here polls. Reconnection recovery is the SignalRProvider's onreconnected one-shot
+// ["operations"]-family invalidation, the same push-equals-re-query authority rule (ADR 026).
 
 export function lotBoardQueryOptions(staffFetch: StaffFetch) {
   return queryOptions({
@@ -73,7 +71,6 @@ export function settlementQueueQueryOptions(staffFetch: StaffFetch) {
         "/api/operations/settlement-queue",
         settlementQueueSchema,
       ),
-    refetchInterval: PUSH_GAP_REFETCH_INTERVAL_MS,
   });
 }
 
@@ -86,7 +83,6 @@ export function escalationsQueryOptions(staffFetch: StaffFetch) {
         "/api/operations/obligations/escalations",
         obligationsSchema,
       ),
-    refetchInterval: PUSH_GAP_REFETCH_INTERVAL_MS,
   });
 }
 
