@@ -100,8 +100,14 @@ precedent), never a silent pass.
    curl): expected status with and without credentials, body casing, `Location` headers.
 3. **Drive the real client library from Node** through the Vite dev proxy when a browser is
    unavailable — same library, same options as the app, deterministic, and it exercises the
-   proxy (`ws: true`) specifically. Node 22's built-in `WebSocket` is header-less like a
-   browser, so it reproduces browser credential transport faithfully.
+   proxy (`ws: true`) specifically. **Credential-transport caveat (M8-S6b Finding 2):** the
+   signalr client picks its WebSocket implementation by resolvability, not platform — from
+   inside `client/` it resolves the `ws` package, which CAN set headers, so an
+   `accessTokenFactory` token goes out as an `Authorization` header (which the
+   query-string-only StaffToken scheme does not read) instead of `?access_token=`. Node 22's
+   built-in header-less `WebSocket` behaves like a browser only when `ws` is NOT resolvable.
+   To reproduce the browser credential transport faithfully from Node, **pin the token in the
+   URL** (`/hub/operations?access_token=…`) rather than using `accessTokenFactory`.
 4. **Real browser pass** when feasible: the Playwright MCP needs Chrome; when it's missing
    (admin install), `playwright-core` driving system **Edge** (`channel: "msedge"`,
    `headless: true`) works without any browser download (M8-S5).

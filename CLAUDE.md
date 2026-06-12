@@ -182,15 +182,20 @@ at the same API host:
 | App | Path | Audience | Auth | Live channel |
 |---|---|---|---|---|
 | Bidder-facing | `client/bidder/` | Public | Anonymous | `BiddingHub` (`/hub/bidding`) |
-| Operations dashboard | `client/ops/` *(planned, M8-S5)* | Staff | `StaffToken` (ADR 024) | `OperationsHub` (`/hub/operations`) |
+| Operations dashboard | `client/ops/` | Staff | `StaffToken` (ADR 024) | `OperationsHub` (`/hub/operations`) |
 
-A `client/shared/` member (planned) holds the wire-contract surface both apps share (Zod schemas,
-the SignalR integration) — the frontend analogue of `CritterBids.Contracts`. Dev uses a Vite
-dev-server proxy to the API host (`http://localhost:5180`, `ws:true`) — no CORS, no API-host change.
-The library composition is **ADR 013** (TypeScript strict, Zod, TanStack Query, Tailwind v4 +
-shadcn/ui, `@microsoft/signalr`, Vitest + Playwright, PWA); the layout, build-output, and dev-server
-story are **ADR 025**. As of M8-S1 only `client/bidder/` exists, as a minimal `BiddingHub`
-connection proof. See `docs/milestones/M8-frontend-spas.md` for the full milestone.
+A third workspace member, `client/e2e/`, holds the Playwright end-to-end tests (M8-S7) — run
+locally against the live Aspire stack, not in CI; see `client/e2e/README.md`. A `client/shared/`
+member for the wire-contract surface both apps share (Zod schemas, the SignalR integration — the
+frontend analogue of `CritterBids.Contracts`) remains **planned, deferred to the seller-console
+milestone (M9)**: the M8-S7 evaluation found the apps duplicate the *pattern*, not the bytes
+(different hubs, auth, message vocabularies), so extraction waits for the third consumer to
+reveal the real shared subset. Dev uses a Vite dev-server proxy to the API host
+(`http://localhost:5180`, `ws:true`) — no CORS, no API-host change; under Aspire both dev servers
+launch as children (bidder `:5173`, ops `:5174`). The library composition is **ADR 013**
+(TypeScript strict, Zod, TanStack Query, Tailwind v4 + shadcn/ui, `@microsoft/signalr`, Vitest +
+Playwright, PWA); the layout, build-output, and dev-server story are **ADR 025**.
+See `docs/milestones/M8-frontend-spas.md` for the full (closed) milestone.
 
 ---
 

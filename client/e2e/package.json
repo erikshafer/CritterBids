@@ -1,0 +1,16 @@
+{
+  "name": "@critterbids/e2e",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "description": "CritterBids end-to-end tests (ADR 013: Playwright multi-context). A dedicated workspace member so e2e dependencies stay out of both app builds. Requires the full Aspire-orchestrated stack running — see README.md.",
+  "scripts": {
+    "test": "playwright test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0",
+    "@types/node": "^22.10.0",
+    "typescript": "^6.0.0"
+  }
+}
