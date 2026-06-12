@@ -53,6 +53,7 @@ export default defineConfig({
     },
   },
   server: {
+    port: 5173,
     proxy: {
       "/api": { target: API_HOST, changeOrigin: true },
       "/hub": { target: API_HOST, changeOrigin: true, ws: true },

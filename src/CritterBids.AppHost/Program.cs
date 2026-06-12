@@ -1,3 +1,5 @@
+using Aspire.Hosting;
+
 var builder = DistributedApplication.CreateBuilder(args);
 
 // All infrastructure containers are labelled with com.docker.compose.project=critterbids
@@ -24,11 +26,25 @@ var rabbitMq = builder.AddRabbitMQ("rabbitmq")
 // Aspire does not auto-propagate ASPNETCORE_ENVIRONMENT to child projects — without
 // this, the API boots as "Production" even when the AppHost is in Development, which
 // defeats any `app.Environment.IsDevelopment()` guards (e.g. the OpenAPI/SwaggerUI map).
-builder.AddProject<Projects.CritterBids_Api>("critterbids-api")
+var api = builder.AddProject<Projects.CritterBids_Api>("critterbids-api")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
     .WithReference(postgres)
     .WithReference(rabbitMq)
     .WaitFor(postgres)
     .WaitFor(rabbitMq);
+
+// Bidder and ops SPAs — launched as part of the Aspire orchestration so a single
+// dotnet run starts the full stack. CRITTERBIDS_API_URL is injected from the API
+// endpoint so the Vite dev-server proxy always targets the right host/port.
+// Both vite configs fall back to http://localhost:5180 when run outside Aspire.
+builder.AddViteApp("bidder", "../../client/bidder")
+    .WithHttpEndpoint(port: 5173, name: "http")
+    .WithEnvironment("CRITTERBIDS_API_URL", api.GetEndpoint("http"))
+    .WaitFor(api);
+
+builder.AddViteApp("ops", "../../client/ops")
+    .WithHttpEndpoint(port: 5174, name: "http")
+    .WithEnvironment("CRITTERBIDS_API_URL", api.GetEndpoint("http"))
+    .WaitFor(api);
 
 builder.Build().Run();
