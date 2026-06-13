@@ -8,6 +8,7 @@ import { AppShell } from "@/components/AppShell";
 import { RouteNotFound } from "@/components/RouteNotFound";
 import { HomePage } from "@/pages/HomePage";
 import { ListingsPage } from "@/listings/ListingsPage";
+import { CreateListingPage } from "@/listings/CreateListingPage";
 
 const rootRoute = createRootRoute({
   component: AppShell,
@@ -26,7 +27,17 @@ const listingsRoute = createRoute({
   component: ListingsPage,
 });
 
-const routeTree = rootRoute.addChildren([homeRoute, listingsRoute]);
+const createListingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/listings/new",
+  component: CreateListingPage,
+});
+
+const routeTree = rootRoute.addChildren([
+  homeRoute,
+  listingsRoute,
+  createListingRoute,
+]);
 
 export const router = createRouter({
   routeTree,

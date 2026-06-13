@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   createMemoryHistory,
@@ -13,16 +14,24 @@ import {
 import { ListingsPage } from "@/listings/ListingsPage";
 import { SessionProvider } from "@/session/SessionContext";
 
-const validListing = {
+const draftListing = {
   id: "0192f1a0-1111-7000-8000-000000000001",
   sellerId: "0192f1a0-2222-7000-8000-000000000002",
   title: "Vintage Mechanical Keyboard",
   format: "Flash",
-  status: "Published",
+  status: "Draft",
   startingBid: 25,
   reservePrice: 50,
   buyItNowPrice: 100,
   createdAt: "2026-06-10T14:00:00+00:00",
+  publishedAt: null,
+};
+
+const publishedListing = {
+  ...draftListing,
+  id: "0192f1a0-3333-7000-8000-000000000003",
+  title: "Vintage Folding Camera",
+  status: "Published",
   publishedAt: "2026-06-10T15:00:00+00:00",
 };
 
@@ -41,6 +50,7 @@ function stubFetch(responses: Record<string, unknown>): void {
                 : {},
             ),
             json: async () => body,
+            text: async () => JSON.stringify(body),
           } as unknown as Response;
         }
       }
@@ -49,6 +59,7 @@ function stubFetch(responses: Record<string, unknown>): void {
         status: 404,
         headers: new Headers(),
         json: async () => null,
+        text: async () => "",
       } as unknown as Response;
     }),
   );
@@ -64,7 +75,12 @@ function renderListingsPage(): void {
     path: "/",
     component: ListingsPage,
   });
-  const routeTree = rootRoute.addChildren([listingsRoute]);
+  const createRoute_ = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/listings/new",
+    component: () => <div>Create Listing Page</div>,
+  });
+  const routeTree = rootRoute.addChildren([listingsRoute, createRoute_]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -89,14 +105,14 @@ afterEach(() => {
 describe("ListingsPage", () => {
   it("renders listing cards from the seller query endpoint", async () => {
     stubFetch({
-      "/api/selling/listings": [validListing],
+      "/api/selling/listings": [draftListing],
     });
     renderListingsPage();
 
     expect(
       await screen.findByText("Vintage Mechanical Keyboard"),
     ).toBeInTheDocument();
-    expect(screen.getByText("Published")).toBeInTheDocument();
+    expect(screen.getByText("Draft")).toBeInTheDocument();
     expect(screen.getByText("Flash")).toBeInTheDocument();
   });
 
@@ -119,6 +135,7 @@ describe("ListingsPage", () => {
         status: 500,
         headers: new Headers(),
         json: async () => null,
+        text: async () => "",
       })),
     );
     renderListingsPage();
@@ -130,7 +147,7 @@ describe("ListingsPage", () => {
 
   it("shows reserve and BIN when present", async () => {
     stubFetch({
-      "/api/selling/listings": [validListing],
+      "/api/selling/listings": [draftListing],
     });
     renderListingsPage();
 
@@ -141,7 +158,7 @@ describe("ListingsPage", () => {
 
   it("hides reserve and BIN when null", async () => {
     const noExtras = {
-      ...validListing,
+      ...draftListing,
       reservePrice: null,
       buyItNowPrice: null,
     };
@@ -153,5 +170,98 @@ describe("ListingsPage", () => {
     await screen.findByText("Vintage Mechanical Keyboard");
     expect(screen.queryByText(/Reserve:/)).not.toBeInTheDocument();
     expect(screen.queryByText(/BIN:/)).not.toBeInTheDocument();
+  });
+
+  it("shows Edit and Submit buttons on Draft listings", async () => {
+    stubFetch({
+      "/api/selling/listings": [draftListing],
+    });
+    renderListingsPage();
+
+    await screen.findByText("Vintage Mechanical Keyboard");
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Submit for Publication" }),
+    ).toBeInTheDocument();
+  });
+
+  it("hides Edit and Submit buttons on non-Draft listings", async () => {
+    stubFetch({
+      "/api/selling/listings": [publishedListing],
+    });
+    renderListingsPage();
+
+    await screen.findByText("Vintage Folding Camera");
+    expect(
+      screen.queryByRole("button", { name: "Edit" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Submit for Publication" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders the Create Listing button", async () => {
+    stubFetch({
+      "/api/selling/listings": [],
+    });
+    renderListingsPage();
+
+    expect(
+      await screen.findByRole("link", { name: "Create Listing" }),
+    ).toBeInTheDocument();
+  });
+
+  it("opens edit dialog when Edit button is clicked", async () => {
+    stubFetch({
+      "/api/selling/listings": [draftListing],
+    });
+    renderListingsPage();
+    const user = userEvent.setup();
+
+    await screen.findByText("Vintage Mechanical Keyboard");
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    expect(
+      screen.getByRole("dialog", { name: /Edit Vintage Mechanical Keyboard/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Title")).toBeInTheDocument();
+  });
+
+  it("calls submit endpoint when Submit for Publication is clicked", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes("/api/selling/listings?")) {
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers(),
+          json: async () => [draftListing],
+          text: async () => JSON.stringify([draftListing]),
+        } as unknown as Response;
+      }
+      return {
+        ok: true,
+        status: 202,
+        headers: new Headers(),
+        json: async () => null,
+        text: async () => "",
+      } as unknown as Response;
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    renderListingsPage();
+    const user = userEvent.setup();
+
+    await screen.findByText("Vintage Mechanical Keyboard");
+    await user.click(
+      screen.getByRole("button", { name: "Submit for Publication" }),
+    );
+
+    await vi.waitFor(() => {
+      const submitCall = fetchMock.mock.calls.find(
+        (c) =>
+          typeof c[0] === "string" &&
+          c[0].includes("/api/selling/listings/submit"),
+      );
+      expect(submitCall).toBeDefined();
+    });
   });
 });
