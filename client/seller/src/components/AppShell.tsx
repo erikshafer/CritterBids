@@ -2,6 +2,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 
 import { ConnectionIndicator } from "@/components/ConnectionIndicator";
 import { useSession } from "@/session/SessionContext";
+import { useActionableObligationCount } from "@/obligations/ObligationsPage";
 
 export function AppShell() {
   const { isRegisteredSeller } = useSession();
@@ -23,6 +24,7 @@ export function AppShell() {
               >
                 My Listings
               </Link>
+              <ObligationsNavLink />
             </nav>
           )}
         </div>
@@ -32,5 +34,23 @@ export function AppShell() {
         <Outlet />
       </main>
     </div>
+  );
+}
+
+function ObligationsNavLink() {
+  const actionableCount = useActionableObligationCount();
+
+  return (
+    <Link
+      to="/obligations"
+      className="text-sm text-muted-foreground transition-colors hover:text-foreground [&.active]:text-foreground [&.active]:font-medium"
+    >
+      Obligations
+      {actionableCount > 0 && (
+        <span className="ml-1 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-destructive px-1.5 text-xs font-medium text-destructive-foreground">
+          {actionableCount}
+        </span>
+      )}
+    </Link>
   );
 }

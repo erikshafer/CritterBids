@@ -52,21 +52,46 @@ describe("parseHubMessage", () => {
     expect(parseHubMessage(42)).toBeNull();
   });
 
-  it("returns null for BidderGroupNotification (seller ignores these)", () => {
+  it("parses BidderGroupNotification as bidderEvent", () => {
     const payload = {
       bidderId: "bidder-1",
       listingId: "abc-123",
-      eventType: "ProxyBidExhausted",
-      payload: "Proxy exhausted at max 100.",
+      eventType: "ObligationFulfilled",
+      payload: "Obligation fulfilled.",
       occurredAt: "2026-06-13T12:00:00Z",
     };
 
-    // BidderGroupNotification has a bidderId field which makes it match the
-    // listingGroupSchema too — but only because the schemas are loose. The seller
-    // receives these as listingEvent, which is harmless (logged-and-ignored in the
-    // activity feed if the listingId doesn't match). This test documents the behavior.
     const result = parseHubMessage(payload);
-    expect(result).not.toBeNull();
+
+    expect(result).toEqual({
+      kind: "bidderEvent",
+      bidderId: "bidder-1",
+      listingId: "abc-123",
+      eventType: "ObligationFulfilled",
+      payload: "Obligation fulfilled.",
+      occurredAt: "2026-06-13T12:00:00Z",
+    });
+  });
+
+  it("parses BidderGroupNotification with null listingId", () => {
+    const payload = {
+      bidderId: "bidder-1",
+      listingId: null,
+      eventType: "TrackingInfoProvided",
+      payload: "Tracking provided: TRACK123.",
+      occurredAt: "2026-06-13T10:00:00Z",
+    };
+
+    const result = parseHubMessage(payload);
+
+    expect(result).toEqual({
+      kind: "bidderEvent",
+      bidderId: "bidder-1",
+      listingId: null,
+      eventType: "TrackingInfoProvided",
+      payload: "Tracking provided: TRACK123.",
+      occurredAt: "2026-06-13T10:00:00Z",
+    });
   });
 
   it("discriminates bidPlaced before listingEvent (bidId is the distinguisher)", () => {
@@ -87,7 +112,7 @@ describe("parseHubMessage", () => {
 });
 
 describe("listingIdOf", () => {
-  it("returns the listing id from any message kind", () => {
+  it("returns the listing id from auction message kinds", () => {
     expect(
       listingIdOf({
         kind: "bidPlaced",
@@ -120,5 +145,31 @@ describe("listingIdOf", () => {
         occurredAt: "",
       }),
     ).toBe("l-3");
+  });
+
+  it("returns null for bidderEvent with no listing", () => {
+    expect(
+      listingIdOf({
+        kind: "bidderEvent",
+        bidderId: "b-1",
+        listingId: null,
+        eventType: "ObligationFulfilled",
+        payload: "Fulfilled.",
+        occurredAt: "",
+      }),
+    ).toBeNull();
+  });
+
+  it("returns the listing id from bidderEvent when present", () => {
+    expect(
+      listingIdOf({
+        kind: "bidderEvent",
+        bidderId: "b-1",
+        listingId: "l-4",
+        eventType: "TrackingInfoProvided",
+        payload: "Tracking provided.",
+        occurredAt: "",
+      }),
+    ).toBe("l-4");
   });
 });
