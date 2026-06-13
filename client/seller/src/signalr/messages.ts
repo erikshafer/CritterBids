@@ -1,13 +1,8 @@
 import { z } from "zod";
 
 // Zod wire-boundary schemas for the BiddingHub push surface the seller consumes. The seller
-// joins listing:{listingId} groups and receives the same auction-lifecycle notifications as the
-// bidder — BidPlacedNotification, ListingSoldNotification, and the eventType-tagged
-// ListingGroupNotification family. The seller does NOT receive bidder-targeted pushes
-// (BidderGroupNotification, SettlementCompletedNotification).
-//
-// Structural discrimination: no uniform wire discriminator (M8-S3b finding). Parse
-// most-specific-first and assign a client-side `kind` discriminator.
+// joins listing:{listingId} groups for auction-lifecycle notifications and bidder:{participantId}
+// for obligation-lifecycle pushes. Parse most-specific-first; assign a client-side `kind`.
 
 const bidPlacedSchema = z.object({
   listingId: z.string(),
@@ -24,6 +19,14 @@ const listingSoldSchema = z.object({
   hammerPrice: z.number(),
   bidCount: z.number().int(),
   soldAt: z.string(),
+});
+
+const bidderGroupSchema = z.object({
+  bidderId: z.string(),
+  listingId: z.string().nullish(),
+  eventType: z.string(),
+  payload: z.string(),
+  occurredAt: z.string(),
 });
 
 const listingGroupSchema = z.object({
@@ -52,6 +55,14 @@ export type HubMessage =
       soldAt: string;
     }
   | {
+      kind: "bidderEvent";
+      bidderId: string;
+      listingId: string | null;
+      eventType: string;
+      payload: string;
+      occurredAt: string;
+    }
+  | {
       kind: "listingEvent";
       listingId: string;
       eventType: string;
@@ -70,6 +81,18 @@ export function parseHubMessage(payload: unknown): HubMessage | null {
     return { kind: "listingSold", ...listingSold.data };
   }
 
+  const bidderEvent = bidderGroupSchema.safeParse(payload);
+  if (bidderEvent.success) {
+    return {
+      kind: "bidderEvent",
+      bidderId: bidderEvent.data.bidderId,
+      listingId: bidderEvent.data.listingId ?? null,
+      eventType: bidderEvent.data.eventType,
+      payload: bidderEvent.data.payload,
+      occurredAt: bidderEvent.data.occurredAt,
+    };
+  }
+
   const listingEvent = listingGroupSchema.safeParse(payload);
   if (listingEvent.success) {
     return { kind: "listingEvent", ...listingEvent.data };
@@ -78,6 +101,6 @@ export function parseHubMessage(payload: unknown): HubMessage | null {
   return null;
 }
 
-export function listingIdOf(message: HubMessage): string {
+export function listingIdOf(message: HubMessage): string | null {
   return message.listingId;
 }

@@ -86,4 +86,64 @@ describe("applyHubMessage", () => {
       queryKey: ["sellerListings"],
     });
   });
+
+  it("invalidates obligations on ObligationFulfilled bidderEvent", () => {
+    const message: HubMessage = {
+      kind: "bidderEvent",
+      bidderId: "seller-1",
+      listingId: "listing-abc",
+      eventType: "ObligationFulfilled",
+      payload: "Obligation fulfilled.",
+      occurredAt: "2026-06-13T14:00:00Z",
+    };
+
+    applyHubMessage(queryClient, message);
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["sellerObligations"],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["listing", "listing-abc"],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["sellerListings"],
+    });
+  });
+
+  it("invalidates obligations on TrackingInfoProvided bidderEvent", () => {
+    const message: HubMessage = {
+      kind: "bidderEvent",
+      bidderId: "seller-1",
+      listingId: null,
+      eventType: "TrackingInfoProvided",
+      payload: "Tracking provided: TRACK123.",
+      occurredAt: "2026-06-13T10:00:00Z",
+    };
+
+    applyHubMessage(queryClient, message);
+
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["sellerObligations"],
+    });
+    expect(queryClient.invalidateQueries).toHaveBeenCalledWith({
+      queryKey: ["sellerListings"],
+    });
+  });
+
+  it("does not invalidate obligations on non-obligation bidderEvent", () => {
+    const message: HubMessage = {
+      kind: "bidderEvent",
+      bidderId: "seller-1",
+      listingId: "listing-abc",
+      eventType: "ProxyBidExhausted",
+      payload: "Proxy exhausted.",
+      occurredAt: "2026-06-13T10:00:00Z",
+    };
+
+    applyHubMessage(queryClient, message);
+
+    expect(queryClient.invalidateQueries).not.toHaveBeenCalledWith({
+      queryKey: ["sellerObligations"],
+    });
+  });
 });

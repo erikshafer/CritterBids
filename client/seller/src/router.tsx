@@ -11,6 +11,7 @@ import { HomePage } from "@/pages/HomePage";
 import { ListingsPage } from "@/listings/ListingsPage";
 import { CreateListingPage } from "@/listings/CreateListingPage";
 import { ListingDetailPage } from "@/listings/ListingDetailPage";
+import { ObligationsPage } from "@/obligations/ObligationsPage";
 
 const rootRoute = createRootRoute({
   component: AppShell,
@@ -44,11 +45,18 @@ const listingDetailRoute = createRoute({
   }),
 });
 
+const obligationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/obligations",
+  component: ObligationsPage,
+});
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   listingsRoute,
   createListingRoute,
   listingDetailRoute,
+  obligationsRoute,
 ]);
 
 export const router = createRouter({
