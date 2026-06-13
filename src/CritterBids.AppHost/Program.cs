@@ -47,4 +47,9 @@ builder.AddViteApp("ops", "../../client/ops")
     .WithEnvironment("CRITTERBIDS_API_URL", api.GetEndpoint("http"))
     .WaitFor(api);
 
+builder.AddViteApp("seller", "../../client/seller")
+    .WithHttpEndpoint(port: 5175, name: "http")
+    .WithEnvironment("CRITTERBIDS_API_URL", api.GetEndpoint("http"))
+    .WaitFor(api);
+
 builder.Build().Run();

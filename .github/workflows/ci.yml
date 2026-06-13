@@ -261,6 +261,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Typecheck shared (tsc strict)
+        run: npx tsc --noEmit -p shared/tsconfig.json
+
       - name: Build bidder (tsc strict + vite build)
         run: npm run build -w @critterbids/bidder
 
@@ -272,6 +275,12 @@ jobs:
 
       - name: Test ops (vitest)
         run: npm test -w @critterbids/ops
+
+      - name: Build seller (tsc strict + vite build)
+        run: npm run build -w @critterbids/seller
+
+      - name: Test seller (vitest)
+        run: npm test -w @critterbids/seller
 
       # The Playwright e2e workspace member (client/e2e) is deliberately NOT run here
       # (M8-S7 recorded deferral): it needs the full Aspire-orchestrated stack — Postgres,
