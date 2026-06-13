@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@critterbids/shared": "*",
+    "@hookform/resolvers": "^5.4.0",
     "@microsoft/signalr": "^10.0.0",
     "@tanstack/react-query": "^5.101.0",
     "@tanstack/react-router": "^1.170.15",
@@ -19,6 +20,7 @@
     "clsx": "^2.1.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-hook-form": "^7.79.0",
     "tailwind-merge": "^3.6.0",
     "zod": "^4.4.3"
   },
