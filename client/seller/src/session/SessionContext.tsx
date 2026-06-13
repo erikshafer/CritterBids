@@ -1,6 +1,7 @@
 import {
   createContext,
   use,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -12,11 +13,16 @@ export type SessionStatus = "establishing" | "established" | "error";
 export interface SessionState {
   participantId: string | null;
   status: SessionStatus;
+  isRegisteredSeller: boolean;
+  registerAsSeller: () => Promise<void>;
+  isRegistering: boolean;
+  registrationError: string | null;
 }
 
 const SessionStateContext = createContext<SessionState | null>(null);
 
 const STORAGE_KEY = "critterbids.seller.participantId";
+const SELLER_KEY = "critterbids.seller.isRegisteredSeller";
 
 function extractParticipantId(
   location: string | null,
@@ -34,17 +40,28 @@ function extractParticipantId(
 }
 
 export function SessionProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<SessionState>(() => {
+  const [sessionState, setSessionState] = useState<{
+    participantId: string | null;
+    status: SessionStatus;
+  }>(() => {
     const existing = sessionStorage.getItem(STORAGE_KEY);
     return existing
       ? { participantId: existing, status: "established" }
       : { participantId: null, status: "establishing" };
   });
 
+  const [isRegisteredSeller, setIsRegisteredSeller] = useState(() => {
+    return sessionStorage.getItem(SELLER_KEY) === "true";
+  });
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [registrationError, setRegistrationError] = useState<string | null>(
+    null,
+  );
+
   const startedRef = useRef(false);
 
   useEffect(() => {
-    if (state.status === "established" || startedRef.current) return;
+    if (sessionState.status === "established" || startedRef.current) return;
     startedRef.current = true;
 
     void (async () => {
@@ -63,16 +80,62 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         const body: unknown = await response.json().catch(() => null);
         const id = extractParticipantId(response.headers.get("Location"), body);
         if (!id) {
-          setState({ participantId: null, status: "error" });
+          setSessionState({ participantId: null, status: "error" });
           return;
         }
         sessionStorage.setItem(STORAGE_KEY, id);
-        setState({ participantId: id, status: "established" });
+        setSessionState({ participantId: id, status: "established" });
       } catch {
-        setState({ participantId: null, status: "error" });
+        setSessionState({ participantId: null, status: "error" });
       }
     })();
-  }, [state.status]);
+  }, [sessionState.status]);
+
+  const registerAsSeller = useCallback(async () => {
+    if (!sessionState.participantId || isRegisteredSeller) return;
+    setIsRegistering(true);
+    setRegistrationError(null);
+
+    try {
+      const response = await fetch(
+        `/api/participants/${sessionState.participantId}/register-seller`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            participantId: sessionState.participantId,
+          }),
+        },
+      );
+
+      if (response.ok || response.status === 409) {
+        sessionStorage.setItem(SELLER_KEY, "true");
+        setIsRegisteredSeller(true);
+      } else {
+        throw new Error(
+          `Registration failed with ${response.status}.`,
+        );
+      }
+    } catch (err) {
+      setRegistrationError(
+        err instanceof Error ? err.message : "Registration failed.",
+      );
+    } finally {
+      setIsRegistering(false);
+    }
+  }, [sessionState.participantId, isRegisteredSeller]);
+
+  const state: SessionState = {
+    participantId: sessionState.participantId,
+    status: sessionState.status,
+    isRegisteredSeller,
+    registerAsSeller,
+    isRegistering,
+    registrationError,
+  };
 
   return (
     <SessionStateContext value={state}>{children}</SessionStateContext>
