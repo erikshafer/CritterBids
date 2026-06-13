@@ -1,3 +1,4 @@
+using JasperFx.Events.Projections;
 using Marten;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -13,6 +14,7 @@ public static class SellingModule
         services.ConfigureMarten(opts =>
         {
             opts.Schema.For<RegisteredSeller>().DatabaseSchemaName("selling");
+            opts.Schema.For<SellerListingSummary>().DatabaseSchemaName("selling");
 
             // SellerListing aggregate stream — all event types registered so Marten can enforce
             // UseMandatoryStreamTypeDeclaration (set in Program.cs) and correctly reconstruct
@@ -24,6 +26,10 @@ public static class SellingModule
             opts.Events.AddEventType<ListingRejected>();
             opts.Events.AddEventType<ListingPublished>();
             opts.Events.AddEventType<ListingWithdrawn>();
+
+            // Inline snapshot — SellerListingSummary updates in the same transaction as
+            // event appends, giving the seller's "my listings" query immediate consistency.
+            opts.Projections.Snapshot<SellerListingSummary>(SnapshotLifecycle.Inline);
         });
 
         services.AddTransient<ISellerRegistrationService, SellerRegistrationService>();
