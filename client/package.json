@@ -2,10 +2,12 @@
   "name": "critterbids-client",
   "private": true,
   "version": "0.0.0",
-  "description": "CritterBids frontend monorepo (ADR 025). Workspace root for the bidder-facing SPA, the staff ops SPA, and the Playwright e2e harness; the shared wire-contract package (shared/) stays a planned member — extraction deferred to the seller-console milestone (M8-S7 decision).",
+  "description": "CritterBids frontend monorepo (ADR 025). Workspace root for the shared wire-contract package, the bidder-facing SPA, the staff ops SPA, the seller console SPA, and the Playwright e2e harness.",
   "workspaces": [
+    "shared",
     "bidder",
     "ops",
+    "seller",
     "e2e"
   ],
   "scripts": {

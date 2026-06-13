@@ -2,4 +2,4 @@ export {
   catalogListingSchema,
   catalogListSchema,
   type CatalogListing,
-} from "@critterbids/shared/schemas";
+} from "./catalog";

@@ -1,9 +1,9 @@
 {
-  "name": "@critterbids/ops",
+  "name": "@critterbids/seller",
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "CritterBids staff operations dashboard SPA (ADR 004/012/013/024/025). M8-S5 scaffolded the shell, the StaffToken auth gate, and the OperationsHub connection; M8-S6 fills the six dashboard views over /api/operations/* with the ADR 026 cache bridge.",
+  "description": "CritterBids seller console SPA (ADR 013/025). M9-S1 scaffolds it as a BiddingHub connection proof; later M9 slices promote it into the real seller experience.",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",

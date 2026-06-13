@@ -173,29 +173,38 @@ exactly one `AddMarten()` call.
 
 ---
 
-## Frontend (M8 — `client/`)
+## Frontend (`client/`)
 
 The frontend lives in `client/`, an npm-workspaces monorepo (ADR 025), separate from the .NET
-solution (`CritterBids.slnx` does not reference it). Two static Vite + React + TypeScript SPAs point
-at the same API host:
+solution (`CritterBids.slnx` does not reference it). Three static Vite + React + TypeScript SPAs
+point at the same API host:
 
 | App | Path | Audience | Auth | Live channel |
 |---|---|---|---|---|
 | Bidder-facing | `client/bidder/` | Public | Anonymous | `BiddingHub` (`/hub/bidding`) |
 | Operations dashboard | `client/ops/` | Staff | `StaffToken` (ADR 024) | `OperationsHub` (`/hub/operations`) |
+| Seller console | `client/seller/` | Public | Anonymous | `BiddingHub` (`/hub/bidding`) |
 
-A third workspace member, `client/e2e/`, holds the Playwright end-to-end tests (M8-S7) — run
-locally against the live Aspire stack, not in CI; see `client/e2e/README.md`. A `client/shared/`
-member for the wire-contract surface both apps share (Zod schemas, the SignalR integration — the
-frontend analogue of `CritterBids.Contracts`) remains **planned, deferred to the seller-console
-milestone (M9)**: the M8-S7 evaluation found the apps duplicate the *pattern*, not the bytes
-(different hubs, auth, message vocabularies), so extraction waits for the third consumer to
-reveal the real shared subset. Dev uses a Vite dev-server proxy to the API host
-(`http://localhost:5180`, `ws:true`) — no CORS, no API-host change; under Aspire both dev servers
-launch as children (bidder `:5173`, ops `:5174`). The library composition is **ADR 013**
-(TypeScript strict, Zod, TanStack Query, Tailwind v4 + shadcn/ui, `@microsoft/signalr`, Vitest +
-Playwright, PWA); the layout, build-output, and dev-server story are **ADR 025**.
-See `docs/milestones/M8-frontend-spas.md` for the full (closed) milestone.
+A `client/shared/` workspace member (`@critterbids/shared`) provides the wire-contract surface all
+three apps share — the frontend analogue of `CritterBids.Contracts`. It contains:
+- **SignalR integration**: a parameterised `createSignalRProvider<TMessage>()` factory (ADR 026
+  pattern), connection builders, `RECEIVE_MESSAGE` constant, `FakeHubConnection` test helper
+- **Shared theme**: the Tailwind v4 CSS-variable theme (`theme.css`) consumed by all three SPAs
+- **Shared Zod schemas**: `catalogListingSchema` / `CatalogListing` (the one wire shape both
+  bidder and seller consume)
+
+Imports use `package.json` `"exports"` subpaths: `@critterbids/shared/signalr`,
+`@critterbids/shared/schemas`, `@critterbids/shared/theme.css`.
+
+A `client/e2e/` workspace member holds the Playwright end-to-end tests (M8-S7) — run locally
+against the live Aspire stack, not in CI; see `client/e2e/README.md`. Dev uses a Vite dev-server
+proxy to the API host (`http://localhost:5180`, `ws:true`) — no CORS, no API-host change; under
+Aspire all dev servers launch as children (bidder `:5173`, ops `:5174`, seller `:5175`). The
+library composition is **ADR 013** (TypeScript strict, Zod, TanStack Query, Tailwind v4 +
+shadcn/ui, `@microsoft/signalr`, Vitest + Playwright, PWA); the layout, build-output, and
+dev-server story are **ADR 025**.
+See `docs/milestones/M8-frontend-spas.md` for the M8 (closed) milestone and
+`docs/milestones/M9-seller-console.md` for the M9 seller console milestone.
 
 ---
 
