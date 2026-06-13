@@ -95,16 +95,17 @@ jobs:
           retention-days: 5
 
       - name: Archive build output for test runners
-        run: >
-          tar -czf dotnet-build.tar.gz
-          --exclude='.git'
-          --exclude='node_modules'
-          --exclude='client'
-          --exclude='publish'
-          --exclude='docs'
-          --exclude='openspec'
-          --exclude='.github'
-          .
+        run: |
+          tar -czf /tmp/dotnet-build.tar.gz \
+            --exclude='.git' \
+            --exclude='node_modules' \
+            --exclude='client' \
+            --exclude='publish' \
+            --exclude='docs' \
+            --exclude='openspec' \
+            --exclude='.github' \
+            .
+          mv /tmp/dotnet-build.tar.gz ./dotnet-build.tar.gz
 
       - name: Upload build output
         uses: actions/upload-artifact@v4
