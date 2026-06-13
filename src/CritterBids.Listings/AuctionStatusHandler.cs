@@ -5,12 +5,12 @@ using Wolverine.Attributes;
 namespace CritterBids.Listings;
 
 /// <summary>
-/// Wolverine handler that consumes the six auction integration events the Auctions BC
+/// Wolverine handler that consumes the seven auction integration events the Auctions BC
 /// publishes — <see cref="BiddingOpened"/>, <see cref="BidPlaced"/>,
 /// <see cref="BiddingClosed"/>, <see cref="ListingSold"/>, <see cref="ListingPassed"/>,
-/// and <see cref="BuyItNowPurchased"/> — over the "listings-auctions-events" RabbitMQ
-/// queue, and writes the resulting state transitions to <see cref="CatalogListingView"/>
-/// in the Marten "listings" schema.
+/// <see cref="BuyItNowPurchased"/>, and <see cref="ExtendedBiddingTriggered"/> — over the
+/// "listings-auctions-events" RabbitMQ queue, and writes the resulting state transitions
+/// to <see cref="CatalogListingView"/> in the Marten "listings" schema.
 ///
 /// Sibling to <see cref="ListingPublishedHandler"/> (M2-S7 OQ1 Path B from M3-S6) — kept
 /// in its own static class so the M2 handler's Selling-sourced upsert stays byte-identical
@@ -143,6 +143,22 @@ public static class AuctionStatusHandler
             FinalHighestBid = message.HighestBid,
             BidCount        = message.BidCount,
             ClosedAt        = message.PassedAt
+        });
+    }
+
+    public static async Task Handle(
+        ExtendedBiddingTriggered message,
+        IDocumentSession session,
+        CancellationToken cancellationToken)
+    {
+        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
+            ?? new CatalogListingView { Id = message.ListingId };
+
+        if (view.Status == "Withdrawn") return;
+
+        session.Store(view with
+        {
+            ScheduledCloseAt = message.NewCloseAt
         });
     }
 
