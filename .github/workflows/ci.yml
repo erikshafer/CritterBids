@@ -24,6 +24,7 @@ env:
   DOTNET_CLI_TELEMETRY_OPTOUT: true
 
 jobs:
+  # ─── Path filtering ─────────────────────────────────────────────────
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -37,13 +38,6 @@ jobs:
         uses: dorny/paths-filter@v3
         id: filter
         with:
-          # The `code` filter is true when any file relevant to building or testing
-          # the .NET solution has changed; the `frontend` filter is true when the
-          # client/ SPA workspace changes. Doc-only PRs (e.g. README, docs/**, *.md,
-          # LICENSE, CODE_OF_CONDUCT) match neither, and the build/test/frontend jobs
-          # are skipped — the final `ci` aggregator job then succeeds so branch
-          # protection still passes. A change to this workflow file trips both filters
-          # so the full suite re-validates when CI itself changes.
           filters: |
             code:
               - 'src/**'
@@ -61,12 +55,12 @@ jobs:
               - 'client/**'
               - '.github/workflows/ci.yml'
 
+  # ─── .NET build (single, shared by all test runners) ────────────────
   build:
     name: Build
     needs: changes
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -100,10 +94,35 @@ jobs:
           path: ./publish
           retention-days: 5
 
-  integration-tests:
-    name: Integration — ${{ matrix.name }}
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
+      - name: Archive build output for test runners
+        run: >
+          tar -czf dotnet-build.tar.gz
+          --exclude='.git'
+          --exclude='node_modules'
+          --exclude='client'
+          --exclude='publish'
+          --exclude='docs'
+          --exclude='openspec'
+          --exclude='.github'
+          .
+
+      - name: Upload build output
+        uses: actions/upload-artifact@v4
+        with:
+          name: dotnet-build
+          path: dotnet-build.tar.gz
+          retention-days: 1
+
+  # ─── Per-BC integration tests (parallel matrix) ─────────────────────
+  # if: always() ensures the matrix expands even when build is skipped
+  # (e.g. frontend-only PRs), so each entry displays its proper name in
+  # the GitHub checks UI instead of the raw "${{ matrix.name }}" template.
+  # The gate step prevents actual test execution when there are no code
+  # changes or the build did not succeed.
+  test:
+    name: Test — ${{ matrix.name }}
+    needs: [changes, build]
+    if: always()
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -141,29 +160,29 @@ jobs:
             trx: operations-tests.trx
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Gate — check for code changes and successful build
+        id: gate
+        if: needs.changes.outputs.code == 'true' && needs.build.result == 'success'
+        run: echo "run=true" >> "$GITHUB_OUTPUT"
 
       - name: Setup .NET
+        if: steps.gate.outputs.run == 'true'
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
 
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
+      - name: Download build output
+        if: steps.gate.outputs.run == 'true'
+        uses: actions/download-artifact@v4
         with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
+          name: dotnet-build
 
-      - name: Restore dependencies
-        run: dotnet restore CritterBids.slnx
-
-      - name: Build
-        run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
+      - name: Extract build output
+        if: steps.gate.outputs.run == 'true'
+        run: tar -xzf dotnet-build.tar.gz
 
       - name: Test — ${{ matrix.name }}
+        if: steps.gate.outputs.run == 'true'
         run: >
           dotnet test ${{ matrix.project }}
           --no-build --configuration ${{ env.CONFIGURATION }}
@@ -173,17 +192,32 @@ jobs:
 
       - name: Upload test results
         uses: actions/upload-artifact@v4
-        if: always()
+        if: always() && steps.gate.outputs.run == 'true'
         with:
-          name: integration-test-results-${{ matrix.name }}
+          name: test-results-${{ matrix.name }}
           path: ./test-results
           retention-days: 5
 
+  # ─── Frontend (parallel per-app matrix) ─────────────────────────────
   frontend:
-    name: Frontend
+    name: Frontend — ${{ matrix.app }}
     needs: changes
     if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - app: shared
+            check: typecheck
+          - app: bidder
+            check: build-test
+          - app: ops
+            check: build-test
+          - app: seller
+            check: build-test
+          - app: e2e
+            check: typecheck
     defaults:
       run:
         working-directory: client
@@ -201,51 +235,34 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Typecheck shared (tsc strict)
-        run: npx tsc --noEmit -p shared/tsconfig.json
+      - name: Typecheck (${{ matrix.app }})
+        if: matrix.check == 'typecheck'
+        run: npx tsc --noEmit -p ${{ matrix.app }}/tsconfig.json
 
-      - name: Build bidder (tsc strict + vite build)
-        run: npm run build -w @critterbids/bidder
+      - name: Build (${{ matrix.app }})
+        if: matrix.check == 'build-test'
+        run: npm run build -w @critterbids/${{ matrix.app }}
 
-      - name: Test bidder (vitest)
-        run: npm test -w @critterbids/bidder
+      - name: Test (${{ matrix.app }})
+        if: matrix.check == 'build-test'
+        run: npm test -w @critterbids/${{ matrix.app }}
 
-      - name: Build ops (tsc strict + vite build)
-        run: npm run build -w @critterbids/ops
-
-      - name: Test ops (vitest)
-        run: npm test -w @critterbids/ops
-
-      - name: Build seller (tsc strict + vite build)
-        run: npm run build -w @critterbids/seller
-
-      - name: Test seller (vitest)
-        run: npm test -w @critterbids/seller
-
-      # The Playwright e2e workspace member (client/e2e) is deliberately NOT run here
-      # (M8-S7 recorded deferral): it needs the full Aspire-orchestrated stack — Postgres,
-      # RabbitMQ, the API host, and the bidder dev server — live, which is its own piece of
-      # CI infrastructure work, not a step addition. It runs locally pre-merge; see
-      # client/e2e/README.md. Its tsconfig still type-checks against the shared strict base.
-      - name: Typecheck e2e (tsc strict, no run)
-        run: npm run typecheck -w @critterbids/e2e
-
-  # Aggregator job suitable for use as the single required status check in
-  # branch protection. A dependent job result of `success` or `skipped` is
-  # acceptable (a job skips when its path filter did not match — e.g. a
-  # frontend-only PR skips the .NET jobs, a backend-only PR skips Frontend,
-  # a doc-only PR skips all). The aggregator fails only when a job that
+  # ─── Aggregator (single required status check) ─────────────────────
+  # A dependent job result of `success` or `skipped` is acceptable.
+  # The `test` matrix uses `if: always()` so its result is `success`
+  # (all steps gated) even when skipped — build failures are caught
+  # via BUILD_RESULT. The aggregator fails only when a job that
   # actually ran reports `failure` or `cancelled`.
   ci:
     name: CI
-    needs: [ changes, build, integration-tests, frontend ]
+    needs: [ changes, build, test, frontend ]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         env:
           BUILD_RESULT: ${{ needs.build.result }}
-          INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
+          TEST_RESULT: ${{ needs.test.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
         run: |
           set -euo pipefail
@@ -253,12 +270,10 @@ jobs:
           failed=0
           for entry in \
             "build:${BUILD_RESULT}" \
-            "integration-tests:${INTEGRATION_RESULT}" \
+            "test:${TEST_RESULT}" \
             "frontend:${FRONTEND_RESULT}"; do
             name="${entry%%:*}"
             result="${entry##*:}"
-            # `success` and `skipped` pass; only a job that ran and did not
-            # succeed (failure/cancelled) blocks the aggregator.
             if [ "${result}" = "failure" ] || [ "${result}" = "cancelled" ]; then
               echo "::error::Required job '${name}' did not succeed (result: ${result})"
               failed=1
