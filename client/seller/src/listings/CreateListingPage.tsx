@@ -49,7 +49,6 @@ export function CreateListingPage() {
   } = useForm<CreateDraftFormValues>({
     resolver,
     defaultValues,
-    shouldUnregister: true,
   });
 
   const format = watch("format");
