@@ -27,6 +27,7 @@ They are distinct from their peer folders:
 | [`M6-obligations-relay-bc.md`](M6-obligations-relay-bc.md) | Milestone 6 — Obligations BC (post-sale coordination saga with cancellable reminders and dispute sub-workflow) + Relay BC (SignalR real-time push via `BiddingHub` and `OperationsHub`, notification history projection). |
 | [`M7-operations-bc.md`](M7-operations-bc.md) | Milestone 7 — Operations BC: cross-BC operator read models (lot board, settlement queue, `OperationsObligationsView`, session/participant activity) behind Relay's `OperationsHub`, staff query endpoints, and the resumption of the `[Authorize]` posture (config-driven staff passphrase, ADR-024). Eighth and final MVP BC. |
 | [`M8-frontend-spas.md`](M8-frontend-spas.md) | Milestone 8 — React Frontend SPAs: the bidder-facing public app (catalog + live bidding via `BiddingHub`) and the staff operations dashboard (operator views + live feed via `OperationsHub`), both static Vite + React + TS apps on the same API host. First frontend code surface; accepts ADR-013 (core stack) and authors the SPA monorepo-layout ADR. |
+| [`M9-seller-console.md`](M9-seller-console.md) | Milestone 9 — Seller Console: the third React SPA rendering the seller-perspective journeys (listing management, live auction observation, obligation fulfillment). Triggers `client/shared/` extraction (ADR 025). Carries the Listings `ExtendedBiddingTriggered` handler and cache-bridge burst-final hardening from M8's deferred ledger. |
 
 ---
 
@@ -34,7 +35,7 @@ They are distinct from their peer folders:
 
 For a new contributor:
 1. [`MVP.md`](MVP.md) — grounding on the end state
-2. Sequence through `M1` → `M2` → `M3` → `M4` → `M5` → `M6` → `M7` → `M8` to see how scope stacks toward MVP
+2. Sequence through `M1` → `M2` → `M3` → `M4` → `M5` → `M6` → `M7` → `M8` → `M9` to see how scope stacks toward and beyond MVP
 
 For someone picking up work on a specific milestone: read that milestone's document plus the session prompts in [`docs/prompts/`](../prompts/) tagged with the corresponding milestone prefix (e.g. `M3-S1-*.md`).
 
