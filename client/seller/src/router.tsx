@@ -3,12 +3,14 @@ import {
   createRoute,
   createRouter,
 } from "@tanstack/react-router";
+import { z } from "zod";
 
 import { AppShell } from "@/components/AppShell";
 import { RouteNotFound } from "@/components/RouteNotFound";
 import { HomePage } from "@/pages/HomePage";
 import { ListingsPage } from "@/listings/ListingsPage";
 import { CreateListingPage } from "@/listings/CreateListingPage";
+import { ListingDetailPage } from "@/listings/ListingDetailPage";
 
 const rootRoute = createRootRoute({
   component: AppShell,
@@ -33,10 +35,20 @@ const createListingRoute = createRoute({
   component: CreateListingPage,
 });
 
+const listingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/listings/$id",
+  component: ListingDetailPage,
+  validateSearch: z.object({
+    reserve: z.number().optional(),
+  }),
+});
+
 const routeTree = rootRoute.addChildren([
   homeRoute,
   listingsRoute,
   createListingRoute,
+  listingDetailRoute,
 ]);
 
 export const router = createRouter({

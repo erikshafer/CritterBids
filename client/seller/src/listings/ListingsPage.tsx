@@ -69,12 +69,15 @@ function ListingsHeader() {
   );
 }
 
+const VIEWABLE_STATUSES = ["Published", "Submitted"];
+
 function ListingCard({ listing }: { listing: SellerListingSummary }) {
   const { participantId } = useSession();
   const submitMutation = useSubmitListing(participantId ?? "");
   const [editOpen, setEditOpen] = useState(false);
   const created = new Date(listing.createdAt);
   const isDraft = listing.status === "Draft";
+  const canView = VIEWABLE_STATUSES.includes(listing.status);
 
   return (
     <>
@@ -115,24 +118,41 @@ function ListingCard({ listing }: { listing: SellerListingSummary }) {
               year: "numeric",
             })}
           </p>
-          {isDraft && (
-            <div className="flex gap-2 pt-2">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setEditOpen(true)}
+          <div className="flex gap-2 pt-2">
+            {isDraft && (
+              <>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => setEditOpen(true)}
+                >
+                  Edit
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => submitMutation.mutate(listing.id)}
+                  disabled={submitMutation.isPending}
+                >
+                  {submitMutation.isPending
+                    ? "Submitting..."
+                    : "Submit for Publication"}
+                </Button>
+              </>
+            )}
+            {canView && (
+              <Link
+                to="/listings/$id"
+                params={{ id: listing.id }}
+                search={{
+                  reserve: listing.reservePrice ?? undefined,
+                }}
               >
-                Edit
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => submitMutation.mutate(listing.id)}
-                disabled={submitMutation.isPending}
-              >
-                {submitMutation.isPending ? "Submitting..." : "Submit for Publication"}
-              </Button>
-            </div>
-          )}
+                <Button size="sm" variant="outline">
+                  View
+                </Button>
+              </Link>
+            )}
+          </div>
           {submitMutation.isError && (
             <p className="text-destructive text-xs" role="alert">
               {submitMutation.error.message}

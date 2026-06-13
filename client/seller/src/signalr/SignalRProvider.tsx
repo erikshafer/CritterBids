@@ -1,33 +1,43 @@
-import { useCallback, useEffect, useRef, type ReactNode } from "react";
+import {
+  createContext,
+  use,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { HubConnectionState, type HubConnection } from "@microsoft/signalr";
-import type { QueryClient } from "@tanstack/react-query";
 import {
   createSignalRProvider,
   createAnonymousConnection,
 } from "@critterbids/shared/signalr";
 
 import { useSession } from "@/session/SessionContext";
+import { applyHubMessage } from "@/signalr/cacheBridge";
+import { parseHubMessage, type HubMessage } from "@/signalr/messages";
 
 const BIDDING_HUB_URL = "/hub/bidding";
 
-// The seller app connects to the same BiddingHub as the bidder (anonymous). Seller-specific
-// notifications (SellerPayoutIssued, ObligationFulfilled, TrackingInfoProvided) arrive on the
-// bidder:{participantId} group — the seller's ParticipantId IS their SellerId (OQ-1 resolution).
-// No cache bridge yet — later M9 slices wire seller-specific queries and their invalidations.
+const { Provider: CoreProvider, useHub } =
+  createSignalRProvider<HubMessage>("SellerBiddingHubProvider");
 
-function parseMessage(_payload: unknown): null {
-  return null;
+export interface SellerSignalRContextValue {
+  status: HubConnectionState;
+  lastError: string | null;
+  watchListing: (listingId: string) => void;
+  unwatchListing: (listingId: string) => void;
+  subscribe: (listener: (message: HubMessage) => void) => () => void;
 }
 
-function applyMessage(_queryClient: QueryClient, _message: never): void {}
+const SellerSignalRContext = createContext<SellerSignalRContextValue | null>(
+  null,
+);
 
-const {
-  Provider: CoreProvider,
-  useHub: useSellerSignalR,
-  useConnectionState,
-} = createSignalRProvider<never>("SellerBiddingHubProvider");
-
-export { useSellerSignalR, useConnectionState };
+function defaultCreateConnection(): HubConnection {
+  return createAnonymousConnection(BIDDING_HUB_URL);
+}
 
 export interface SellerSignalRProviderProps {
   children: ReactNode;
@@ -36,21 +46,20 @@ export interface SellerSignalRProviderProps {
 
 export function SellerSignalRProvider({
   children,
-  createConnection,
+  createConnection = defaultCreateConnection,
 }: SellerSignalRProviderProps) {
+  const watchedListingsRef = useRef(new Set<string>());
   const connectionRef = useRef<HubConnection | null>(null);
   const participantIdRef = useRef<string | null>(null);
-
-  const factory = useCallback(() => {
-    if (createConnection) return createConnection();
-    return createAnonymousConnection(BIDDING_HUB_URL);
-  }, [createConnection]);
 
   const handleConnected = useCallback((connection: HubConnection) => {
     connectionRef.current = connection;
     const pid = participantIdRef.current;
     if (pid) {
       void connection.invoke("JoinBidderGroup", pid).catch(() => {});
+    }
+    for (const listingId of watchedListingsRef.current) {
+      void connection.invoke("JoinListingGroup", listingId).catch(() => {});
     }
   }, []);
 
@@ -59,18 +68,22 @@ export function SellerSignalRProvider({
     if (pid) {
       void connection.invoke("JoinBidderGroup", pid).catch(() => {});
     }
+    for (const listingId of watchedListingsRef.current) {
+      void connection.invoke("JoinListingGroup", listingId).catch(() => {});
+    }
   }, []);
 
   return (
     <CoreProvider
-      createConnection={factory}
-      parseMessage={parseMessage}
-      applyMessage={applyMessage}
+      createConnection={createConnection}
+      parseMessage={parseHubMessage}
+      applyMessage={applyHubMessage}
       onConnected={handleConnected}
       onReconnected={handleReconnected}
     >
       <SellerGroupManager
         connectionRef={connectionRef}
+        watchedListingsRef={watchedListingsRef}
         participantIdRef={participantIdRef}
       >
         {children}
@@ -82,14 +95,18 @@ export function SellerSignalRProvider({
 function SellerGroupManager({
   children,
   connectionRef,
+  watchedListingsRef,
   participantIdRef,
 }: {
   children: ReactNode;
   connectionRef: React.RefObject<HubConnection | null>;
+  watchedListingsRef: React.RefObject<Set<string>>;
   participantIdRef: React.MutableRefObject<string | null>;
 }) {
-  const { status } = useSellerSignalR();
+  const { status, lastError, subscribe } = useHub();
   const { participantId } = useSession();
+  const [, forceUpdate] = useState(0);
+
   participantIdRef.current = participantId;
 
   useEffect(() => {
@@ -104,5 +121,52 @@ function SellerGroupManager({
     void connection.invoke("JoinBidderGroup", participantId).catch(() => {});
   }, [status, participantId, connectionRef]);
 
-  return <>{children}</>;
+  const prevStatusRef = useRef(status);
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    prevStatusRef.current = status;
+    if (
+      status === HubConnectionState.Connected &&
+      prev === HubConnectionState.Reconnecting
+    ) {
+      forceUpdate((n) => n + 1);
+    }
+  }, [status]);
+
+  const value = useMemo<SellerSignalRContextValue>(
+    () => ({
+      status,
+      lastError,
+      watchListing: (listingId: string) => {
+        watchedListingsRef.current.add(listingId);
+        const connection = connectionRef.current;
+        if (connection?.state === HubConnectionState.Connected) {
+          void connection
+            .invoke("JoinListingGroup", listingId)
+            .catch(() => {});
+        }
+      },
+      unwatchListing: (listingId: string) => {
+        watchedListingsRef.current.delete(listingId);
+      },
+      subscribe,
+    }),
+    [status, lastError, subscribe, connectionRef, watchedListingsRef],
+  );
+
+  return (
+    <SellerSignalRContext value={value}>{children}</SellerSignalRContext>
+  );
 }
+
+export function useSellerSignalR(): SellerSignalRContextValue {
+  const context = use(SellerSignalRContext);
+  if (context === null) {
+    throw new Error(
+      "useSellerSignalR must be used within a SellerSignalRProvider.",
+    );
+  }
+  return context;
+}
+
+export { useHub as useConnectionState };

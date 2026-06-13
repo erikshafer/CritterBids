@@ -10,6 +10,7 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
+import { z } from "zod";
 
 import { ListingsPage } from "@/listings/ListingsPage";
 import { SessionProvider } from "@/session/SessionContext";
@@ -80,7 +81,19 @@ function renderListingsPage(): void {
     path: "/listings/new",
     component: () => <div>Create Listing Page</div>,
   });
-  const routeTree = rootRoute.addChildren([listingsRoute, createRoute_]);
+  const detailRoute = createRoute({
+    getParentRoute: () => rootRoute,
+    path: "/listings/$id",
+    component: () => <div>Listing Detail Page</div>,
+    validateSearch: z.object({
+      reserve: z.number().optional(),
+    }),
+  });
+  const routeTree = rootRoute.addChildren([
+    listingsRoute,
+    createRoute_,
+    detailRoute,
+  ]);
   const router = createRouter({
     routeTree,
     history: createMemoryHistory({ initialEntries: ["/"] }),
@@ -263,5 +276,27 @@ describe("ListingsPage", () => {
       );
       expect(submitCall).toBeDefined();
     });
+  });
+
+  it("shows View button on Published listings", async () => {
+    stubFetch({
+      "/api/selling/listings": [publishedListing],
+    });
+    renderListingsPage();
+
+    await screen.findByText("Vintage Folding Camera");
+    expect(screen.getByRole("button", { name: "View" })).toBeInTheDocument();
+  });
+
+  it("does not show View button on Draft listings", async () => {
+    stubFetch({
+      "/api/selling/listings": [draftListing],
+    });
+    renderListingsPage();
+
+    await screen.findByText("Vintage Mechanical Keyboard");
+    expect(
+      screen.queryByRole("button", { name: "View" }),
+    ).not.toBeInTheDocument();
   });
 });

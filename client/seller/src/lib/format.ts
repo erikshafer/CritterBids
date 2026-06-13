@@ -22,3 +22,22 @@ export function sellerStatusVariant(
       return "outline";
   }
 }
+
+export function auctionStatusVariant(
+  status: string,
+): "default" | "secondary" | "destructive" | "outline" {
+  switch (status) {
+    case "Open":
+    case "Extended":
+      return "default";
+    case "Sold":
+    case "Settled":
+      return "secondary";
+    case "Passed":
+    case "Withdrawn":
+    case "Closed":
+      return "destructive";
+    default:
+      return "outline";
+  }
+}
