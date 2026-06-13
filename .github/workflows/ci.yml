@@ -100,69 +100,6 @@ jobs:
           path: ./publish
           retention-days: 5
 
-  unit-tests:
-    name: Unit Tests
-    needs: changes
-    if: needs.changes.outputs.code == 'true'
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: ${{ env.DOTNET_VERSION }}
-
-      - name: Cache NuGet packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props', '**/*.csproj') }}
-          restore-keys: |
-            ${{ runner.os }}-nuget-
-
-      - name: Restore dependencies
-        run: dotnet restore CritterBids.slnx
-
-      - name: Build
-        run: dotnet build CritterBids.slnx --no-restore --configuration ${{ env.CONFIGURATION }}
-
-      - name: Test — CritterBids.Contracts.Tests
-        run: >
-          dotnet test tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --logger "trx;LogFileName=contracts-tests.trx"
-          --results-directory ./test-results
-
-      - name: Test — Selling unit tests
-        run: >
-          dotnet test tests/CritterBids.Selling.Tests/CritterBids.Selling.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --filter "FullyQualifiedName~DraftListingTests|FullyQualifiedName~SubmitListingTests|FullyQualifiedName~ListingValidatorTests"
-          --logger "trx;LogFileName=selling-unit-tests.trx"
-          --results-directory ./test-results
-
-      - name: Test — Participants unit tests
-        run: >
-          dotnet test tests/CritterBids.Participants.Tests/CritterBids.Participants.Tests.csproj
-          --no-build --configuration ${{ env.CONFIGURATION }}
-          --verbosity normal
-          --filter "FullyQualifiedName~SmokeTests"
-          --logger "trx;LogFileName=participants-unit-tests.trx"
-          --results-directory ./test-results
-
-      - name: Upload unit test results
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: unit-test-results
-          path: ./test-results
-          retention-days: 5
-
   integration-tests:
     name: Integration — ${{ matrix.name }}
     needs: changes
@@ -172,6 +109,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: Contracts
+            project: tests/CritterBids.Contracts.Tests/CritterBids.Contracts.Tests.csproj
+            trx: contracts-tests.trx
           - name: Api
             project: tests/CritterBids.Api.Tests/CritterBids.Api.Tests.csproj
             trx: api-tests.trx
@@ -298,14 +238,13 @@ jobs:
   # actually ran reports `failure` or `cancelled`.
   ci:
     name: CI
-    needs: [ changes, build, unit-tests, integration-tests, frontend ]
+    needs: [ changes, build, integration-tests, frontend ]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Verify required jobs
         env:
           BUILD_RESULT: ${{ needs.build.result }}
-          UNIT_RESULT: ${{ needs.unit-tests.result }}
           INTEGRATION_RESULT: ${{ needs.integration-tests.result }}
           FRONTEND_RESULT: ${{ needs.frontend.result }}
         run: |
@@ -314,7 +253,6 @@ jobs:
           failed=0
           for entry in \
             "build:${BUILD_RESULT}" \
-            "unit-tests:${UNIT_RESULT}" \
             "integration-tests:${INTEGRATION_RESULT}" \
             "frontend:${FRONTEND_RESULT}"; do
             name="${entry%%:*}"

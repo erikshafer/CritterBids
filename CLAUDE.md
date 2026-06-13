@@ -91,7 +91,7 @@ A session prompt and its retro share a slug (e.g. `M1-S2-participants-bc-scaffol
 - Trigger: `push`/`pull_request` on `main` (+ manual dispatch)
 - Path-filter gate: doc-only changes skip build/test jobs
 - Required branch-protection check: final `CI` aggregator job
-- Current integration matrix coverage: Api, Participants, Selling, Auctions, Listings, Settlement, Obligations, Relay, Operations (all 8 BCs + Api)
+- Current integration matrix coverage: Contracts, Api, Participants, Selling, Auctions, Listings, Settlement, Obligations, Relay, Operations (all 8 BCs + Contracts + Api)
 
 ---
 
