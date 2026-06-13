@@ -97,6 +97,10 @@ builder.UseWolverine(opts =>
             .ToRabbitQueue("listings-auctions-events");
         opts.PublishMessage<CritterBids.Contracts.Auctions.BuyItNowPurchased>()
             .ToRabbitQueue("listings-auctions-events");
+        // M9-S3: ExtendedBiddingTriggered now consumed by the Listings BC — advances
+        // CatalogListingView.ScheduledCloseAt on extension (M8-S7 carry-forward).
+        opts.PublishMessage<CritterBids.Contracts.Auctions.ExtendedBiddingTriggered>()
+            .ToRabbitQueue("listings-auctions-events");
 
         // M4-S5: Auctions BC publishes the Session-aggregate events the Listings BC consumes
         // (AuctionsSessionHandler: ListingAttachedToSession + SessionStarted) to the same

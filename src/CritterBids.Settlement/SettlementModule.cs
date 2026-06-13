@@ -38,6 +38,14 @@ public static class SettlementModule
             // rule at session.Events.StartStream<FinancialEventStream>(sagaId, ...).
             opts.Schema.For<FinancialEventStream>().DatabaseSchemaName("settlement");
 
+            // SellerSettlementSummary — Settlement BC's per-listing seller settlement
+            // outcome (M9-S3). Tolerant-upsert document maintained by
+            // SellerSettlementSummaryHandler from SettlementCompleted. Marten
+            // resolves the document key via the Id property (ListingId); no
+            // UseNumericRevisions because idempotency is handled by the handler's
+            // deterministic-key upsert shape.
+            opts.Schema.For<SellerSettlementSummary>().DatabaseSchemaName("settlement");
+
             // BidderCreditView — Settlement BC's per-bidder credit projection per W003
             // Phase 1 Part 7 (M5-S5). Tolerant-upsert document maintained by
             // BidderCreditViewHandler from two events: ParticipantSessionStarted

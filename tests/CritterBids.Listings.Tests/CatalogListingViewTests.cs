@@ -428,6 +428,84 @@ public class CatalogListingViewTests : IAsyncLifetime
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // M9-S3 — ExtendedBiddingTriggered handler (M8-S7 carry-forward)
+    //
+    // Advances CatalogListingView.ScheduledCloseAt when extended bidding triggers.
+    // Direct handler invocation per the M3-S6 pattern above.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExtendedBiddingTriggered_AdvancesScheduledCloseAt()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var bidderId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        var originalCloseAt = DateTimeOffset.UtcNow.AddHours(1);
+        await InvokeAuctionHandlerAsync<BiddingOpened>(AuctionStatusHandler.Handle, new BiddingOpened(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: originalCloseAt,
+            ExtendedBiddingEnabled: true,
+            ExtendedBiddingTriggerWindow: TimeSpan.FromSeconds(30),
+            ExtendedBiddingExtension: TimeSpan.FromSeconds(15),
+            MaxDuration: TimeSpan.FromHours(2),
+            OpenedAt: DateTimeOffset.UtcNow));
+
+        var newCloseAt = originalCloseAt.AddSeconds(15);
+        var extended = new ExtendedBiddingTriggered(
+            ListingId: listingId,
+            PreviousCloseAt: originalCloseAt,
+            NewCloseAt: newCloseAt,
+            TriggeredByBidderId: bidderId,
+            TriggeredAt: DateTimeOffset.UtcNow);
+
+        await InvokeAuctionHandlerAsync<ExtendedBiddingTriggered>(AuctionStatusHandler.Handle, extended);
+
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.ScheduledCloseAt.ShouldBe(newCloseAt);
+        view.Status.ShouldBe("Open");
+        view.Title.ShouldBe("Mint Condition Foil Black Lotus");
+    }
+
+    [Fact]
+    public async Task ExtendedBiddingTriggered_WithdrawnListing_NoOp()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        await _fixture.SeedCatalogListingViewAsync(listingId, sellerId);
+
+        var withdrawnAt = DateTimeOffset.UtcNow;
+        await InvokeAuctionHandlerAsync<ListingWithdrawn>(
+            SellingListingWithdrawnHandler.Handle,
+            new ListingWithdrawn(
+                ListingId: listingId,
+                WithdrawnBy: sellerId,
+                Reason: null,
+                WithdrawnAt: withdrawnAt));
+
+        var newCloseAt = DateTimeOffset.UtcNow.AddHours(2);
+        var extended = new ExtendedBiddingTriggered(
+            ListingId: listingId,
+            PreviousCloseAt: DateTimeOffset.UtcNow.AddHours(1),
+            NewCloseAt: newCloseAt,
+            TriggeredByBidderId: Guid.CreateVersion7(),
+            TriggeredAt: DateTimeOffset.UtcNow);
+
+        await InvokeAuctionHandlerAsync<ExtendedBiddingTriggered>(AuctionStatusHandler.Handle, extended);
+
+        var view = await _fixture.LoadCatalogListingViewAsync(listingId);
+        view.ShouldNotBeNull();
+        view!.Status.ShouldBe("Withdrawn");
+        view.ScheduledCloseAt.ShouldBeNull();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // M4-S6 — Session-membership + Withdrawn extension (milestone doc §7)
     //
     // Sibling handlers per ADR-014 Sub-Option A (resolved at M4-S6 session open):
