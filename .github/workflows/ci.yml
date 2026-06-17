@@ -44,7 +44,6 @@ jobs:
               - 'tests/**'
               - '**/*.csproj'
               - '**/*.slnx'
-              - '**/*.sln'
               - 'Directory.Build.props'
               - 'Directory.Packages.props'
               - 'global.json'
@@ -218,7 +217,7 @@ jobs:
           - app: seller
             check: build-test
           - app: e2e
-            check: typecheck
+            check: typecheck  # M8-D2: Playwright tests require the full Aspire stack — not run in CI
     defaults:
       run:
         working-directory: client
