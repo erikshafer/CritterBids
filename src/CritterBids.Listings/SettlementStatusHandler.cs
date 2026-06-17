@@ -44,8 +44,9 @@ public static class SettlementStatusHandler
         {
             // Tolerant upsert on the rare cross-queue race. ListingPublishedHandler's
             // M5-S6 amendment will preserve Status = "Settled" and SettledAt on later
-            // arrival.
-            session.Store(new CatalogListingView
+            // arrival. M9-S7: Insert (not Store) so a concurrent creator on another queue
+            // collides with DocumentAlreadyExistsException and is retried into the merge path.
+            session.Insert(new CatalogListingView
             {
                 Id        = message.ListingId,
                 Status    = "Settled",

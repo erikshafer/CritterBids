@@ -48,8 +48,9 @@ public static class SellingListingWithdrawnHandler
             // Structurally near-impossible cross-queue race: ListingWithdrawn arriving
             // before ListingPublished. Seed a minimal row at the terminal — the
             // ListingPublishedHandler M5-S6 amendment (M4-S6 extension) preserves it on
-            // later arrival.
-            session.Store(new CatalogListingView
+            // later arrival. M9-S7: Insert (not Store) so a concurrent creator on another
+            // queue collides with DocumentAlreadyExistsException and is retried into the merge path.
+            session.Insert(new CatalogListingView
             {
                 Id       = message.ListingId,
                 Status   = "Withdrawn",

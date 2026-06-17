@@ -2,6 +2,7 @@ using CritterBids.Contracts.Auctions;
 using CritterBids.Contracts.Selling;
 using CritterBids.Listings;
 using CritterBids.Listings.Tests.Fixtures;
+using JasperFx;
 using Marten;
 
 namespace CritterBids.Listings.Tests;
@@ -50,6 +51,20 @@ public class CatalogListingViewTests : IAsyncLifetime
             ExtendedBiddingExtension: null,
             FeePercentage: 0.10m,
             PublishedAt: DateTimeOffset.UtcNow);
+
+    private static BiddingOpened BuildOpened(Guid listingId, Guid sellerId, DateTimeOffset scheduledCloseAt) =>
+        new(
+            ListingId: listingId,
+            SellerId: sellerId,
+            StartingBid: 50_000m,
+            ReserveThreshold: 75_000m,
+            BuyItNowPrice: 150_000m,
+            ScheduledCloseAt: scheduledCloseAt,
+            ExtendedBiddingEnabled: false,
+            ExtendedBiddingTriggerWindow: null,
+            ExtendedBiddingExtension: null,
+            MaxDuration: TimeSpan.FromDays(7),
+            OpenedAt: DateTimeOffset.UtcNow);
 
     private async Task SeedCatalogEntry(Guid listingId, Guid sellerId)
     {
@@ -795,5 +810,107 @@ public class CatalogListingViewTests : IAsyncLifetime
         view.SessionId.ShouldBe(sessionId);                       // attach fact preserved
         view.SessionStartedAt.ShouldBeNull();                     // SessionStarted not dispatched here
         view.Title.ShouldBe("Mint Condition Foil Black Lotus");   // M2 field preserved
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // M9-S7 — Cross-queue read-model create race (Insert-on-create + retry)
+    //
+    // The sibling handlers ride different RabbitMQ queues and can both LoadAsync the
+    // same listing as null, then both take the create path. The SiblingHandlers test
+    // above exercises *sequential* arrival (the merge logic); these two exercise the
+    // *concurrent* create — the data-loss interleaving the memory observed on
+    // 2026-06-13. Two sessions both stage a fresh row; the loser's commit collides on
+    // the document primary key with DocumentAlreadyExistsException (the trip-wire that
+    // triggers ListingsConcurrencyRetryPolicies). Re-running the losing handler in a
+    // fresh session simulates Wolverine's retry: LoadAsync now finds the committed row,
+    // so the handler takes the merge path and both writers' field sets survive.
+    //
+    // Direct handler invocation per the M3-S6 in-fixture note — the retry *policy* is
+    // Wolverine's own (framework-tested); what these tests pin is the BC's two
+    // contributions: the create-path collision and the merge-on-reload recovery.
+    // ─────────────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CrossQueueCreateRace_SellingCommitsFirst_AuctionRetryPreservesBothFieldSets()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var scheduledCloseAt = DateTimeOffset.UtcNow.AddHours(24);
+
+        var published = BuildMessage(listingId, sellerId);
+        var opened = BuildOpened(listingId, sellerId, scheduledCloseAt);
+
+        // Stage both writes against an empty catalog — neither has committed, so both
+        // handlers' LoadAsync returns null and both take the Insert create path.
+        await using var sellingSession = _fixture.GetDocumentSession();
+        await using var auctionSession = _fixture.GetDocumentSession();
+        await ListingPublishedHandler.Handle(published, sellingSession, CancellationToken.None);
+        await AuctionStatusHandler.Handle(opened, auctionSession, CancellationToken.None);
+
+        // Selling commits first (full record); the auction Insert collides on the primary key.
+        await sellingSession.SaveChangesAsync();
+        await Should.ThrowAsync<DocumentAlreadyExistsException>(
+            async () => await auctionSession.SaveChangesAsync());
+
+        // The collision left the selling record intact — no silent overwrite.
+        var afterCollision = await _fixture.LoadCatalogListingViewAsync(listingId);
+        afterCollision.ShouldNotBeNull();
+        afterCollision!.Title.ShouldBe("Mint Condition Foil Black Lotus");
+        afterCollision.Status.ShouldBe("Published");        // auction's minimal "Open" never landed
+
+        // Retry: the losing auction handler re-runs in a fresh session. LoadAsync now finds
+        // the committed row, so it merges via Store and preserves the selling fields.
+        await using var retrySession = _fixture.GetDocumentSession();
+        await AuctionStatusHandler.Handle(opened, retrySession, CancellationToken.None);
+        await retrySession.SaveChangesAsync();
+
+        var afterRetry = await _fixture.LoadCatalogListingViewAsync(listingId);
+        afterRetry.ShouldNotBeNull();
+        afterRetry!.Title.ShouldBe("Mint Condition Foil Black Lotus");   // selling preserved
+        afterRetry.SellerId.ShouldBe(sellerId);
+        afterRetry.StartingBid.ShouldBe(50_000m);
+        afterRetry.Status.ShouldBe("Open");                              // auction merged in
+        afterRetry.ScheduledCloseAt.ShouldBe(scheduledCloseAt);
+    }
+
+    [Fact]
+    public async Task CrossQueueCreateRace_AuctionCommitsFirst_SellingRetryPreservesBothFieldSets()
+    {
+        var listingId = Guid.CreateVersion7();
+        var sellerId = Guid.CreateVersion7();
+        var scheduledCloseAt = DateTimeOffset.UtcNow.AddHours(24);
+
+        var published = BuildMessage(listingId, sellerId);
+        var opened = BuildOpened(listingId, sellerId, scheduledCloseAt);
+
+        await using var sellingSession = _fixture.GetDocumentSession();
+        await using var auctionSession = _fixture.GetDocumentSession();
+        await ListingPublishedHandler.Handle(published, sellingSession, CancellationToken.None);
+        await AuctionStatusHandler.Handle(opened, auctionSession, CancellationToken.None);
+
+        // Auction commits first (minimal record, empty selling fields); the selling Insert collides.
+        await auctionSession.SaveChangesAsync();
+        await Should.ThrowAsync<DocumentAlreadyExistsException>(
+            async () => await sellingSession.SaveChangesAsync());
+
+        // The collision left the auction record intact — the selling fields are simply not there yet.
+        var afterCollision = await _fixture.LoadCatalogListingViewAsync(listingId);
+        afterCollision.ShouldNotBeNull();
+        afterCollision!.Status.ShouldBe("Open");            // auction's record stands
+        afterCollision.Title.ShouldBe("");                  // selling fields not yet present
+
+        // Retry: the losing selling handler re-runs. LoadAsync finds the row, so it merges the
+        // M2 fields while its load-and-preserve block keeps the auction's Status = "Open".
+        await using var retrySession = _fixture.GetDocumentSession();
+        await ListingPublishedHandler.Handle(published, retrySession, CancellationToken.None);
+        await retrySession.SaveChangesAsync();
+
+        var afterRetry = await _fixture.LoadCatalogListingViewAsync(listingId);
+        afterRetry.ShouldNotBeNull();
+        afterRetry!.Title.ShouldBe("Mint Condition Foil Black Lotus");   // selling filled in
+        afterRetry.SellerId.ShouldBe(sellerId);
+        afterRetry.StartingBid.ShouldBe(50_000m);
+        afterRetry.Status.ShouldBe("Open");                              // auction status preserved
+        afterRetry.ScheduledCloseAt.ShouldBe(scheduledCloseAt);
     }
 }

@@ -39,10 +39,12 @@ public static class AuctionsSessionHandler
         IDocumentSession session,
         CancellationToken cancellationToken)
     {
-        var view = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken)
-            ?? new CatalogListingView { Id = message.ListingId };
+        var existing = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken);
+        var view = existing ?? new CatalogListingView { Id = message.ListingId };
 
-        session.Store(view with { SessionId = message.SessionId });
+        // M9-S7: Insert on first write so a concurrent creator on the selling/settlement queue
+        // collides instead of silently overwriting; Store merges once the row exists.
+        session.InsertOrStore(existing, view with { SessionId = message.SessionId });
     }
 
     public static async Task Handle(
@@ -63,11 +65,12 @@ public static class AuctionsSessionHandler
 
         foreach (var listingId in message.ListingIds)
         {
-            var view = existingById.TryGetValue(listingId, out var current)
-                ? current
-                : new CatalogListingView { Id = listingId };
+            existingById.TryGetValue(listingId, out var current);
+            var view = current ?? new CatalogListingView { Id = listingId };
 
-            session.Store(view with { SessionStartedAt = message.StartedAt });
+            // M9-S7: Insert any listing not yet in the catalog (cross-queue create race);
+            // Store merges SessionStartedAt onto rows that already exist.
+            session.InsertOrStore(current, view with { SessionStartedAt = message.StartedAt });
         }
     }
 }
