@@ -1,6 +1,6 @@
 # M9 — Seller Console
 
-**Status:** Planned
+**Status:** ✅ Complete (M9-S8 close, 2026-06-17)
 **Scope:** The third React SPA — a seller-facing console that renders the seller-perspective journeys narratives 004–007 describe: listing management, live auction observation, and post-sale obligation fulfillment. M9 also triggers the `client/shared/` extraction that ADR 025 deferred to the third consumer, and carries the first housekeeping backend slices from M8's deferred ledger.
 **Companion docs:** [`../narratives/004-seller-publishes-and-withdraws-listing.md`](../narratives/004-seller-publishes-and-withdraws-listing.md) · [`../narratives/005-seller-watches-flash-auction-close.md`](../narratives/005-seller-watches-flash-auction-close.md) · [`../narratives/006-seller-fulfills-post-sale-obligation.md`](../narratives/006-seller-fulfills-post-sale-obligation.md) · [`../narratives/007-seller-recovers-missed-shipping-deadline.md`](../narratives/007-seller-recovers-missed-shipping-deadline.md) · [`../decisions/025-spa-monorepo-layout.md`](../decisions/025-spa-monorepo-layout.md) (§`client/shared/`) · [`../decisions/013-frontend-core-stack.md`](../decisions/013-frontend-core-stack.md) · [`../decisions/026-signalr-integration-pattern.md`](../decisions/026-signalr-integration-pattern.md) · `CLAUDE.md` §Frontend · [`../retrospectives/M8-retrospective.md`](../retrospectives/M8-retrospective.md) (§"What M9 Should Know") · [`../skills/frontend-slice-discipline/SKILL.md`](../skills/frontend-slice-discipline/SKILL.md)
 
@@ -18,19 +18,19 @@ The backend is largely shipped — the Selling, Auctions, Obligations, and Relay
 
 ### Exit criteria
 
-- [ ] **Seller SPA** exists at `client/seller/` as an npm-workspace member, rendering the seller-perspective journeys: listing management (narratives 004 Moments 1–5), live auction observation (narrative 005 Moments 1–4), and obligation fulfillment (narrative 006 Moments 1–4)
-- [ ] **`client/shared/` extracted** as the fourth npm-workspace member per ADR 025, consumed by all three SPAs (bidder, ops, seller); the shared surface includes at minimum the SignalR provider/hook/cache-bridge pattern and the Zod wire schemas both apps already duplicate
-- [ ] **Seller-side HTTP surface complete** — every seller action the console drives has a public HTTP endpoint (no bus-only commands remain for seller-facing flows); the backend precursor slices are sanctioned and recorded as in M8's precedent
-- [ ] **Live auction observation** — the seller console connects to `BiddingHub` (anonymous, same as the bidder app) and shows real-time bid activity, reserve crossing, extended-bidding status, and gavel-fall for the seller's own listings
-- [ ] **Obligation management** — the seller console surfaces the `ObligationStatusView` for the seller's own listings and drives the `ProvideTracking` command (endpoint already exists at `POST /api/obligations/tracking`)
-- [ ] **Listings `ExtendedBiddingTriggered` handler shipped** — `CatalogListingView.ScheduledCloseAt` advances on extension, re-arming the extended-bidding banner the M8-S7 e2e found unreachable (first M8 housekeeping carry-forward)
-- [ ] **Cache-bridge burst-final hardening evaluated** — the push-refetch race for the last event of a burst (M8-S7 Finding 2) is either fixed (delayed re-invalidate in the cache bridge) or explicitly deferred with rationale
-- [ ] Clean-checkout `npm install` + `npm run build` on all four workspace members; TypeScript strict; no .NET breakage
-- [ ] Existing .NET baseline unchanged beyond sanctioned backend exceptions — 0 errors / 0 warnings held; 307 backend tests preserved or grown
-- [ ] Playwright e2e extended with at least one seller-perspective test (reusing the M8-S7 harness conventions)
-- [ ] CI `frontend` job covers the seller app (build + Vitest)
-- [ ] `CLAUDE.md` §Frontend updated (seller app, `client/shared/`, workspace member count)
-- [ ] All slice retros + M9 retrospective doc written
+- [x] **Seller SPA** exists at `client/seller/` as an npm-workspace member, rendering the seller-perspective journeys: listing management (narratives 004 Moments 1–5, M9-S4a/S4b), live auction observation (narrative 005 Moments 1–4, M9-S5), and obligation fulfillment (narrative 006 Moments 1–4, M9-S6)
+- [x] **`client/shared/` extracted** as a fifth npm-workspace member per ADR 025 (M9-S1), consumed by all three SPAs (bidder, ops, seller); the shared surface includes the SignalR provider/hook/cache-bridge pattern, the shared Zod wire schemas, and the Tailwind theme — **annotation:** ADR 025 counted it as the "fourth" member; with the `e2e` member already landed in M8, `shared` is the fifth, leaving a five-member workspace
+- [x] **Seller-side HTTP surface complete** — every seller action the console drives has a public HTTP endpoint (M9-S2/S3 backend precursor slices, sanctioned and recorded per M8's precedent); no bus-only commands remain for seller-facing flows
+- [x] **Live auction observation** — the seller console connects to `BiddingHub` (anonymous, same as the bidder app, M9-S5) and shows real-time bid activity, reserve crossing, extended-bidding status, and gavel-fall for the seller's own listings
+- [x] **Obligation management** — the seller console surfaces the `ObligationStatusView` for the seller's own listings and drives the `ProvideTracking` command (M9-S6); the full lifecycle is now e2e-verified (M9-S8)
+- [x] **Listings `ExtendedBiddingTriggered` handler shipped** (M9-S3) — `CatalogListingView.ScheduledCloseAt` advances on extension, re-arming the extended-bidding banner the M8-S7 e2e found unreachable (first M8 housekeeping carry-forward)
+- [x] **Cache-bridge burst-final hardening evaluated** (M9-S3) — see the M9-S3 retro for the disposition
+- [x] Clean-checkout `npm install` + `npm run build` on all workspace members; TypeScript strict; no .NET breakage
+- [x] Existing .NET baseline unchanged beyond sanctioned backend exceptions — 0 errors / 0 net-new warnings held; **annotation:** baseline grew 307 → 328 backend tests across M9's sanctioned backend slices (S2/S3/S7), not broken
+- [x] Playwright e2e extended with a seller-perspective test (M9-S8 — `client/e2e/tests/seller-obligation.spec.ts`, two consecutive green runs against the live Aspire stack; reuses the M8-S7 harness conventions)
+- [x] CI `frontend` job covers the seller app (build + Vitest) — **annotation:** landed earlier than this slice (PR #111 restructured the `frontend` matrix to cover `seller` build-test + `shared`/`e2e` type-check); M9-S8 verified it rather than adding it
+- [x] `CLAUDE.md` §Frontend updated (seller app, `client/shared/`, workspace member count) — kept current across M9 slices; verified at M9-S8 close
+- [x] All slice retros + M9 retrospective doc written (M9-S8)
 
 ---
 
@@ -226,7 +226,7 @@ All backend conventions from `CLAUDE.md` apply to the precursor slices: `sealed 
 
 ## 7. Slice Breakdown
 
-M9 is planned as seven slices. The first two are backend and infrastructure precursors; the remaining five build the seller SPA and close the milestone. Like M8, this is a scope ceiling refined in per-slice prompts — open questions are resolved in the slices that need them, not pre-decided here.
+M9 ran as eight slices. The first two are backend and infrastructure precursors; the next four build the seller SPA; a backend race-fix slice (S7) landed before the close; and S8 closes the milestone. Like M8, this was a scope ceiling refined in per-slice prompts — open questions resolved in the slices that needed them, not pre-decided here. (The slice plan originally numbered the close "S7"; the `CatalogListingView` cross-queue race fix took S7 mid-milestone, so the close renumbered to S8.)
 
 | Slice | Title | Scope |
 |---|---|---|
@@ -236,7 +236,8 @@ M9 is planned as seven slices. The first two are backend and infrastructure prec
 | M9-S4 | Seller SPA — registration + listing management | Seller app shell + layout; seller registration flow (the one-click `RegisterAsSeller` from the session); listing dashboard ("my listings" view consuming the S2 query endpoint); create-draft form (`react-hook-form` + Zod validation against listing-time fields); edit-draft; submit-for-publication; withdraw. Narratives 004 Moments 1–5. |
 | M9-S5 | Seller SPA — live auction observation | Live auction view from the seller's vantage: `BiddingHub` connection (via `@critterbids/shared` SignalR provider); real-time bid feed on the seller's own listings; reserve-crossing indicator (the seller's confidential reserve is known client-side from the draft fields); extended-bidding status; gavel-fall. Narrative 005 Moments 1–4. |
 | M9-S6 | Seller SPA — obligation fulfillment | Obligation tracker: post-sale status view (`ObligationStatusView` for the seller's listings); ship-by deadline countdown; reminder banner; provide-tracking form (driving the existing `POST /api/obligations/tracking`); delivery-confirmed / fulfilled terminal state. Narratives 006 Moments 1–4 + narrative 007's escalation-recovery UX (the "Overdue — under review" → "Shipped" recovery). |
-| M9-S7 | End-to-end + housekeeping | Playwright seller-perspective e2e (extend the M8-S7 harness — a seller publishes, the listing sells, the seller provides tracking, the obligation fulfills); CI `frontend` job extended to seller + shared; `CLAUDE.md` / `bounded-contexts.md` / `STATUS.md` updates; test-baseline update; M9 retrospective. |
+| M9-S7 | Listings cross-queue race fix | Backend bug fix landed mid-milestone (PR #112): the `CatalogListingView` last-writer-wins create race between the `listings-selling-events` and `listings-auctions-events` queue handlers, resolved with `Insert`-on-create across all twelve write methods + a `DocumentAlreadyExistsException` retry policy. No frontend; not in the original slice plan. See `docs/retrospectives/M9-S7-listings-cross-queue-race-fix-retrospective.md`. |
+| M9-S8 | End-to-end + housekeeping (close) | Playwright seller-perspective e2e (extend the M8-S7 harness — a seller's listing sells, the seller console provides tracking, the obligation auto-confirms to Fulfilled; `client/e2e/tests/seller-obligation.spec.ts`); CI `frontend` coverage verified (already complete per PR #111); `bounded-contexts.md` / `STATUS.md` / milestone-doc refresh; pre-M10 skills audit; M9 milestone retrospective. Sanctioned dev-host config: `Obligations__DemoMode=true` in the AppHost so the post-sale lifecycle runs live (the conference-demo posture). |
 
 ### Open questions for per-slice resolution
 

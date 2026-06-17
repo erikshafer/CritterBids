@@ -28,6 +28,14 @@ var rabbitMq = builder.AddRabbitMQ("rabbitmq")
 // defeats any `app.Environment.IsDevelopment()` guards (e.g. the OpenAPI/SwaggerUI map).
 var api = builder.AddProject<Projects.CritterBids_Api>("critterbids-api")
     .WithEnvironment("ASPNETCORE_ENVIRONMENT", builder.Environment.EnvironmentName)
+    // Collapse the Obligations post-sale timers (reminder / ship-by deadline / auto-confirm)
+    // to demo-second durations for the orchestrated demo run. ObligationsOptions.DemoMode is
+    // the runtime flag the BC was built around (W001-6): production durations are days, demo
+    // durations are seconds, so the full post-sale lifecycle — provide-tracking → shipped →
+    // auto-confirmed → fulfilled — actually completes inside a conference demo session (and
+    // inside the M9-S8 seller-obligation Playwright e2e). Scoped to the Aspire-orchestrated
+    // demo host only; production binds DemoMode=false by default (no appsettings override).
+    .WithEnvironment("Obligations__DemoMode", "true")
     .WithReference(postgres)
     .WithReference(rabbitMq)
     .WaitFor(postgres)
