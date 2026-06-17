@@ -22,7 +22,8 @@ description: >-
 
 ## When to apply
 
-- Starting a new frontend slice or feature in `client/bidder/` or `client/ops/`.
+- Starting a new frontend slice or feature in any `client/` SPA (`bidder/`, `ops/`, `seller/`)
+  or the `client/e2e/` Playwright harness.
 - Mid-slice, when a spec (milestone table, narrative, prompt) names something you can't find
   in the backend.
 - Closing a slice: deciding what "verified" means before the retro claims it.
@@ -42,6 +43,13 @@ types the slice consumes. Every M8 slice that skipped ahead would have shipped a
   (M8-S4). The view renders the subset that exists.
 - The prompt said `accessTokenFactory` puts the token on the negotiate; the installed client's
   source said Bearer header (M8-S5). Package source in `node_modules` counts as lived backend.
+- The host's **runtime configuration** is part of the lived surface too, not just the code. The
+  M9-S8 seller-obligation e2e depends on the post-sale lifecycle auto-confirming in seconds —
+  but `ObligationsOptions.DemoMode` defaults to false (production timers are *days*) and nothing
+  in the dev/Aspire run enabled it. The fast lifecycle the demo posture assumes only exists once
+  the AppHost sets `Obligations__DemoMode=true`. Before a live smoke that rides a timer, confirm
+  the host is actually configured for the timing you expect — an env-var/appsettings gap is as
+  real as a missing endpoint.
 
 ## Rule 2 — Render the lived subset; gaps become carry-forwards
 
