@@ -40,7 +40,10 @@ public static class ListingPublishedHandler
     {
         var existing = await session.LoadAsync<CatalogListingView>(message.ListingId, cancellationToken);
 
-        session.Store(new CatalogListingView
+        // M9-S7: Insert on first write (existing is null) so a concurrent creator on the
+        // auctions/settlement queue collides instead of silently overwriting; Store on the
+        // merge path keeps the load-and-preserve upsert below unchanged.
+        session.InsertOrStore(existing, new CatalogListingView
         {
             // M2 fields — always overwritten with the publish payload (these are the
             // contract's authoritative source).
