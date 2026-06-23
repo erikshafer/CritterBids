@@ -425,6 +425,7 @@ riderModule.iml
 
 .vscode/mcp.json
 .cursor/mcp.json
+.codex/config.toml
 claude_desktop_config.json
 
 # Note: Global config locations vary by tool:
