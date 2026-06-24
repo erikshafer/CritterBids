@@ -30,6 +30,12 @@ public class RelayHubTestFixture : IAsyncLifetime
 {
     private WebApplication _app = null!;
 
+    // IMessageBus is registered scoped (a per-publish MessageContext). Resolving it from the root
+    // provider (_app.Services) trips the DI scope validator, which the host enables in the
+    // Development environment (e.g. under VS Test Explorer). One child scope held for the fixture's
+    // lifetime satisfies the validator — the rest of the suite resolves the scoped bus the same way.
+    private AsyncServiceScope _scope;
+
     /// <summary>
     /// The staff token this fixture configures and the <c>OperationsHub</c> connections present.
     /// M7-S6 (ADR-024) gated <c>OperationsHub</c> with the <c>StaffOnly</c> policy, so the hub now
@@ -40,7 +46,7 @@ public class RelayHubTestFixture : IAsyncLifetime
 
     public string BaseUrl { get; private set; } = null!;
 
-    public IMessageBus Bus => _app.Services.GetRequiredService<IMessageBus>();
+    public IMessageBus Bus => _scope.ServiceProvider.GetRequiredService<IMessageBus>();
 
     public string BiddingHubUrl => $"{BaseUrl}/hub/bidding";
 
@@ -100,6 +106,9 @@ public class RelayHubTestFixture : IAsyncLifetime
 
         await _app.StartAsync();
 
+        // Child scope the Bus accessor resolves the scoped IMessageBus from (see field comment).
+        _scope = _app.Services.CreateAsyncScope();
+
         BaseUrl = _app.Urls.Single();
     }
 
@@ -107,6 +116,7 @@ public class RelayHubTestFixture : IAsyncLifetime
     {
         try
         {
+            await _scope.DisposeAsync();
             await _app.StopAsync();
             await _app.DisposeAsync();
         }
